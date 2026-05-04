@@ -1044,12 +1044,15 @@ func (s *Server) buildDSLVars(ctx context.Context, mc *runtime.MovementsCollecto
 		constsMap = vals
 	}
 	queryFactory := interpreter.NewQueryFactory(ctx, s.store, s.reg)
+	predefined := interpreter.NewPredefinedRoot(ctx, s.store)
 	return map[string]any{
-		"Движения":          mc,
-		"Перечисления":      &interpreter.MapThis{M: enumsMap},
-		"Константы":         &interpreter.MapThis{M: constsMap},
-		"__factory_Запрос":  queryFactory,
-		"__factory_Query":   queryFactory,
+		"Движения":                  mc,
+		"Перечисления":              &interpreter.MapThis{M: enumsMap},
+		"Константы":                 &interpreter.MapThis{M: constsMap},
+		"__factory_Запрос":          queryFactory,
+		"__factory_Query":           queryFactory,
+		"ПредопределённыеЗначения": predefined,
+		"PredefinedValues":          predefined,
 	}
 }
 

@@ -150,6 +150,10 @@ func (db *DB) List(ctx context.Context, entityName string, entity *metadata.Enti
 		cols = append(cols, "posted")
 	}
 	cols = append(cols, "deletion_mark")
+	hasPredefined := entity.Kind == metadata.KindCatalog && len(entity.Predefined) > 0
+	if hasPredefined {
+		cols = append(cols, "_is_predefined")
+	}
 
 	var whereParts []string
 	var args []any
@@ -240,6 +244,10 @@ func (db *DB) List(ctx context.Context, entityName string, entity *metadata.Enti
 			off++
 		}
 		row["deletion_mark"] = normalizeValue(dest[off])
+		off++
+		if hasPredefined {
+			row["_is_predefined"] = normalizeValue(dest[off])
+		}
 		result = append(result, row)
 	}
 	return result, rows.Err()
@@ -306,7 +314,17 @@ func (db *DB) UpsertTablePartRows(ctx context.Context, entityName, tpName string
 }
 
 // Delete removes an entity record by id. Tablepart rows cascade automatically.
+// Returns an error if the record is a predefined item (_is_predefined = TRUE).
 func (db *DB) Delete(ctx context.Context, entityName string, id uuid.UUID) error {
+	// Check if this is a predefined record (column may not exist — ignore error)
+	var isPredefined bool
+	if err := db.pool.QueryRow(ctx,
+		fmt.Sprintf("SELECT _is_predefined FROM %s WHERE id = $1", metadata.TableName(entityName)),
+		id,
+	).Scan(&isPredefined); err == nil && isPredefined {
+		return fmt.Errorf("нельзя удалить предопределённый элемент %s", entityName)
+	}
+
 	err := db.exec(ctx,
 		fmt.Sprintf("DELETE FROM %s WHERE id = $1", metadata.TableName(entityName)), id)
 	if err == nil {

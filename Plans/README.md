@@ -17,6 +17,7 @@
 | 14 | [14-query-object.md](14-query-object.md) | Объект Запрос в DSL | ✅ Реализовано |
 | 15 | [15-transactions.md](15-transactions.md) | Транзакции в DSL | ✅ Реализовано |
 | 16 | [16-json.md](16-json.md) | JSON в DSL | ✅ Реализовано |
+| 09 | [09-predefined-items.md](09-predefined-items.md) | Предопределённые элементы справочников | ✅ Реализовано |
 
 ## Планы развития (roadmap)
 
@@ -27,7 +28,7 @@
 | 06 | [06-hierarchical-catalogs.md](06-hierarchical-catalogs.md) | Иерархические справочники | 5–6 дней | — |
 | ~~07~~ | ~~[07-numerator.md](07-numerator.md)~~ | ~~Автонумерация документов~~ | ~~3 дня~~ | ✅ |
 | 08 | [08-document-journal.md](08-document-journal.md) | Журнал документов | 3–4 дня | (опц.) 06 |
-| 09 | [09-predefined-items.md](09-predefined-items.md) | Предопределённые элементы справочников | 2–3 дня | — |
+| ~~09~~ | ~~[09-predefined-items.md](09-predefined-items.md)~~ | ~~Предопределённые элементы справочников~~ | ~~2–3 дня~~ | ✅ |
 | 10 | [10-subsystems.md](10-subsystems.md) | Подсистемы (разделы навигации) | 2–3 дня | — |
 | 11 | [11-account-register.md](11-account-register.md) | Регистр бухгалтерии (план счетов) | 8–10 дней | 05 |
 

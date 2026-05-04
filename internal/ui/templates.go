@@ -275,6 +275,7 @@ const tplList = `
 <tr {{if index $row "deletion_mark"}}style="opacity:0.45;text-decoration:line-through;cursor:pointer"{{else}}style="cursor:pointer"{{end}}
   onclick="listRowClick(event,this)"
   oncontextmenu="listCtxMenu(event,this)"
+  data-predefined="{{if index $row "_is_predefined"}}1{{end}}"
   data-mark-url="/ui/{{lower (str $.Entity.Kind)}}/{{lower $.Entity.Name}}/{{index $row "id"}}/delete?mark=1"
   data-del-url="/ui/{{lower (str $.Entity.Kind)}}/{{lower $.Entity.Name}}/{{index $row "id"}}/delete"
   data-open-url="/ui/{{lower (str $.Entity.Kind)}}/{{lower $.Entity.Name}}/{{index $row "id"}}">
@@ -285,7 +286,7 @@ const tplList = `
   {{end}}
   {{range $.Entity.Fields}}
     {{if eq (str .Type) "date"}}<td>{{fmtDate (index $row .Name)}}</td>
-    {{else}}<td>{{index $row .Name}}</td>{{end}}
+    {{else}}<td>{{index $row .Name}}{{if and (eq .Name "Наименование") (index $row "_is_predefined")}} <span title="Предопределённый элемент" style="color:#f59e0b;font-size:11px">★</span>{{end}}</td>{{end}}
   {{end}}
   <td><a class="btn btn-sm btn-primary" href="/ui/{{lower (str $.Entity.Kind)}}/{{lower $.Entity.Name}}/{{index $row "id"}}">Открыть</a></td>
 </tr>{{end}}
@@ -312,16 +313,22 @@ function listCtxMenu(e,tr){
   m.id='_lctx';
   m.style.cssText='position:fixed;z-index:999;background:#fff;border:1px solid #c8d0de;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.18);padding:4px 0;min-width:190px;font-size:13px';
   m.style.left=e.clientX+'px';m.style.top=e.clientY+'px';
+  var isPredefined=tr.dataset.predefined==='1';
   var items=[{label:'Открыть',fn:function(){window.location.href=tr.dataset.openUrl;}}];
-  items.push({label:'Пометить на удаление',danger:true,fn:function(){listSubmit(tr.dataset.markUrl,'Пометить на удаление?');}});
-  if(_isAdmin)items.push({label:'Удалить навсегда',danger:true,fn:function(){listSubmit(tr.dataset.delUrl,'Удалить запись навсегда?');}});
+  if(!isPredefined)items.push({label:'Пометить на удаление',danger:true,fn:function(){listSubmit(tr.dataset.markUrl,'Пометить на удаление?');}});
+  else items.push({label:'Предопределённый — нельзя удалить',disabled:true});
+  if(_isAdmin&&!isPredefined)items.push({label:'Удалить навсегда',danger:true,fn:function(){listSubmit(tr.dataset.delUrl,'Удалить запись навсегда?');}});
   items.forEach(function(item){
     var mi=document.createElement('div');
     mi.textContent=item.label;
-    mi.style.cssText='padding:8px 14px;cursor:pointer'+(item.danger?';color:#dc2626':'');
-    mi.onmouseenter=function(){mi.style.background='#f8fafc';};
-    mi.onmouseleave=function(){mi.style.background='';};
-    mi.onclick=function(){m.remove();item.fn();};
+    if(item.disabled){
+      mi.style.cssText='padding:8px 14px;color:#94a3b8;cursor:default;font-style:italic';
+    } else {
+      mi.style.cssText='padding:8px 14px;cursor:pointer'+(item.danger?';color:#dc2626':'');
+      mi.onmouseenter=function(){mi.style.background='#f8fafc';};
+      mi.onmouseleave=function(){mi.style.background='';};
+      mi.onclick=function(){m.remove();item.fn();};
+    }
     m.appendChild(mi);
   });
   document.body.appendChild(m);

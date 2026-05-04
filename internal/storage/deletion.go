@@ -22,8 +22,17 @@ func (db *DB) EnsureDeletionMark(ctx context.Context, entities []*metadata.Entit
 }
 
 // MarkForDeletion sets or clears the deletion_mark flag for a record.
+// Returns an error if the record is predefined (_is_predefined = TRUE).
 func (db *DB) MarkForDeletion(ctx context.Context, entityName string, id uuid.UUID, mark bool) error {
 	table := metadata.TableName(entityName)
+	if mark {
+		var isPredefined bool
+		if err := db.pool.QueryRow(ctx,
+			fmt.Sprintf("SELECT _is_predefined FROM %s WHERE id = $1", table), id,
+		).Scan(&isPredefined); err == nil && isPredefined {
+			return fmt.Errorf("нельзя пометить предопределённый элемент %s на удаление", entityName)
+		}
+	}
 	return db.exec(ctx, fmt.Sprintf("UPDATE %s SET deletion_mark = $1 WHERE id = $2", table), mark, id)
 }
 

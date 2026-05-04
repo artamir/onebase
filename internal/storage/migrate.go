@@ -107,6 +107,9 @@ func (db *DB) Migrate(ctx context.Context, entities []*metadata.Entity) error {
 	if err := db.EnsureNumeratorSchema(ctx); err != nil {
 		return fmt.Errorf("migrate: numerators table: %w", err)
 	}
+	if err := db.EnsurePredefinedColumns(ctx, entities); err != nil {
+		return fmt.Errorf("migrate: predefined columns: %w", err)
+	}
 	// create tables in dependency order (catalogs first, then documents)
 	ordered := orderByDependency(entities)
 	for _, e := range ordered {
@@ -149,6 +152,12 @@ func (db *DB) Migrate(ctx context.Context, entities []*metadata.Entity) error {
 					return fmt.Errorf("migrate %s.%s.%s: %w", e.Name, tp.Name, f.Name, err)
 				}
 			}
+		}
+	}
+	// Sync predefined items last (tables must exist first)
+	for _, e := range ordered {
+		if err := db.SyncPredefined(ctx, e); err != nil {
+			return fmt.Errorf("migrate: sync predefined %s: %w", e.Name, err)
 		}
 	}
 	return nil

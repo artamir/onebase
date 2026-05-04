@@ -24,12 +24,18 @@ type rawNumerator struct {
 	Period string `yaml:"period"`
 }
 
+type rawPredefined struct {
+	Name   string                 `yaml:"name"`
+	Fields map[string]interface{} `yaml:"fields"`
+}
+
 type rawEntity struct {
-	Name       string         `yaml:"name"`
-	Fields     []rawField     `yaml:"fields"`
-	TableParts []rawTablePart `yaml:"tableparts"`
-	Posting    bool           `yaml:"posting"`
-	Numerator  *rawNumerator  `yaml:"numerator"`
+	Name       string          `yaml:"name"`
+	Fields     []rawField      `yaml:"fields"`
+	TableParts []rawTablePart  `yaml:"tableparts"`
+	Posting    bool            `yaml:"posting"`
+	Numerator  *rawNumerator   `yaml:"numerator"`
+	Predefined []rawPredefined `yaml:"predefined"`
 }
 
 func LoadFile(path string, kind Kind) (*Entity, error) {
@@ -68,6 +74,13 @@ func LoadFile(path string, kind Kind) (*Entity, error) {
 			tp.Fields = append(tp.Fields, parseField(rf))
 		}
 		e.TableParts = append(e.TableParts, tp)
+	}
+	for _, rp := range raw.Predefined {
+		fields := make(map[string]any, len(rp.Fields))
+		for k, v := range rp.Fields {
+			fields[k] = v
+		}
+		e.Predefined = append(e.Predefined, &PredefinedItem{Name: rp.Name, Fields: fields})
 	}
 	return e, nil
 }

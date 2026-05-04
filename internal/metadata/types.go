@@ -51,6 +51,13 @@ type Numerator struct {
 	Period string // "year" | "month" | "none"
 }
 
+// PredefinedItem describes a catalog record that is always present in the DB
+// and cannot be deleted. Synced from YAML on every startup.
+type PredefinedItem struct {
+	Name   string         // identifier used in DSL: ПредопределённыеЗначения.Валюта.Рубль
+	Fields map[string]any // initial field values
+}
+
 type Entity struct {
 	Name       string
 	Kind       Kind
@@ -58,8 +65,9 @@ type Entity struct {
 	TableParts []TablePart
 	// Posting enables 1C-style posting semantics: movements are written only
 	// when the document is explicitly posted, not on every save.
-	Posting   bool
-	Numerator *Numerator // nil if auto-numbering is disabled
+	Posting    bool
+	Numerator  *Numerator        // nil if auto-numbering is disabled
+	Predefined []*PredefinedItem // nil for most entities; populated from YAML
 }
 
 type Register struct {
