@@ -20,7 +20,6 @@
 
 | № | Файл | Фича | Эстимейт | Зависимости |
 |---|---|---|---|---|
-| 05 | [05-virtual-tables.md](05-virtual-tables.md) | Виртуальные таблицы регистров (Остатки/Обороты/СрезПоследних) | 4–5 дней | — |
 | 06 | [06-hierarchical-catalogs.md](06-hierarchical-catalogs.md) | Иерархические справочники | 5–6 дней | — |
 | 07 | [07-numerator.md](07-numerator.md) | Автонумерация документов | 3 дня | — |
 | 08 | [08-document-journal.md](08-document-journal.md) | Журнал документов | 3–4 дня | (опц.) 06 |
@@ -32,11 +31,9 @@
 
 | № | Файл | Фича | Эстимейт | Зависимости |
 |---|---|---|---|---|
-| 12 | [12-collections.md](12-collections.md) | Массивы / Структуры / Соответствия | 4 дня | — |
-| 13 | [13-try-except.md](13-try-except.md) | Попытка / Исключение | 2 дня | — |
-| 14 | [14-query-object.md](14-query-object.md) | Объект Запрос в DSL | 3 дня | 12 |
-| 15 | [15-transactions.md](15-transactions.md) | Транзакции в DSL | 2 дня | 13 |
-| 16 | [16-json.md](16-json.md) | JSON в DSL | 1 день | 12 |
+| 14 | [14-query-object.md](14-query-object.md) | Объект Запрос в DSL | 3 дня | 12 ✅ |
+| 15 | [15-transactions.md](15-transactions.md) | Транзакции в DSL | 2 дня | 13 ✅ |
+| 16 | [16-json.md](16-json.md) | JSON в DSL | 1 день | 12 ✅ |
 | 17 | [17-scheduled-jobs.md](17-scheduled-jobs.md) | Фоновые / регламентные задания | 4 дня | (опц.) 15 |
 
 ## Граф зависимостей

@@ -44,6 +44,13 @@ type TablePart struct {
 	Fields []Field
 }
 
+// Numerator describes automatic document numbering.
+type Numerator struct {
+	Prefix string // e.g. "ПОС-"
+	Length int    // digits in numeric part, padded with leading zeros
+	Period string // "year" | "month" | "none"
+}
+
 type Entity struct {
 	Name       string
 	Kind       Kind
@@ -51,7 +58,8 @@ type Entity struct {
 	TableParts []TablePart
 	// Posting enables 1C-style posting semantics: movements are written only
 	// when the document is explicitly posted, not on every save.
-	Posting bool
+	Posting   bool
+	Numerator *Numerator // nil if auto-numbering is disabled
 }
 
 type Register struct {

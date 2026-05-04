@@ -1,5 +1,9 @@
 name: Поступление
 posting: true
+numerator:
+  prefix: "ПОС-"
+  length: 8
+  period: year
 fields:
   - name: Номер
     type: string

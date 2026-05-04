@@ -104,6 +104,9 @@ func (db *DB) Migrate(ctx context.Context, entities []*metadata.Entity) error {
 	if err := db.EnsureSeqTable(ctx); err != nil {
 		return fmt.Errorf("migrate: sequences table: %w", err)
 	}
+	if err := db.EnsureNumeratorSchema(ctx); err != nil {
+		return fmt.Errorf("migrate: numerators table: %w", err)
+	}
 	// create tables in dependency order (catalogs first, then documents)
 	ordered := orderByDependency(entities)
 	for _, e := range ordered {

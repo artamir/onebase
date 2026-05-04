@@ -18,11 +18,18 @@ type rawTablePart struct {
 	Fields []rawField `yaml:"fields"`
 }
 
+type rawNumerator struct {
+	Prefix string `yaml:"prefix"`
+	Length int    `yaml:"length"`
+	Period string `yaml:"period"`
+}
+
 type rawEntity struct {
 	Name       string         `yaml:"name"`
 	Fields     []rawField     `yaml:"fields"`
 	TableParts []rawTablePart `yaml:"tableparts"`
 	Posting    bool           `yaml:"posting"`
+	Numerator  *rawNumerator  `yaml:"numerator"`
 }
 
 func LoadFile(path string, kind Kind) (*Entity, error) {
@@ -38,6 +45,20 @@ func LoadFile(path string, kind Kind) (*Entity, error) {
 		return nil, fmt.Errorf("%s: missing name", path)
 	}
 	e := &Entity{Name: raw.Name, Kind: kind, Posting: raw.Posting}
+	if raw.Numerator != nil {
+		n := &Numerator{
+			Prefix: raw.Numerator.Prefix,
+			Length: raw.Numerator.Length,
+			Period: raw.Numerator.Period,
+		}
+		if n.Length <= 0 {
+			n.Length = 8
+		}
+		if n.Period == "" {
+			n.Period = "year"
+		}
+		e.Numerator = n
+	}
 	for _, rf := range raw.Fields {
 		e.Fields = append(e.Fields, parseField(rf))
 	}

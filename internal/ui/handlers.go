@@ -128,9 +128,7 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request) {
 		for _, f := range entity.Fields {
 			if f.Name == "Номер" && f.Type == metadata.FieldTypeString {
 				if v := fmt.Sprintf("%v", obj.Fields["Номер"]); v == "" || v == "<nil>" {
-					if n, err := s.store.NextNum(r.Context(), entity.Name); err == nil {
-						obj.Set("Номер", fmt.Sprintf("%06d", n))
-					}
+					obj.Set("Номер", s.generateNumber(r.Context(), entity, obj.Fields))
 				}
 				break
 			}
@@ -1670,4 +1668,21 @@ func formValuesFromRequest(r *http.Request, ir *metadata.InfoRegister) map[strin
 		vals[f.Name] = r.FormValue(f.Name)
 	}
 	return vals
+}
+
+// generateNumber returns the next document number.
+// Uses the entity's Numerator config if present; falls back to legacy NextNum.
+func (s *Server) generateNumber(ctx context.Context, entity *metadata.Entity, fields map[string]any) string {
+	if entity.Numerator != nil {
+		num := entity.Numerator
+		periodKey := storage.ComputePeriodKey(num, fields)
+		if n, err := s.store.NextNumber(ctx, entity.Name, periodKey); err == nil {
+			return storage.FormatNumber(num.Prefix, num.Length, n)
+		}
+	}
+	// legacy fallback: plain sequential number
+	if n, err := s.store.NextNum(ctx, entity.Name); err == nil {
+		return fmt.Sprintf("%06d", n)
+	}
+	return ""
 }
