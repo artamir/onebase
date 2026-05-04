@@ -23,6 +23,21 @@ func (db *DB) WithTx(ctx context.Context, fn func(context.Context) error) error 
 	return tx.Commit(ctx)
 }
 
+// ContextWithTx embeds tx into ctx so that exec/q will use it.
+func ContextWithTx(ctx context.Context, tx pgx.Tx) context.Context {
+	return context.WithValue(ctx, txKey{}, tx)
+}
+
+// BeginTx starts a new PostgreSQL transaction and returns it together with a
+// context that has the transaction embedded for use by exec/q.
+func (db *DB) BeginTx(ctx context.Context) (pgx.Tx, context.Context, error) {
+	tx, err := db.pool.Begin(ctx)
+	if err != nil {
+		return nil, ctx, err
+	}
+	return tx, ContextWithTx(ctx, tx), nil
+}
+
 // exec uses the transaction from ctx if present, otherwise the pool.
 func (db *DB) exec(ctx context.Context, sql string, args ...any) error {
 	if tx, ok := ctx.Value(txKey{}).(pgx.Tx); ok {

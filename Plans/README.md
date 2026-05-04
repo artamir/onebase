@@ -15,6 +15,8 @@
 | 13 | [13-try-except.md](13-try-except.md) | Попытка / Исключение | ✅ Реализовано |
 | 07 | [07-numerator.md](07-numerator.md) | Автонумерация документов | ✅ Реализовано |
 | 14 | [14-query-object.md](14-query-object.md) | Объект Запрос в DSL | ✅ Реализовано |
+| 15 | [15-transactions.md](15-transactions.md) | Транзакции в DSL | ✅ Реализовано |
+| 16 | [16-json.md](16-json.md) | JSON в DSL | ✅ Реализовано |
 
 ## Планы развития (roadmap)
 
@@ -34,8 +36,8 @@
 | № | Файл | Фича | Эстимейт | Зависимости |
 |---|---|---|---|---|
 | ~~14~~ | ~~[14-query-object.md](14-query-object.md)~~ | ~~Объект Запрос в DSL~~ | ~~3 дня~~ | ✅ |
-| 15 | [15-transactions.md](15-transactions.md) | Транзакции в DSL | 2 дня | 13 ✅ |
-| 16 | [16-json.md](16-json.md) | JSON в DSL | 1 день | 12 ✅ |
+| ~~15~~ | ~~[15-transactions.md](15-transactions.md)~~ | ~~Транзакции в DSL~~ | ~~2 дня~~ | ✅ |
+| ~~16~~ | ~~[16-json.md](16-json.md)~~ | ~~JSON в DSL~~ | ~~1 день~~ | ✅ |
 | 17 | [17-scheduled-jobs.md](17-scheduled-jobs.md) | Фоновые / регламентные задания | 4 дня | (опц.) 15 |
 
 ## Граф зависимостей

@@ -112,15 +112,22 @@ func (l *Lexer) NextToken() token.Token {
 		}
 		return l.tok(token.GT, ">", line, col)
 	case '"':
-		start := l.pos
-		for l.pos < len(l.input) && l.peek() != '"' {
-			l.next()
+		// "" inside a string literal is an escaped double-quote (1C convention).
+		var buf []rune
+		for l.pos < len(l.input) {
+			if l.peek() == '"' {
+				l.next() // consume the quote
+				if l.pos < len(l.input) && l.peek() == '"' {
+					l.next()        // consume second quote
+					buf = append(buf, '"') // one literal "
+				} else {
+					break // end of string
+				}
+			} else {
+				buf = append(buf, l.next())
+			}
 		}
-		s := string(l.input[start:l.pos])
-		if l.pos < len(l.input) {
-			l.next() // closing "
-		}
-		return l.tok(token.STRING, s, line, col)
+		return l.tok(token.STRING, string(buf), line, col)
 	default:
 		if isLetter(r) {
 			start := l.pos - 1

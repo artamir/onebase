@@ -295,6 +295,14 @@ var builtins = map[string]func(args []any, file string, line int) (any, error){
 	"Мин": func(args []any, file string, line int) (any, error) {
 		return math.Min(floatArg(args, 0), floatArg(args, 1)), nil
 	},
+
+	// ─── JSON ─────────────────────────────────────────────────────────────
+	// ПрочитатьJSON(s) / ReadJSON(s) — JSON-строка → Соответствие / Массив / примитив
+	"ПрочитатьJSON": builtinReadJSON,
+	"ReadJSON":       builtinReadJSON,
+	// ЗаписатьJSON(v) / WriteJSON(v) — Соответствие / Массив / примитив → JSON-строка
+	"ЗаписатьJSON": builtinWriteJSON,
+	"WriteJSON":     builtinWriteJSON,
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
