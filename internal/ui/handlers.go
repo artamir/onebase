@@ -1043,10 +1043,13 @@ func (s *Server) buildDSLVars(ctx context.Context, mc *runtime.MovementsCollecto
 	if vals, err := s.store.ListConstants(ctx); err == nil {
 		constsMap = vals
 	}
+	queryFactory := interpreter.NewQueryFactory(ctx, s.store, s.reg)
 	return map[string]any{
-		"Движения":     mc,
-		"Перечисления": &interpreter.MapThis{M: enumsMap},
-		"Константы":    &interpreter.MapThis{M: constsMap},
+		"Движения":          mc,
+		"Перечисления":      &interpreter.MapThis{M: enumsMap},
+		"Константы":         &interpreter.MapThis{M: constsMap},
+		"__factory_Запрос":  queryFactory,
+		"__factory_Query":   queryFactory,
 	}
 }
 

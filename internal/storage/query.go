@@ -5,6 +5,12 @@ import (
 	"fmt"
 )
 
+// QueryAll executes a compiled SQL query and returns rows (without column names).
+func (db *DB) QueryAll(ctx context.Context, sql string, args ...any) ([]map[string]any, error) {
+	rows, _, err := db.RunQuery(ctx, sql, args)
+	return rows, err
+}
+
 // RunQuery executes a compiled SQL query and returns rows with column names.
 func (db *DB) RunQuery(ctx context.Context, sql string, args []any) ([]map[string]any, []string, error) {
 	rows, err := db.pool.Query(ctx, sql, args...)

@@ -219,6 +219,7 @@ func (i *Interpreter) evalExpr(expr ast.Expr, e *env) any {
 
 func (i *Interpreter) evalNew(n *ast.NewExpr, e *env) any {
 	args := i.evalArgs(n.Args, e)
+	// Встроенные типы коллекций
 	switch n.TypeName.Literal {
 	case "Массив", "Array":
 		return &Array{}
@@ -227,7 +228,13 @@ func (i *Interpreter) evalNew(n *ast.NewExpr, e *env) any {
 	case "Структура", "Structure":
 		return newStruct(args)
 	}
-	return nil
+	// Расширяемые типы через env: "__factory_<ИмяТипа>"
+	if factory, ok := e.get("__factory_" + n.TypeName.Literal); ok {
+		if fn, ok := factory.(func([]any) any); ok {
+			return fn(args)
+		}
+	}
+	panic(userError{Msg: "Новый: неизвестный тип " + n.TypeName.Literal})
 }
 
 func (i *Interpreter) evalUnary(u *ast.UnaryExpr, e *env) any {
