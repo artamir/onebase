@@ -52,6 +52,19 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	params := parseListParams(r, entity)
+
+	var breadcrumbs []map[string]string
+	var parentStr string
+	if entity.Hierarchical {
+		parentStr = r.URL.Query().Get("parent")
+		if parentStr == "" {
+			params.ParentStr = "root"
+		} else {
+			params.ParentStr = parentStr
+			breadcrumbs = s.buildHierarchyBreadcrumbs(r.Context(), entity, parentStr)
+		}
+	}
+
 	rows, err := s.store.List(r.Context(), entity.Name, entity, params)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
@@ -70,6 +83,8 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 		"Params":           params,
 		"RefFilterOptions": refFilterOptions,
 		"IsAdmin":          isAdmin,
+		"Breadcrumbs":      breadcrumbs,
+		"ParentStr":        parentStr,
 	})
 }
 
@@ -91,6 +106,16 @@ func (s *Server) form(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	var folderOpts []map[string]any
+	if entity.Hierarchical {
+		folderOpts = s.loadFolderOptions(r.Context(), entity)
+		values["parent_id"] = r.URL.Query().Get("parent")
+		if r.URL.Query().Get("is_folder") == "true" {
+			values["is_folder"] = "true"
+		} else {
+			values["is_folder"] = "false"
+		}
+	}
 	s.render(w, r, "page-form", map[string]any{
 		"Entity":        entity,
 		"IsNew":         true,
@@ -99,6 +124,7 @@ func (s *Server) form(w http.ResponseWriter, r *http.Request) {
 		"EnumOptions":   enumOpts,
 		"TPRefOptions":  tpRefOpts,
 		"TablePartRows": map[string][]map[string]any{},
+		"FolderOptions": folderOpts,
 	})
 }
 
@@ -113,6 +139,11 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request) {
 	}
 	fields := formToFields(r, entity)
 	tpRows := parseTablePartRows(r, entity)
+
+	if entity.Hierarchical {
+		fields["parent_id"] = r.FormValue("parent_id")
+		fields["is_folder"] = r.FormValue("is_folder") == "true"
+	}
 
 	obj := runtime.NewObject(entity.Name, entity.Kind)
 	for k, v := range fields {
@@ -147,6 +178,10 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request) {
 	if dslErrMsg != "" {
 		refOptions, _ := s.loadRefOptions(r.Context(), entity)
 		tpRefOpts, _ := s.loadTPRefOptions(r.Context(), entity)
+		var fOpts []map[string]any
+		if entity.Hierarchical {
+			fOpts = s.loadFolderOptions(r.Context(), entity)
+		}
 		s.render(w, r, "page-form", map[string]any{
 			"Entity":        entity,
 			"IsNew":         true,
@@ -156,6 +191,7 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request) {
 			"EnumOptions":   s.loadEnumOptions(entity),
 			"TPRefOptions":  tpRefOpts,
 			"TablePartRows": tpRows,
+			"FolderOptions": fOpts,
 		})
 		return
 	}
@@ -235,6 +271,19 @@ func (s *Server) formEdit(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var folderOptsEdit []map[string]any
+	if entity.Hierarchical {
+		folderOptsEdit = s.loadFolderOptions(r.Context(), entity)
+		if v, ok := row["is_folder"]; ok {
+			vals["is_folder"] = fmt.Sprintf("%v", v)
+		} else {
+			vals["is_folder"] = "false"
+		}
+		if v, ok := row["parent_id"]; ok && v != nil {
+			vals["parent_id"] = fmt.Sprintf("%v", v)
+		}
+	}
+
 	editUser := auth.UserFromContext(r.Context())
 	editIsAdmin := editUser == nil || editUser.IsAdmin
 
@@ -249,6 +298,7 @@ func (s *Server) formEdit(w http.ResponseWriter, r *http.Request) {
 		"ID":            id.String(),
 		"IsAdmin":       editIsAdmin,
 		"PrintForms":    s.reg.GetPrintForms(entity.Name),
+		"FolderOptions": folderOptsEdit,
 	})
 }
 
@@ -268,6 +318,11 @@ func (s *Server) submitEdit(w http.ResponseWriter, r *http.Request) {
 	}
 	fields := formToFields(r, entity)
 	tpRows := parseTablePartRows(r, entity)
+
+	if entity.Hierarchical {
+		fields["parent_id"] = r.FormValue("parent_id")
+		fields["is_folder"] = r.FormValue("is_folder") == "true"
+	}
 
 	obj := &runtime.Object{
 		Type:          entity.Name,
@@ -801,11 +856,12 @@ func (s *Server) processorRun(w http.ResponseWriter, r *http.Request) {
 	})
 
 	paramsThis := &interpreter.MapThis{M: paramValues}
-	err := s.interp.Run(procDecl, paramsThis, map[string]any{
-		"Параметры": paramsThis,
-		"Сообщить":  msgFunc,
-		"Message":   msgFunc,
-	})
+	mc := runtime.NewMovementsCollector("processor", uuid.Nil)
+	dslVars := s.buildDSLVars(r.Context(), mc)
+	dslVars["Параметры"] = paramsThis
+	dslVars["Сообщить"] = msgFunc
+	dslVars["Message"] = msgFunc
+	err := s.interp.Run(procDecl, paramsThis, dslVars)
 
 	var runErr string
 	if err != nil {
@@ -1417,6 +1473,46 @@ func (s *Server) buildPrintRefs(ctx context.Context, row map[string]any, entity 
 	}
 	// also resolve refs in table part rows
 	return refs
+}
+
+// buildHierarchyBreadcrumbs returns the ancestor chain from root to parentID (inclusive).
+func (s *Server) buildHierarchyBreadcrumbs(ctx context.Context, entity *metadata.Entity, parentID string) []map[string]string {
+	id, err := uuid.Parse(parentID)
+	if err != nil {
+		return nil
+	}
+	chain, err := s.store.GetAncestorIDs(ctx, metadata.TableName(entity.Name), id)
+	if err != nil {
+		return nil
+	}
+	var crumbs []map[string]string
+	for _, ancestorID := range chain {
+		row, err := s.store.GetByID(ctx, entity.Name, ancestorID, entity)
+		if err != nil {
+			continue
+		}
+		crumbs = append(crumbs, map[string]string{
+			"ID":    ancestorID.String(),
+			"Label": firstStringField(row, entity),
+		})
+	}
+	return crumbs
+}
+
+// loadFolderOptions returns all folder items for a hierarchical catalog (for parent select).
+func (s *Server) loadFolderOptions(ctx context.Context, entity *metadata.Entity) []map[string]any {
+	rows, err := s.store.List(ctx, entity.Name, entity, storage.ListParams{})
+	if err != nil {
+		return nil
+	}
+	var folders []map[string]any
+	for _, row := range rows {
+		if isFolder, ok := row["is_folder"].(bool); ok && isFolder {
+			row["_label"] = firstStringField(row, entity)
+			folders = append(folders, row)
+		}
+	}
+	return folders
 }
 
 func listURL(entity *metadata.Entity) string {

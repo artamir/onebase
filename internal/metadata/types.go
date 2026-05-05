@@ -65,9 +65,11 @@ type Entity struct {
 	TableParts []TablePart
 	// Posting enables 1C-style posting semantics: movements are written only
 	// when the document is explicitly posted, not on every save.
-	Posting    bool
-	Numerator  *Numerator        // nil if auto-numbering is disabled
-	Predefined []*PredefinedItem // nil for most entities; populated from YAML
+	Posting       bool
+	Numerator     *Numerator        // nil if auto-numbering is disabled
+	Predefined    []*PredefinedItem // nil for most entities; populated from YAML
+	Hierarchical  bool              // catalog with parent_id / is_folder tree support
+	HierarchyKind string            // "folders_and_items" (default) | "items_only"
 }
 
 type Register struct {

@@ -12,9 +12,10 @@ import (
 
 // ListParams controls filtering and sorting for List queries.
 type ListParams struct {
-	Filters map[string]FilterValue
-	Sort    string // field Name (empty = default sort by id)
-	Dir     string // "asc" or "desc"
+	Filters   map[string]FilterValue
+	Sort      string // field Name (empty = default sort by id)
+	Dir       string // "asc" or "desc"
+	ParentStr string // "" = no filter; "root" = parent IS NULL; "<uuid>" = parent = uuid
 }
 
 // FilterValue holds a filter for one field.
@@ -41,14 +42,54 @@ func (db *DB) Upsert(ctx context.Context, entityName string, id uuid.UUID, field
 	args := []any{id}
 	updates := []string{}
 
-	for i, f := range entity.Fields {
+	argIdx := 2
+	for _, f := range entity.Fields {
 		col := metadata.ColumnName(f)
-		ph := fmt.Sprintf("$%d", i+2)
+		ph := fmt.Sprintf("$%d", argIdx)
+		argIdx++
 		cols = append(cols, col)
 		placeholders = append(placeholders, ph)
 		args = append(args, fieldValue(f, fields))
 		updates = append(updates, col+" = EXCLUDED."+col)
 	}
+
+	if entity.Hierarchical {
+		parentIDStr := ""
+		if v := fields["parent_id"]; v != nil {
+			parentIDStr = fmt.Sprintf("%v", v)
+		}
+		if pID, err := uuid.Parse(parentIDStr); err == nil {
+			if pID != id {
+				if cycle, _ := db.WouldCycle(ctx, table, id, pID); cycle {
+					return fmt.Errorf("нельзя переместить группу в её подчинённую группу")
+				}
+			}
+			cols = append(cols, "parent_id")
+			placeholders = append(placeholders, fmt.Sprintf("$%d", argIdx))
+			args = append(args, pID)
+			argIdx++
+			updates = append(updates, "parent_id = EXCLUDED.parent_id")
+		} else {
+			cols = append(cols, "parent_id")
+			placeholders = append(placeholders, "NULL")
+			updates = append(updates, "parent_id = NULL")
+		}
+		isFolder := false
+		if v := fields["is_folder"]; v != nil {
+			switch tv := v.(type) {
+			case bool:
+				isFolder = tv
+			case string:
+				isFolder = tv == "true"
+			}
+		}
+		cols = append(cols, "is_folder")
+		placeholders = append(placeholders, fmt.Sprintf("$%d", argIdx))
+		args = append(args, isFolder)
+		argIdx++
+		updates = append(updates, "is_folder = EXCLUDED.is_folder")
+	}
+	_ = argIdx
 
 	var sql string
 	if len(updates) == 0 {
@@ -87,6 +128,9 @@ func (db *DB) GetByID(ctx context.Context, entityName string, id uuid.UUID, enti
 		cols = append(cols, "posted")
 	}
 	cols = append(cols, "deletion_mark")
+	if entity.Hierarchical {
+		cols = append(cols, "is_folder", "parent_id")
+	}
 	sql := fmt.Sprintf("SELECT %s FROM %s WHERE id = $1", strings.Join(cols, ", "), table)
 	row := db.q(ctx).QueryRow(ctx, sql, id)
 
@@ -110,6 +154,12 @@ func (db *DB) GetByID(ctx context.Context, entityName string, id uuid.UUID, enti
 		off++
 	}
 	result["deletion_mark"] = normalizeValue(dest[off])
+	off++
+	if entity.Hierarchical {
+		result["is_folder"] = normalizeValue(dest[off])
+		off++
+		result["parent_id"] = normalizeValue(dest[off])
+	}
 	return result, nil
 }
 
@@ -154,10 +204,24 @@ func (db *DB) List(ctx context.Context, entityName string, entity *metadata.Enti
 	if hasPredefined {
 		cols = append(cols, "_is_predefined")
 	}
+	if entity.Hierarchical {
+		cols = append(cols, "is_folder", "parent_id")
+	}
 
 	var whereParts []string
 	var args []any
 	argIdx := 1
+
+	// Parent filter for hierarchical catalogs
+	if entity.Hierarchical && params.ParentStr != "" {
+		if params.ParentStr == "root" {
+			whereParts = append(whereParts, "parent_id IS NULL")
+		} else if pID, err := uuid.Parse(params.ParentStr); err == nil {
+			whereParts = append(whereParts, fmt.Sprintf("parent_id = $%d", argIdx))
+			args = append(args, pID)
+			argIdx++
+		}
+	}
 
 	for _, f := range entity.Fields {
 		fv, ok := params.Filters[f.Name]
@@ -202,20 +266,31 @@ func (db *DB) List(ctx context.Context, entityName string, entity *metadata.Enti
 	}
 
 	// sorting
-	orderCol := "id"
-	if params.Sort != "" {
+	if entity.Hierarchical && params.Sort == "" {
+		firstStrCol := "id"
 		for _, f := range entity.Fields {
-			if f.Name == params.Sort {
-				orderCol = metadata.ColumnName(f)
+			if f.Type == metadata.FieldTypeString {
+				firstStrCol = metadata.ColumnName(f)
 				break
 			}
 		}
+		query += fmt.Sprintf(" ORDER BY is_folder DESC, %s ASC", firstStrCol)
+	} else {
+		orderCol := "id"
+		if params.Sort != "" {
+			for _, f := range entity.Fields {
+				if f.Name == params.Sort {
+					orderCol = metadata.ColumnName(f)
+					break
+				}
+			}
+		}
+		orderDir := "ASC"
+		if strings.ToLower(params.Dir) == "desc" {
+			orderDir = "DESC"
+		}
+		query += fmt.Sprintf(" ORDER BY %s %s", orderCol, orderDir)
 	}
-	orderDir := "ASC"
-	if strings.ToLower(params.Dir) == "desc" {
-		orderDir = "DESC"
-	}
-	query += fmt.Sprintf(" ORDER BY %s %s", orderCol, orderDir)
 
 	rows, err := db.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -247,6 +322,13 @@ func (db *DB) List(ctx context.Context, entityName string, entity *metadata.Enti
 		off++
 		if hasPredefined {
 			row["_is_predefined"] = normalizeValue(dest[off])
+			off++
+		}
+		if entity.Hierarchical {
+			row["is_folder"] = normalizeValue(dest[off])
+			off++
+			row["parent_id"] = normalizeValue(dest[off])
+			// off++
 		}
 		result = append(result, row)
 	}
@@ -323,6 +405,15 @@ func (db *DB) Delete(ctx context.Context, entityName string, id uuid.UUID) error
 		id,
 	).Scan(&isPredefined); err == nil && isPredefined {
 		return fmt.Errorf("нельзя удалить предопределённый элемент %s", entityName)
+	}
+
+	// For hierarchical catalogs, prevent deleting non-empty folders
+	var childCount int
+	if err := db.pool.QueryRow(ctx,
+		fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE parent_id = $1 AND deletion_mark = FALSE", metadata.TableName(entityName)),
+		id,
+	).Scan(&childCount); err == nil && childCount > 0 {
+		return fmt.Errorf("нельзя удалить группу: в ней есть элементы (%d шт.)", childCount)
 	}
 
 	err := db.exec(ctx,

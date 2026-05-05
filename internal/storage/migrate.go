@@ -138,6 +138,14 @@ func (db *DB) Migrate(ctx context.Context, entities []*metadata.Entity) error {
 		if _, err := db.pool.Exec(ctx, AddColumnSQL(table, "deletion_mark", "BOOLEAN NOT NULL DEFAULT FALSE")); err != nil {
 			return fmt.Errorf("migrate %s.deletion_mark: %w", e.Name, err)
 		}
+		// hierarchy support (parent_id + is_folder)
+		if e.Hierarchical {
+			for _, sql := range HierarchyColumnsSQL(table) {
+				if _, err := db.pool.Exec(ctx, sql); err != nil {
+					return fmt.Errorf("migrate %s hierarchy: %w", e.Name, err)
+				}
+			}
+		}
 		// create tablepart tables
 		for _, tp := range e.TableParts {
 			tpSQL := CreateTablePartSQL(e, tp)

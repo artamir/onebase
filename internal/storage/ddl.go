@@ -109,6 +109,15 @@ func AddColumnSQL(table, col, pgtype string) string {
 	return "ALTER TABLE " + table + " ADD COLUMN IF NOT EXISTS " + col + " " + pgtype
 }
 
+// HierarchyColumnsSQL returns statements to add parent_id/is_folder columns and index.
+func HierarchyColumnsSQL(tableName string) []string {
+	return []string{
+		AddColumnSQL(tableName, "parent_id", "UUID"),
+		AddColumnSQL(tableName, "is_folder", "BOOLEAN NOT NULL DEFAULT FALSE"),
+		"CREATE INDEX IF NOT EXISTS idx_" + tableName + "_parent ON " + tableName + " (parent_id)",
+	}
+}
+
 func pgType(f metadata.Field) string {
 	if f.RefEntity != "" {
 		return "UUID"

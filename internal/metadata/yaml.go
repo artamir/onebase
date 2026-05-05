@@ -30,12 +30,14 @@ type rawPredefined struct {
 }
 
 type rawEntity struct {
-	Name       string          `yaml:"name"`
-	Fields     []rawField      `yaml:"fields"`
-	TableParts []rawTablePart  `yaml:"tableparts"`
-	Posting    bool            `yaml:"posting"`
-	Numerator  *rawNumerator   `yaml:"numerator"`
-	Predefined []rawPredefined `yaml:"predefined"`
+	Name          string          `yaml:"name"`
+	Fields        []rawField      `yaml:"fields"`
+	TableParts    []rawTablePart  `yaml:"tableparts"`
+	Posting       bool            `yaml:"posting"`
+	Numerator     *rawNumerator   `yaml:"numerator"`
+	Predefined    []rawPredefined `yaml:"predefined"`
+	Hierarchical  bool            `yaml:"hierarchical"`
+	HierarchyKind string          `yaml:"hierarchy_kind"`
 }
 
 func LoadFile(path string, kind Kind) (*Entity, error) {
@@ -50,7 +52,13 @@ func LoadFile(path string, kind Kind) (*Entity, error) {
 	if raw.Name == "" {
 		return nil, fmt.Errorf("%s: missing name", path)
 	}
-	e := &Entity{Name: raw.Name, Kind: kind, Posting: raw.Posting}
+	e := &Entity{Name: raw.Name, Kind: kind, Posting: raw.Posting, Hierarchical: raw.Hierarchical}
+	if raw.Hierarchical {
+		e.HierarchyKind = raw.HierarchyKind
+		if e.HierarchyKind == "" {
+			e.HierarchyKind = "folders_and_items"
+		}
+	}
 	if raw.Numerator != nil {
 		n := &Numerator{
 			Prefix: raw.Numerator.Prefix,

@@ -168,6 +168,9 @@ details[open] summary::before{content:"▼ "}
 .subsys-bar a{display:inline-block;padding:7px 18px;color:#94a3b8;text-decoration:none;font-size:13px;font-weight:500;border-bottom:3px solid transparent;transition:color .15s}
 .subsys-bar a:hover{color:#e2e8f0;background:rgba(255,255,255,.04)}
 .subsys-bar a.active{color:#7dd3fc;border-bottom-color:#3b82f6}
+.breadcrumb{display:flex;align-items:center;gap:6px;font-size:13px;color:#64748b;margin-bottom:12px;max-width:900px;flex-wrap:wrap}
+.breadcrumb a{color:#3b82f6;text-decoration:none}.breadcrumb a:hover{text-decoration:underline}
+.breadcrumb span{color:#94a3b8;padding:0 2px}
 </style></head><body>
 {{end}}
 `
@@ -222,9 +225,20 @@ const tplList = `
 <div class="row-top">
   <h2>{{.Entity.Name}}</h2>
   <div style="display:flex;gap:8px">
-    <a class="btn btn-primary" href="/ui/{{lower (str .Entity.Kind)}}/{{lower .Entity.Name}}/new">+ Создать</a>
+    {{if .Entity.Hierarchical}}
+      <a class="btn btn-primary" href="/ui/{{lower (str .Entity.Kind)}}/{{lower .Entity.Name}}/new{{if .ParentStr}}?parent={{.ParentStr}}{{end}}">+ Элемент</a>
+      <a class="btn btn-secondary" href="/ui/{{lower (str .Entity.Kind)}}/{{lower .Entity.Name}}/new?is_folder=true{{if .ParentStr}}&parent={{.ParentStr}}{{end}}">📁 Группа</a>
+    {{else}}
+      <a class="btn btn-primary" href="/ui/{{lower (str .Entity.Kind)}}/{{lower .Entity.Name}}/new">+ Создать</a>
+    {{end}}
   </div>
 </div>
+{{if .Breadcrumbs}}
+<nav class="breadcrumb">
+  <a href="/ui/{{lower (str .Entity.Kind)}}/{{lower .Entity.Name}}{{if $.CurrentSubsystem}}?subsystem={{$.CurrentSubsystem}}{{end}}">Корень</a>
+  {{range .Breadcrumbs}}<span>›</span><a href="/ui/{{lower (str $.Entity.Kind)}}/{{lower $.Entity.Name}}?parent={{.ID}}{{if $.CurrentSubsystem}}&subsystem={{$.CurrentSubsystem}}{{end}}">{{.Label}}</a>{{end}}
+</nav>
+{{end}}
 
 {{$entity := .Entity}}{{$params := .Params}}{{$refOpts := .RefFilterOptions}}
 <details{{if hasFilter $params}} open{{end}}>
@@ -281,11 +295,13 @@ const tplList = `
   {{end}}
   <th style="width:90px"></th>
 </tr></thead><tbody>
-{{range .Rows}}{{$row := .}}
+{{range .Rows}}{{$row := .}}{{$isFolder := index $row "is_folder"}}
 <tr {{if index $row "deletion_mark"}}style="opacity:0.45;text-decoration:line-through;cursor:pointer"{{else}}style="cursor:pointer"{{end}}
   onclick="listRowClick(event,this)"
   oncontextmenu="listCtxMenu(event,this)"
   data-predefined="{{if index $row "_is_predefined"}}1{{end}}"
+  data-is-folder="{{if $isFolder}}1{{end}}"
+  data-folder-url="/ui/{{lower (str $.Entity.Kind)}}/{{lower $.Entity.Name}}?parent={{index $row "id"}}{{if $.CurrentSubsystem}}&subsystem={{$.CurrentSubsystem}}{{end}}"
   data-mark-url="/ui/{{lower (str $.Entity.Kind)}}/{{lower $.Entity.Name}}/{{index $row "id"}}/delete?mark=1"
   data-del-url="/ui/{{lower (str $.Entity.Kind)}}/{{lower $.Entity.Name}}/{{index $row "id"}}/delete"
   data-open-url="/ui/{{lower (str $.Entity.Kind)}}/{{lower $.Entity.Name}}/{{index $row "id"}}">
@@ -296,9 +312,15 @@ const tplList = `
   {{end}}
   {{range $.Entity.Fields}}
     {{if eq (str .Type) "date"}}<td>{{fmtDate (index $row .Name)}}</td>
-    {{else}}<td>{{index $row .Name}}{{if and (eq .Name "Наименование") (index $row "_is_predefined")}} <span title="Предопределённый элемент" style="color:#f59e0b;font-size:11px">★</span>{{end}}</td>{{end}}
+    {{else}}<td>{{if and (eq .Name "Наименование") $.Entity.Hierarchical}}{{if $isFolder}}📁 {{else}}📄 {{end}}{{end}}{{index $row .Name}}{{if and (eq .Name "Наименование") (index $row "_is_predefined")}} <span title="Предопределённый элемент" style="color:#f59e0b;font-size:11px">★</span>{{end}}</td>{{end}}
   {{end}}
-  <td><a class="btn btn-sm btn-primary" href="/ui/{{lower (str $.Entity.Kind)}}/{{lower $.Entity.Name}}/{{index $row "id"}}">Открыть</a></td>
+  <td>
+    {{if and $isFolder $.Entity.Hierarchical}}
+      <a class="btn btn-sm btn-secondary" href="/ui/{{lower (str $.Entity.Kind)}}/{{lower $.Entity.Name}}?parent={{index $row "id"}}{{if $.CurrentSubsystem}}&subsystem={{$.CurrentSubsystem}}{{end}}">▶ Войти</a>
+    {{else}}
+      <a class="btn btn-sm btn-primary" href="/ui/{{lower (str $.Entity.Kind)}}/{{lower $.Entity.Name}}/{{index $row "id"}}">Открыть</a>
+    {{end}}
+  </td>
 </tr>{{end}}
 </tbody></table>
 {{else}}
@@ -324,7 +346,14 @@ function listCtxMenu(e,tr){
   m.style.cssText='position:fixed;z-index:999;background:#fff;border:1px solid #c8d0de;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.18);padding:4px 0;min-width:190px;font-size:13px';
   m.style.left=e.clientX+'px';m.style.top=e.clientY+'px';
   var isPredefined=tr.dataset.predefined==='1';
-  var items=[{label:'Открыть',fn:function(){window.location.href=tr.dataset.openUrl;}}];
+  var isFolder=tr.dataset.isFolder==='1';
+  var items=[];
+  if(isFolder){
+    items.push({label:'▶ Войти в группу',fn:function(){window.location.href=tr.dataset.folderUrl;}});
+    items.push({label:'Редактировать',fn:function(){window.location.href=tr.dataset.openUrl;}});
+  } else {
+    items.push({label:'Открыть',fn:function(){window.location.href=tr.dataset.openUrl;}});
+  }
   if(!isPredefined)items.push({label:'Пометить на удаление',danger:true,fn:function(){listSubmit(tr.dataset.markUrl,'Пометить на удаление?');}});
   else items.push({label:'Предопределённый — нельзя удалить',disabled:true});
   if(_isAdmin&&!isPredefined)items.push({label:'Удалить навсегда',danger:true,fn:function(){listSubmit(tr.dataset.delUrl,'Удалить запись навсегда?');}});
@@ -369,6 +398,24 @@ const tplForm = `
 {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
 <div class="card">
 <form method="POST">
+{{if .Entity.Hierarchical}}
+<div class="form-group">
+  <label>Тип</label>
+  <select name="is_folder">
+    <option value="false" {{if ne (index $.Values "is_folder") "true"}}selected{{end}}>Элемент</option>
+    <option value="true" {{if eq (index $.Values "is_folder") "true"}}selected{{end}}>Группа</option>
+  </select>
+</div>
+<div class="form-group">
+  <label>Родительская группа</label>
+  <select name="parent_id">
+    <option value="">— корень —</option>
+    {{range .FolderOptions}}
+    <option value="{{index . "id"}}" {{if eq (index . "id") (index $.Values "parent_id")}}selected{{end}}>{{index . "_label"}}</option>
+    {{end}}
+  </select>
+</div>
+{{end}}
 {{range .Entity.Fields}}{{$fn := .Name}}
 <div class="form-group">
   <label>{{$fn}}</label>

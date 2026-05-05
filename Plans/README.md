@@ -20,6 +20,7 @@
 | 09 | [09-predefined-items.md](09-predefined-items.md) | Предопределённые элементы справочников | ✅ Реализовано |
 | 10 | [10-subsystems.md](10-subsystems.md) | Подсистемы (разделы навигации) | ✅ Реализовано |
 | 08 | [08-document-journal.md](08-document-journal.md) | Журнал документов | ✅ Реализовано |
+| 06 | [06-hierarchical-catalogs.md](06-hierarchical-catalogs.md) | Иерархические справочники | ✅ Реализовано |
 
 ## Планы развития (roadmap)
 
@@ -27,7 +28,7 @@
 
 | № | Файл | Фича | Эстимейт | Зависимости |
 |---|---|---|---|---|
-| 06 | [06-hierarchical-catalogs.md](06-hierarchical-catalogs.md) | Иерархические справочники | 5–6 дней | — |
+| ~~06~~ | ~~[06-hierarchical-catalogs.md](06-hierarchical-catalogs.md)~~ | ~~Иерархические справочники~~ | ~~5–6 дней~~ | ✅ |
 | ~~07~~ | ~~[07-numerator.md](07-numerator.md)~~ | ~~Автонумерация документов~~ | ~~3 дня~~ | ✅ |
 | ~~08~~ | ~~[08-document-journal.md](08-document-journal.md)~~ | ~~Журнал документов~~ | ~~3–4 дня~~ | ✅ |
 | ~~09~~ | ~~[09-predefined-items.md](09-predefined-items.md)~~ | ~~Предопределённые элементы справочников~~ | ~~2–3 дня~~ | ✅ |

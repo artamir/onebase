@@ -1,4 +1,5 @@
 name: Номенклатура
+hierarchical: true
 fields:
   - name: Наименование
     type: string
