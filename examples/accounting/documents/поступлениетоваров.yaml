@@ -1,0 +1,13 @@
+name: ПоступлениеТоваров
+numerator:
+  prefix: "ПОС-"
+  length: 5
+  period: year
+fields:
+  - name: Дата
+    type: date
+  - name: Поставщик
+    type: reference:Контрагент
+  - name: СуммаДокумента
+    type: number
+posting: true

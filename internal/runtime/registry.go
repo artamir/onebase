@@ -12,36 +12,40 @@ import (
 )
 
 type Registry struct {
-	mu          sync.RWMutex
-	entities    map[string]*metadata.Entity
-	entitySlug  map[string]*metadata.Entity // lowercase name → entity
-	registers   map[string]*metadata.Register
-	inforegs    map[string]*metadata.InfoRegister
-	enums       map[string]*metadata.Enum
-	constants   map[string]*metadata.Constant
-	reports     map[string]*report.Report
-	printForms  map[string][]*printform.PrintForm // lowercase entity name → forms
-	procs       map[string]map[string]*ast.ProcedureDecl
-	moduleProcs map[string]*ast.ProcedureDecl // flat: proc name → decl
-	processors  map[string]*processor.Processor
-	subsystems  []*metadata.Subsystem // sorted by Order
-	journals    map[string]*metadata.Journal
+	mu              sync.RWMutex
+	entities        map[string]*metadata.Entity
+	entitySlug      map[string]*metadata.Entity // lowercase name → entity
+	registers       map[string]*metadata.Register
+	inforegs        map[string]*metadata.InfoRegister
+	enums           map[string]*metadata.Enum
+	constants       map[string]*metadata.Constant
+	reports         map[string]*report.Report
+	printForms      map[string][]*printform.PrintForm // lowercase entity name → forms
+	procs           map[string]map[string]*ast.ProcedureDecl
+	moduleProcs     map[string]*ast.ProcedureDecl // flat: proc name → decl
+	processors      map[string]*processor.Processor
+	subsystems      []*metadata.Subsystem // sorted by Order
+	journals        map[string]*metadata.Journal
+	accountRegs     map[string]*metadata.AccountRegister
+	chartsOfAccount map[string]*metadata.ChartOfAccounts
 }
 
 func NewRegistry() *Registry {
 	return &Registry{
-		entities:    make(map[string]*metadata.Entity),
-		entitySlug:  make(map[string]*metadata.Entity),
-		registers:   make(map[string]*metadata.Register),
-		inforegs:    make(map[string]*metadata.InfoRegister),
-		enums:       make(map[string]*metadata.Enum),
-		constants:   make(map[string]*metadata.Constant),
-		reports:     make(map[string]*report.Report),
-		printForms:  make(map[string][]*printform.PrintForm),
-		procs:       make(map[string]map[string]*ast.ProcedureDecl),
-		moduleProcs: make(map[string]*ast.ProcedureDecl),
-		processors:  make(map[string]*processor.Processor),
-		journals:    make(map[string]*metadata.Journal),
+		entities:        make(map[string]*metadata.Entity),
+		entitySlug:      make(map[string]*metadata.Entity),
+		registers:       make(map[string]*metadata.Register),
+		inforegs:        make(map[string]*metadata.InfoRegister),
+		enums:           make(map[string]*metadata.Enum),
+		constants:       make(map[string]*metadata.Constant),
+		reports:         make(map[string]*report.Report),
+		printForms:      make(map[string][]*printform.PrintForm),
+		procs:           make(map[string]map[string]*ast.ProcedureDecl),
+		moduleProcs:     make(map[string]*ast.ProcedureDecl),
+		processors:      make(map[string]*processor.Processor),
+		journals:        make(map[string]*metadata.Journal),
+		accountRegs:     make(map[string]*metadata.AccountRegister),
+		chartsOfAccount: make(map[string]*metadata.ChartOfAccounts),
 	}
 }
 
@@ -378,4 +382,51 @@ func (r *Registry) GetProcedure(entityName, procName string) *ast.ProcedureDecl 
 		return pm[ru]
 	}
 	return nil
+}
+
+func (r *Registry) LoadAccountRegisters(regs []*metadata.AccountRegister, charts []*metadata.ChartOfAccounts) {
+	newRegs := make(map[string]*metadata.AccountRegister, len(regs))
+	for _, ar := range regs {
+		newRegs[strings.ToLower(ar.Name)] = ar
+	}
+	newCharts := make(map[string]*metadata.ChartOfAccounts, len(charts))
+	for _, c := range charts {
+		newCharts[strings.ToLower(c.Name)] = c
+	}
+	r.mu.Lock()
+	r.accountRegs = newRegs
+	r.chartsOfAccount = newCharts
+	r.mu.Unlock()
+}
+
+func (r *Registry) GetAccountRegister(name string) *metadata.AccountRegister {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.accountRegs[strings.ToLower(name)]
+}
+
+func (r *Registry) AccountRegisters() []*metadata.AccountRegister {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]*metadata.AccountRegister, 0, len(r.accountRegs))
+	for _, ar := range r.accountRegs {
+		out = append(out, ar)
+	}
+	return out
+}
+
+func (r *Registry) GetChartOfAccounts(name string) *metadata.ChartOfAccounts {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.chartsOfAccount[strings.ToLower(name)]
+}
+
+func (r *Registry) ChartsOfAccounts() []*metadata.ChartOfAccounts {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]*metadata.ChartOfAccounts, 0, len(r.chartsOfAccount))
+	for _, c := range r.chartsOfAccount {
+		out = append(out, c)
+	}
+	return out
 }

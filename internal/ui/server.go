@@ -93,6 +93,11 @@ func (s *Server) Mount(r chi.Router) {
 	r.Get("/ui/admin/scheduled/{name}", s.scheduledDetail)
 	r.Post("/ui/admin/scheduled/{name}/run-now", s.scheduledRunNow)
 
+	// Account registers
+	r.Get("/ui/accounts/{plan}", s.accountsList)
+	r.Get("/ui/accountreg/{name}", s.accountRegMovements)
+	r.Get("/ui/accountreg/{name}/balances", s.accountRegBalances)
+
 	// Constants
 	r.Get("/ui/constants", s.constantsList)
 	r.Post("/ui/constants", s.constantsSave)

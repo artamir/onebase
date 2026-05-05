@@ -18,6 +18,7 @@ type QueryDB interface {
 type QueryRegistry interface {
 	Registers() []*metadata.Register
 	InfoRegisters() []*metadata.InfoRegister
+	AccountRegisters() []*metadata.AccountRegister
 }
 
 // queryProxy реализует DSL-объект Новый Запрос.
@@ -81,9 +82,10 @@ func (q *queryProxy) execute() *Array {
 		panic(userError{Msg: "Запрос.Текст не задан"})
 	}
 	res, err := query.Compile(q.text, query.CompileOpts{
-		Params:    q.params,
-		Registers: q.reg.Registers(),
-		InfoRegs:  q.reg.InfoRegisters(),
+		Params:      q.params,
+		Registers:   q.reg.Registers(),
+		InfoRegs:    q.reg.InfoRegisters(),
+		AccountRegs: q.reg.AccountRegisters(),
 	})
 	if err != nil {
 		panic(userError{Msg: "Ошибка запроса: " + err.Error()})

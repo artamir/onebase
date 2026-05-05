@@ -1,0 +1,13 @@
+name: РеализацияТоваров
+numerator:
+  prefix: "РЕА-"
+  length: 5
+  period: year
+fields:
+  - name: Дата
+    type: date
+  - name: Покупатель
+    type: reference:Контрагент
+  - name: СуммаДокумента
+    type: number
+posting: true

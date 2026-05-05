@@ -92,12 +92,23 @@ func runServer(cmd *cobra.Command, _ []string) error {
 		_ = authRepo.SyncRoles(ctx, roles)
 	}
 
+	if err := db.EnsureAccountsTable(ctx); err != nil {
+		return fmt.Errorf("accounts table: %w", err)
+	}
+	if err := db.SyncAccounts(ctx, proj.ChartsOfAccounts); err != nil {
+		return fmt.Errorf("sync accounts: %w", err)
+	}
+	if err := db.MigrateAccountRegisters(ctx, proj.AccountRegisters); err != nil {
+		return fmt.Errorf("migrate account registers: %w", err)
+	}
+
 	reg := runtime.NewRegistry()
 	reg.Load(proj.Entities, proj.Programs, proj.Registers, proj.InfoRegisters, proj.Enums, proj.Constants, proj.Reports, proj.PrintForms)
 	reg.LoadModules(proj.Modules)
 	reg.LoadProcessors(proj.Processors)
 	reg.LoadSubsystems(proj.Subsystems)
 	reg.LoadJournals(proj.Journals)
+	reg.LoadAccountRegisters(proj.AccountRegisters, proj.ChartsOfAccounts)
 
 	appCfg, _ := project.LoadConfig(proj.Dir)
 	uiCfg := ui.Config{

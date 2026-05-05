@@ -101,7 +101,7 @@ var tmpl = template.Must(template.New("root").Funcs(template.FuncMap{
 		}
 		return template.JS(b)
 	},
-}).Parse(tplHead + tplNav + tplIndex + tplList + tplForm + tplRegister + tplReport + tplProcessor + tplAbout + tplDeleteMarked + tplInfoReg + tplConstants + tplHistory + tplJournal + tplScheduled))
+}).Parse(tplHead + tplNav + tplIndex + tplList + tplForm + tplRegister + tplReport + tplProcessor + tplAbout + tplDeleteMarked + tplInfoReg + tplConstants + tplHistory + tplJournal + tplScheduled + tplAccountReg))
 
 const tplHead = `
 {{define "head"}}<!DOCTYPE html>
@@ -1147,6 +1147,125 @@ const tplScheduled = `
 </tbody></table>
 {{else}}
 <p class="empty">Запусков ещё не было</p>
+{{end}}
+</div>
+</main></div></body></html>
+{{end}}
+`
+
+const tplAccountReg = `
+{{define "page-accounts"}}
+{{template "head" .}}{{template "nav" .}}
+<main>
+<div class="row-top">
+  <h2>{{.Chart.Title}}</h2>
+  <span style="color:#94a3b8;font-size:13px">{{len .Rows}} счетов</span>
+</div>
+<div class="card">
+{{if .Rows}}
+<table><thead><tr>
+  <th style="width:120px">Код</th>
+  <th>Наименование</th>
+  <th style="width:140px">Вид</th>
+  <th style="width:80px">Родитель</th>
+</tr></thead>
+<tbody>
+{{range .Rows}}
+<tr>
+  <td><code>{{index . "code"}}</code></td>
+  <td>{{index . "name"}}</td>
+  <td style="color:#64748b;font-size:13px">
+    {{if eq (str (index . "kind")) "active"}}активный
+    {{else if eq (str (index . "kind")) "passive"}}пассивный
+    {{else}}активно-пассивный{{end}}
+  </td>
+  <td style="color:#94a3b8;font-size:12px">{{index . "parent"}}</td>
+</tr>
+{{end}}
+</tbody></table>
+{{else}}
+<p class="empty">Счетов нет</p>
+{{end}}
+</div>
+</main></div></body></html>
+{{end}}
+
+{{define "page-accountreg-movements"}}
+{{template "head" .}}{{template "nav" .}}
+<main>
+<div class="row-top">
+  <h2>{{.Register.Title}} — Проводки</h2>
+  <a class="btn btn-secondary" href="/ui/accountreg/{{lower .Register.Name}}/balances">Остатки</a>
+</div>
+<div class="card">
+{{if .Rows}}
+<table><thead><tr>
+  <th>Период</th>
+  <th>Дт</th>
+  <th>Кт</th>
+  {{range .Register.Resources}}<th>{{.Name}}</th>{{end}}
+  <th>Регистратор</th>
+</tr></thead>
+<tbody>
+{{range .Rows}}
+<tr>
+  <td style="white-space:nowrap">{{fmtDate (index . "period")}}</td>
+  <td><code>{{index . "счётдт"}}</code></td>
+  <td><code>{{index . "счёткт"}}</code></td>
+  {{range $.Register.Resources}}<td>{{str (index $ (lower .Name))}}</td>{{end}}
+  <td style="color:#94a3b8;font-size:12px">{{index . "регистратор"}}</td>
+</tr>
+{{end}}
+</tbody></table>
+{{else}}
+<p class="empty">Проводок нет</p>
+{{end}}
+</div>
+</main></div></body></html>
+{{end}}
+
+{{define "page-accountreg-balances"}}
+{{template "head" .}}{{template "nav" .}}
+<main>
+<div class="row-top">
+  <h2>{{.Register.Title}} — Остатки по счетам</h2>
+  <div style="display:flex;gap:8px;align-items:center">
+    <form method="GET" style="display:flex;gap:8px;align-items:center">
+      <label style="color:#64748b;font-size:13px">На дату:</label>
+      <input type="date" name="date" value="{{.AsOf}}" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:4px">
+      <button class="btn btn-primary btn-sm" type="submit">Применить</button>
+    </form>
+    <a class="btn btn-secondary" href="/ui/accountreg/{{lower .Register.Name}}">Проводки</a>
+  </div>
+</div>
+<div class="card">
+{{if .Rows}}
+<table><thead><tr>
+  <th style="width:100px">Счёт</th>
+  <th>Наименование</th>
+  {{range .Register.Resources}}
+  <th style="text-align:right">{{.Name}} Дт</th>
+  <th style="text-align:right">{{.Name}} Кт</th>
+  <th style="text-align:right">Сальдо</th>
+  {{end}}
+</tr></thead>
+<tbody>
+{{range .Rows}}
+{{$row := .}}
+<tr>
+  <td><code>{{index . "code"}}</code></td>
+  <td>{{index . "name"}}</td>
+  {{range $.Register.Resources}}
+  {{$col := lower .Name}}
+  <td style="text-align:right;font-family:monospace">{{str (index $row (print $col "_дт"))}}</td>
+  <td style="text-align:right;font-family:monospace">{{str (index $row (print $col "_кт"))}}</td>
+  <td style="text-align:right;font-family:monospace;font-weight:600">{{str (index $row $col)}}</td>
+  {{end}}
+</tr>
+{{end}}
+</tbody></table>
+{{else}}
+<p class="empty">Нет движений на выбранную дату</p>
 {{end}}
 </div>
 </main></div></body></html>

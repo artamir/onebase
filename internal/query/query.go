@@ -12,9 +12,10 @@ import (
 // CompileOpts holds options for query compilation including register metadata
 // needed to resolve virtual table references (Остатки, Обороты, СрезПоследних, …).
 type CompileOpts struct {
-	Params    map[string]any
-	Registers []*metadata.Register
-	InfoRegs  []*metadata.InfoRegister
+	Params      map[string]any
+	Registers   []*metadata.Register
+	InfoRegs    []*metadata.InfoRegister
+	AccountRegs []*metadata.AccountRegister
 }
 
 // Result holds compiled PostgreSQL SQL and positional arguments.
@@ -157,6 +158,8 @@ var sourcePrefix = map[string]string{
 	"ACCUMULATIONREGISTER": "рег_",
 	"РЕГИСТРСВЕДЕНИЙ":      "инфо_",
 	"INFORMATIONREGISTER":  "инфо_",
+	"РЕГИСТРБУХГАЛТЕРИИ":   "акк_",
+	"ACCOUNTINGREGISTER":   "акк_",
 	"СПРАВОЧНИК":           "",
 	"CATALOG":              "",
 	"ДОКУМЕНТ":             "",
@@ -174,6 +177,10 @@ func isAccumRegType(upper string) bool {
 
 func isInfoRegType(upper string) bool {
 	return upper == "РЕГИСТРСВЕДЕНИЙ" || upper == "INFORMATIONREGISTER"
+}
+
+func isAccountRegType(upper string) bool {
+	return upper == "РЕГИСТРБУХГАЛТЕРИИ" || upper == "ACCOUNTINGREGISTER"
 }
 
 func sourceToTable(typeUpper, entityName string) string {
@@ -463,6 +470,124 @@ func (tr *translator) buildInfoVT(vtKind, regName string, args [][]tok) (subq, a
 		return tr.genFirstSlice(ir, args)
 	}
 	return "", "", fmt.Errorf("unknown information virtual table: %s", vtKind)
+}
+
+func (tr *translator) findAccountRegister(name string) *metadata.AccountRegister {
+	nl := strings.ToLower(name)
+	for _, r := range tr.opts.AccountRegs {
+		if strings.ToLower(r.Name) == nl {
+			return r
+		}
+	}
+	return nil
+}
+
+// buildAccountVT generates a SQL subquery for an accounting register virtual table.
+func (tr *translator) buildAccountVT(vtKind, regName string, args [][]tok) (subq, alias string, err error) {
+	ar := tr.findAccountRegister(regName)
+	if ar == nil {
+		return "", "", fmt.Errorf("accounting register %q not found; pass AccountRegs in CompileOpts", regName)
+	}
+	switch vtKind {
+	case "balances":
+		return tr.genAccountBalances(ar, args)
+	case "turnovers":
+		return tr.genAccountTurnovers(ar, args)
+	}
+	return "", "", fmt.Errorf("unknown accounting virtual table: %s", vtKind)
+}
+
+func (tr *translator) genAccountBalances(ar *metadata.AccountRegister, args [][]tok) (string, string, error) {
+	table := metadata.AccountRegTableName(ar.Name)
+	alias := "остатки_" + strings.ToLower(ar.Name)
+
+	var resCols []string
+	for _, r := range ar.Resources {
+		col := strings.ToLower(r.Name)
+		resCols = append(resCols,
+			"COALESCE(SUM(CASE WHEN r.счётдт = a.code THEN r."+col+" ELSE 0 END),0) AS "+col+"_дт",
+			"COALESCE(SUM(CASE WHEN r.счёткт = a.code THEN r."+col+" ELSE 0 END),0) AS "+col+"_кт",
+			"COALESCE(SUM(CASE WHEN r.счётдт = a.code THEN r."+col+" ELSE -r."+col+" END),0) AS "+col+"остаток",
+		)
+	}
+
+	selectList := "a.code AS счёт, a.name AS наименование"
+	if len(resCols) > 0 {
+		selectList += ", " + strings.Join(resCols, ", ")
+	}
+
+	var sb strings.Builder
+	sb.WriteString("SELECT ")
+	sb.WriteString(selectList)
+	sb.WriteString(" FROM _accounts a LEFT JOIN ")
+	sb.WriteString(table)
+	sb.WriteString(" r ON (r.счётдт = a.code OR r.счёткт = a.code)")
+
+	var conds []string
+	if len(args) > 0 && len(args[0]) > 0 {
+		if s := tr.translateFilterTokens(args[0]); s != "" && s != "NULL" {
+			conds = append(conds, "r.period <= "+s)
+		}
+	}
+	if len(conds) > 0 {
+		sb.WriteString(" AND ")
+		sb.WriteString(strings.Join(conds, " AND "))
+	}
+	if len(args) > 1 && len(args[1]) > 0 {
+		if s := tr.translateFilterTokens(args[1]); s != "" {
+			sb.WriteString(" WHERE (")
+			sb.WriteString(s)
+			sb.WriteString(")")
+		}
+	}
+	sb.WriteString(" GROUP BY a.code, a.name")
+
+	return sb.String(), alias, nil
+}
+
+func (tr *translator) genAccountTurnovers(ar *metadata.AccountRegister, args [][]tok) (string, string, error) {
+	table := metadata.AccountRegTableName(ar.Name)
+	alias := "обороты_" + strings.ToLower(ar.Name)
+
+	var resCols []string
+	for _, r := range ar.Resources {
+		col := strings.ToLower(r.Name)
+		resCols = append(resCols,
+			"COALESCE(SUM(CASE WHEN r.счётдт = a.code THEN r."+col+" ELSE 0 END),0) AS "+col+"_дт",
+			"COALESCE(SUM(CASE WHEN r.счёткт = a.code THEN r."+col+" ELSE 0 END),0) AS "+col+"_кт",
+		)
+	}
+
+	selectList := "a.code AS счёт, a.name AS наименование"
+	if len(resCols) > 0 {
+		selectList += ", " + strings.Join(resCols, ", ")
+	}
+
+	var sb strings.Builder
+	sb.WriteString("SELECT ")
+	sb.WriteString(selectList)
+	sb.WriteString(" FROM _accounts a LEFT JOIN ")
+	sb.WriteString(table)
+	sb.WriteString(" r ON (r.счётдт = a.code OR r.счёткт = a.code)")
+
+	var conds []string
+	if len(args) > 0 && len(args[0]) > 0 {
+		if s := tr.translateFilterTokens(args[0]); s != "" && s != "NULL" {
+			conds = append(conds, "r.period >= "+s)
+		}
+	}
+	if len(args) > 1 && len(args[1]) > 0 {
+		if s := tr.translateFilterTokens(args[1]); s != "" && s != "NULL" {
+			conds = append(conds, "r.period <= "+s)
+		}
+	}
+	if len(conds) > 0 {
+		sb.WriteString(" AND ")
+		sb.WriteString(strings.Join(conds, " AND "))
+	}
+	sb.WriteString(" GROUP BY a.code, a.name HAVING SUM(CASE WHEN r.id IS NOT NULL THEN 1 ELSE 0 END) > 0")
+
+	return sb.String(), alias, nil
 }
 
 func (tr *translator) genBalances(reg *metadata.Register, args [][]tok) (string, string, error) {
@@ -793,6 +918,22 @@ func translate(tokens []tok, opts CompileOpts) (Result, error) {
 					tr.advance() // (
 					vtArgs := tr.parseVTArgs()
 					subq, alias, err := tr.buildInfoVT(vtKind, regName, vtArgs)
+					if err != nil {
+						return Result{}, err
+					}
+					tr.emit("(" + subq + ") AS " + alias)
+					continue
+				}
+
+				if vtKind, ok := accumVTKinds[vt4Upper]; ok && isAccountRegType(upper) {
+					tr.advance() // TypeName
+					tr.advance() // .
+					regName := tr.advance().val
+					tr.advance() // .
+					tr.advance() // VTName
+					tr.advance() // (
+					vtArgs := tr.parseVTArgs()
+					subq, alias, err := tr.buildAccountVT(vtKind, regName, vtArgs)
 					if err != nil {
 						return Result{}, err
 					}

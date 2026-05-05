@@ -655,12 +655,20 @@ func (s *Server) deleteMarked(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) saveMovements(ctx context.Context, docType string, docID uuid.UUID, mc *runtime.MovementsCollector) error {
 	for regName, rows := range mc.All() {
+		// try accumulation register first
 		reg := s.reg.GetRegister(regName)
-		if reg == nil {
+		if reg != nil {
+			if err := s.store.WriteMovements(ctx, regName, docType, docID, rows, reg, mc.Period); err != nil {
+				return err
+			}
 			continue
 		}
-		if err := s.store.WriteMovements(ctx, regName, docType, docID, rows, reg, mc.Period); err != nil {
-			return err
+		// try account register
+		ar := s.reg.GetAccountRegister(regName)
+		if ar != nil {
+			if err := s.store.WriteAccountMovements(ctx, regName, docType, docID, rows, ar, mc.Period); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -785,9 +793,10 @@ func (s *Server) runReport(w http.ResponseWriter, r *http.Request, rep *reportpk
 		}
 	}
 	compiled, err := query.Compile(rep.Query, query.CompileOpts{
-		Params:    queryValues,
-		Registers: s.reg.Registers(),
-		InfoRegs:  s.reg.InfoRegisters(),
+		Params:      queryValues,
+		Registers:   s.reg.Registers(),
+		InfoRegs:    s.reg.InfoRegisters(),
+		AccountRegs: s.reg.AccountRegisters(),
 	})
 	if err != nil {
 		s.render(w, r, "page-report", map[string]any{

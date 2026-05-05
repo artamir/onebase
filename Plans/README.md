@@ -22,6 +22,7 @@
 | 08 | [08-document-journal.md](08-document-journal.md) | Журнал документов | ✅ Реализовано |
 | 06 | [06-hierarchical-catalogs.md](06-hierarchical-catalogs.md) | Иерархические справочники | ✅ Реализовано |
 | 17 | [17-scheduled-jobs.md](17-scheduled-jobs.md) | Фоновые / регламентные задания | ✅ Реализовано |
+| 11 | [11-account-register.md](11-account-register.md) | Регистр бухгалтерии (план счетов + проводки) | ✅ Реализовано |
 
 ## Планы развития (roadmap)
 
@@ -34,7 +35,7 @@
 | ~~08~~ | ~~[08-document-journal.md](08-document-journal.md)~~ | ~~Журнал документов~~ | ~~3–4 дня~~ | ✅ |
 | ~~09~~ | ~~[09-predefined-items.md](09-predefined-items.md)~~ | ~~Предопределённые элементы справочников~~ | ~~2–3 дня~~ | ✅ |
 | ~~10~~ | ~~[10-subsystems.md](10-subsystems.md)~~ | ~~Подсистемы (разделы навигации)~~ | ~~2–3 дня~~ | ✅ |
-| 11 | [11-account-register.md](11-account-register.md) | Регистр бухгалтерии (план счетов) | 8–10 дней | 05 |
+| ~~11~~ | ~~[11-account-register.md](11-account-register.md)~~ | ~~Регистр бухгалтерии (план счетов)~~ | ~~8–10 дней~~ | ✅ |
 
 ### Направление Б — расширение DSL
 

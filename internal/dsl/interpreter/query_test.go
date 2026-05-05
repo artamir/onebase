@@ -27,8 +27,9 @@ func (s *stubDB) QueryAll(_ context.Context, _ string, _ ...any) ([]map[string]a
 // stubReg — mock QueryRegistry.
 type stubReg struct{}
 
-func (s *stubReg) Registers() []*metadata.Register        { return nil }
-func (s *stubReg) InfoRegisters() []*metadata.InfoRegister { return nil }
+func (s *stubReg) Registers() []*metadata.Register               { return nil }
+func (s *stubReg) InfoRegisters() []*metadata.InfoRegister        { return nil }
+func (s *stubReg) AccountRegisters() []*metadata.AccountRegister  { return nil }
 
 func evalQuery(t *testing.T, src string, db interpreter.QueryDB, reg interpreter.QueryRegistry) any {
 	t.Helper()

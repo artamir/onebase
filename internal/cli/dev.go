@@ -106,6 +106,18 @@ func runDev(cmd *cobra.Command, _ []string) error {
 			fmt.Fprintln(os.Stderr, "[dev] migrate constants error:", err)
 			return
 		}
+		if err := db.EnsureAccountsTable(ctx); err != nil {
+			fmt.Fprintln(os.Stderr, "[dev] accounts table error:", err)
+			return
+		}
+		if err := db.SyncAccounts(ctx, proj.ChartsOfAccounts); err != nil {
+			fmt.Fprintln(os.Stderr, "[dev] sync accounts error:", err)
+			return
+		}
+		if err := db.MigrateAccountRegisters(ctx, proj.AccountRegisters); err != nil {
+			fmt.Fprintln(os.Stderr, "[dev] migrate account registers error:", err)
+			return
+		}
 		if roles, err2 := auth.LoadRolesYAML(proj.Dir + "/roles"); err2 == nil && len(roles) > 0 {
 			_ = authRepo.SyncRoles(ctx, roles)
 		}
@@ -114,6 +126,7 @@ func runDev(cmd *cobra.Command, _ []string) error {
 		reg.LoadProcessors(proj.Processors)
 		reg.LoadSubsystems(proj.Subsystems)
 		reg.LoadJournals(proj.Journals)
+		reg.LoadAccountRegisters(proj.AccountRegisters, proj.ChartsOfAccounts)
 		if loadErr := sched.Reload(proj.ScheduledJobs); loadErr != nil {
 			fmt.Fprintln(os.Stderr, "[dev] scheduler reload error:", loadErr)
 		}

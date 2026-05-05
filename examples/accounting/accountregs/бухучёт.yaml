@@ -1,0 +1,6 @@
+name: БухУчёт
+title: Бухгалтерский учёт
+accounts: Основной
+resources:
+  - name: Сумма
+    type: number

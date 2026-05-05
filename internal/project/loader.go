@@ -21,21 +21,23 @@ import (
 )
 
 type Project struct {
-	Dir           string
-	Entities      []*metadata.Entity
-	Registers     []*metadata.Register
-	InfoRegisters []*metadata.InfoRegister
-	Enums         []*metadata.Enum
-	Constants     []*metadata.Constant
-	Reports       []*report.Report
-	PrintForms    []*printform.PrintForm
-	Programs      map[string]*ast.Program  // entity name → parsed DSL
-	Processors    []*processor.Processor
-	Modules       map[string]*ast.Program  // module name → parsed procs
-	Subsystems    []*metadata.Subsystem
-	Journals      []*metadata.Journal
-	ScheduledJobs []*metadata.ScheduledJob
-	cleanup       func()
+	Dir              string
+	Entities         []*metadata.Entity
+	Registers        []*metadata.Register
+	InfoRegisters    []*metadata.InfoRegister
+	Enums            []*metadata.Enum
+	Constants        []*metadata.Constant
+	Reports          []*report.Report
+	PrintForms       []*printform.PrintForm
+	Programs         map[string]*ast.Program  // entity name → parsed DSL
+	Processors       []*processor.Processor
+	Modules          map[string]*ast.Program  // module name → parsed procs
+	Subsystems       []*metadata.Subsystem
+	Journals         []*metadata.Journal
+	ScheduledJobs    []*metadata.ScheduledJob
+	ChartsOfAccounts []*metadata.ChartOfAccounts
+	AccountRegisters []*metadata.AccountRegister
+	cleanup          func()
 }
 
 // Close releases resources (e.g., temp dirs) associated with this Project.
@@ -117,6 +119,12 @@ func Load(dir string) (*Project, error) {
 	if err := p.loadScheduled(); err != nil {
 		return nil, err
 	}
+	if err := p.loadAccounts(); err != nil {
+		return nil, err
+	}
+	if err := p.loadAccountRegs(); err != nil {
+		return nil, err
+	}
 	return p, nil
 }
 
@@ -153,6 +161,24 @@ func (p *Project) loadScheduled() error {
 		return fmt.Errorf("project: load scheduled: %w", err)
 	}
 	p.ScheduledJobs = jobs
+	return nil
+}
+
+func (p *Project) loadAccounts() error {
+	charts, err := metadata.LoadChartOfAccountsDir(filepath.Join(p.Dir, "accounts"))
+	if err != nil {
+		return fmt.Errorf("project: load accounts: %w", err)
+	}
+	p.ChartsOfAccounts = charts
+	return nil
+}
+
+func (p *Project) loadAccountRegs() error {
+	regs, err := metadata.LoadAccountRegisterDir(filepath.Join(p.Dir, "accountregs"))
+	if err != nil {
+		return fmt.Errorf("project: load account registers: %w", err)
+	}
+	p.AccountRegisters = regs
 	return nil
 }
 
