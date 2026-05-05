@@ -9,6 +9,7 @@ import (
 	"github.com/ivantit66/onebase/internal/dsl/interpreter"
 	"github.com/ivantit66/onebase/internal/metadata"
 	"github.com/ivantit66/onebase/internal/runtime"
+	"github.com/ivantit66/onebase/internal/scheduler"
 	"github.com/ivantit66/onebase/internal/storage"
 )
 
@@ -26,14 +27,11 @@ type Server struct {
 	interp   *interpreter.Interpreter
 	authRepo *auth.Repo
 	cfg      Config
+	sched    *scheduler.Scheduler
 }
 
-func New(reg *runtime.Registry, store *storage.DB, interp *interpreter.Interpreter, authRepo *auth.Repo, cfg ...Config) *Server {
-	s := &Server{reg: reg, store: store, interp: interp, authRepo: authRepo}
-	if len(cfg) > 0 {
-		s.cfg = cfg[0]
-	}
-	return s
+func New(reg *runtime.Registry, store *storage.DB, interp *interpreter.Interpreter, authRepo *auth.Repo, cfg Config, sched *scheduler.Scheduler) *Server {
+	return &Server{reg: reg, store: store, interp: interp, authRepo: authRepo, cfg: cfg, sched: sched}
 }
 
 func (s *Server) Mount(r chi.Router) {
@@ -89,6 +87,11 @@ func (s *Server) Mount(r chi.Router) {
 	// Admin: orphan movements cleanup
 	r.Get("/ui/admin/cleanup", s.adminCleanup)
 	r.Post("/ui/admin/cleanup", s.adminCleanup)
+
+	// Admin: scheduled jobs
+	r.Get("/ui/admin/scheduled", s.scheduledList)
+	r.Get("/ui/admin/scheduled/{name}", s.scheduledDetail)
+	r.Post("/ui/admin/scheduled/{name}/run-now", s.scheduledRunNow)
 
 	// Constants
 	r.Get("/ui/constants", s.constantsList)

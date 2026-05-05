@@ -17,7 +17,9 @@ import (
 	"github.com/ivantit66/onebase/internal/dsl/interpreter"
 	"github.com/ivantit66/onebase/internal/project"
 	"github.com/ivantit66/onebase/internal/runtime"
+	"github.com/ivantit66/onebase/internal/scheduler"
 	"github.com/ivantit66/onebase/internal/storage"
+	"github.com/ivantit66/onebase/internal/ui"
 )
 
 func mustDSN(t *testing.T) string {
@@ -60,7 +62,8 @@ func TestIntegration_FileMode(t *testing.T) {
 	reg := runtime.NewRegistry()
 	reg.Load(proj.Entities, proj.Programs, proj.Registers, proj.InfoRegisters, proj.Enums, proj.Constants, proj.Reports, proj.PrintForms)
 	interp := interpreter.New()
-	srv := api.New(reg, db, interp, authRepo, 8080)
+	sched := scheduler.New(db, reg, interp)
+	srv := api.New(reg, db, interp, authRepo, 8080, ui.Config{}, sched)
 
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
@@ -108,7 +111,8 @@ func TestIntegration_DatabaseMode(t *testing.T) {
 	reg := runtime.NewRegistry()
 	reg.Load(proj.Entities, proj.Programs, proj.Registers, proj.InfoRegisters, proj.Enums, proj.Constants, proj.Reports, proj.PrintForms)
 	interp := interpreter.New()
-	srv := api.New(reg, db, interp, authRepo, 8080)
+	sched := scheduler.New(db, reg, interp)
+	srv := api.New(reg, db, interp, authRepo, 8080, ui.Config{}, sched)
 
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()

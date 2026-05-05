@@ -11,6 +11,7 @@ import (
 	"github.com/ivantit66/onebase/internal/dsl/interpreter"
 	"github.com/ivantit66/onebase/internal/metadata"
 	"github.com/ivantit66/onebase/internal/runtime"
+	"github.com/ivantit66/onebase/internal/scheduler"
 	"github.com/ivantit66/onebase/internal/storage"
 	"github.com/ivantit66/onebase/internal/ui"
 )
@@ -20,7 +21,7 @@ type Server struct {
 	handler http.Handler
 }
 
-func New(reg *runtime.Registry, store *storage.DB, interp *interpreter.Interpreter, authRepo *auth.Repo, port int, uiCfg ...ui.Config) *Server {
+func New(reg *runtime.Registry, store *storage.DB, interp *interpreter.Interpreter, authRepo *auth.Repo, port int, uiCfg ui.Config, sched *scheduler.Scheduler) *Server {
 	h := &handler{reg: reg, store: store, interp: interp}
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
@@ -54,7 +55,7 @@ func New(reg *runtime.Registry, store *storage.DB, interp *interpreter.Interpret
 		r.Delete("/documents/{entity}/{id}", h.deleteObject(metadata.KindDocument))
 
 		// Web UI
-		uiSrv := ui.New(reg, store, interp, authRepo, uiCfg...)
+		uiSrv := ui.New(reg, store, interp, authRepo, uiCfg, sched)
 		uiSrv.Mount(r)
 
 		r.Get("/", func(w http.ResponseWriter, r *http.Request) {

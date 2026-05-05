@@ -101,7 +101,7 @@ var tmpl = template.Must(template.New("root").Funcs(template.FuncMap{
 		}
 		return template.JS(b)
 	},
-}).Parse(tplHead + tplNav + tplIndex + tplList + tplForm + tplRegister + tplReport + tplProcessor + tplAbout + tplDeleteMarked + tplInfoReg + tplConstants + tplHistory + tplJournal))
+}).Parse(tplHead + tplNav + tplIndex + tplList + tplForm + tplRegister + tplReport + tplProcessor + tplAbout + tplDeleteMarked + tplInfoReg + tplConstants + tplHistory + tplJournal + tplScheduled))
 
 const tplHead = `
 {{define "head"}}<!DOCTYPE html>
@@ -187,6 +187,7 @@ const tplNav = `
       <a href="/ui/admin/roles">Роли и права</a>
       <a href="/ui/admin/sessions">Активные пользователи</a>
       <a href="/ui/admin/audit">Журнал изменений</a>
+      <a href="/ui/admin/scheduled">Регламентные задания</a>
       <a href="/ui/delete-marked">Удалить помеченные</a>
       <a href="/ui/admin/cleanup">Очистка регистров</a>
       <form method="POST" action="/logout"><button type="submit">Выйти</button></form>
@@ -1039,3 +1040,115 @@ const tplHistory = `
 {{end}}
 `
 
+
+const tplScheduled = `
+{{define "page-scheduled-list"}}
+{{template "head" .}}{{template "nav" .}}
+<main>
+<div class="row-top">
+  <h2>Регламентные задания</h2>
+  <span style="color:#94a3b8;font-size:13px">Всего: {{len .JobRows}}</span>
+</div>
+<div class="card">
+{{if .JobRows}}
+<table><thead><tr>
+  <th>Название</th>
+  <th>Расписание</th>
+  <th>Обработка</th>
+  <th>Статус</th>
+  <th>Последний запуск</th>
+  <th>Длительность</th>
+  <th style="width:90px"></th>
+</tr></thead>
+<tbody>
+{{range .JobRows}}
+{{$job := .Job}}
+<tr>
+  <td><strong>{{$job.Title}}</strong><br><small style="color:#94a3b8">{{$job.Name}}</small></td>
+  <td><code>{{$job.Schedule}}</code></td>
+  <td>{{$job.Processor}}</td>
+  <td>{{if $job.Enabled}}<span style="color:#22c55e">✓ активно</span>{{else}}<span style="color:#94a3b8">— отключено</span>{{end}}</td>
+  <td>
+    {{if .LastRun}}
+      {{$r := .LastRun}}
+      <span style="color:{{if eq $r.Status "success"}}#22c55e{{else if eq $r.Status "error"}}#ef4444{{else if eq $r.Status "timeout"}}#f97316{{else}}#94a3b8{{end}}">{{$r.Status}}</span>
+      <br><small style="color:#94a3b8">{{fmtDate $r.StartedAt}}</small>
+    {{else}}
+      <span style="color:#94a3b8">—</span>
+    {{end}}
+  </td>
+  <td>
+    {{if .LastRun}}{{.LastRun.DurationMs}} мс{{else}}—{{end}}
+  </td>
+  <td>
+    <a class="btn btn-sm btn-primary" href="/ui/admin/scheduled/{{$job.Name}}">Подробнее</a>
+  </td>
+</tr>
+{{end}}
+</tbody></table>
+{{else}}
+<p class="empty">Регламентных заданий нет. Создайте файлы в папке <code>scheduled/</code> вашей конфигурации.</p>
+{{end}}
+</div>
+</main></div></body></html>
+{{end}}
+
+{{define "page-scheduled-detail"}}
+{{template "head" .}}{{template "nav" .}}
+<main>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+  <div>
+    <h2 style="margin-bottom:4px">{{.Job.Title}}</h2>
+    <small style="color:#94a3b8">{{.Job.Name}}</small>
+  </div>
+  <a href="/ui/admin/scheduled" style="font-size:22px;line-height:1;color:#94a3b8;text-decoration:none;padding:2px 8px;border-radius:5px;background:#f1f5f9">×</a>
+</div>
+
+<div class="card" style="margin-bottom:20px">
+<table style="width:100%;border-collapse:collapse">
+  <tr><td style="padding:6px 12px;color:#64748b;width:160px">Расписание</td><td><code>{{.Job.Schedule}}</code></td></tr>
+  <tr><td style="padding:6px 12px;color:#64748b">Обработка</td><td>{{.Job.Processor}}</td></tr>
+  <tr><td style="padding:6px 12px;color:#64748b">При ошибке</td><td>{{.Job.OnError}}</td></tr>
+  <tr><td style="padding:6px 12px;color:#64748b">Таймаут</td><td>{{.Job.Timeout}} сек.</td></tr>
+  <tr><td style="padding:6px 12px;color:#64748b">Состояние</td><td>
+    {{if .Job.Enabled}}<span style="color:#22c55e">✓ активно</span>{{else}}<span style="color:#94a3b8">— отключено</span>{{end}}
+  </td></tr>
+</table>
+</div>
+
+<form method="POST" action="/ui/admin/scheduled/{{.Job.Name}}/run-now" style="margin-bottom:20px">
+  <button class="btn btn-primary" type="submit">▶ Запустить сейчас</button>
+</form>
+
+<h3>История запусков (последние 50)</h3>
+<div class="card">
+{{if .Runs}}
+<table><thead><tr>
+  <th>Начало</th>
+  <th>Статус</th>
+  <th>Длительность</th>
+  <th>Вывод</th>
+  <th>Ошибка</th>
+</tr></thead>
+<tbody>
+{{range .Runs}}
+<tr>
+  <td style="white-space:nowrap">{{fmtDate .StartedAt}}</td>
+  <td>
+    <span style="color:{{if eq .Status "success"}}#22c55e{{else if eq .Status "error"}}#ef4444{{else if eq .Status "timeout"}}#f97316{{else}}#94a3b8{{end}}">
+      {{.Status}}
+    </span>
+  </td>
+  <td>{{.DurationMs}} мс</td>
+  <td style="max-width:400px;white-space:pre-wrap;font-size:12px;color:#475569">{{.Output}}</td>
+  <td style="max-width:300px;white-space:pre-wrap;font-size:12px;color:#ef4444">{{.Error}}</td>
+</tr>
+{{end}}
+</tbody></table>
+{{else}}
+<p class="empty">Запусков ещё не было</p>
+{{end}}
+</div>
+</main></div></body></html>
+{{end}}
+`

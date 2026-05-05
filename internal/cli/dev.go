@@ -18,6 +18,7 @@ import (
 	"github.com/ivantit66/onebase/internal/dsl/interpreter"
 	"github.com/ivantit66/onebase/internal/project"
 	"github.com/ivantit66/onebase/internal/runtime"
+	"github.com/ivantit66/onebase/internal/scheduler"
 	"github.com/ivantit66/onebase/internal/storage"
 	"github.com/ivantit66/onebase/internal/ui"
 	"github.com/ivantit66/onebase/internal/version"
@@ -60,6 +61,12 @@ func runDev(cmd *cobra.Command, _ []string) error {
 	reg := runtime.NewRegistry()
 	interp := interpreter.New()
 	interp.LookupProc = reg.GetModuleProc
+
+	sched := scheduler.New(db, reg, interp)
+
+	if err := db.EnsureScheduledRunsTable(ctx); err != nil {
+		return fmt.Errorf("scheduled runs schema: %w", err)
+	}
 
 	var watchDir string
 	load := func() {
@@ -107,6 +114,9 @@ func runDev(cmd *cobra.Command, _ []string) error {
 		reg.LoadProcessors(proj.Processors)
 		reg.LoadSubsystems(proj.Subsystems)
 		reg.LoadJournals(proj.Journals)
+		if loadErr := sched.Reload(proj.ScheduledJobs); loadErr != nil {
+			fmt.Fprintln(os.Stderr, "[dev] scheduler reload error:", loadErr)
+		}
 		fmt.Fprintln(os.Stdout, "[dev] reloaded")
 	}
 	load()
@@ -123,7 +133,11 @@ func runDev(cmd *cobra.Command, _ []string) error {
 		uiCfg.AppName = appCfg.Name
 		uiCfg.AppVersion = appCfg.Version
 	}
-	srv := api.New(reg, db, interp, authRepo, port, uiCfg)
+	srv := api.New(reg, db, interp, authRepo, port, uiCfg, sched)
+
+	schedCtx, schedCancel := context.WithCancel(ctx)
+	defer schedCancel()
+	go sched.Start(schedCtx)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -138,6 +152,7 @@ func runDev(cmd *cobra.Command, _ []string) error {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
+	schedCancel()
 	_ = srv.Shutdown(ctx)
 	wg.Wait()
 	return nil

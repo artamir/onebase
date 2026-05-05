@@ -16,6 +16,7 @@ import (
 	"github.com/ivantit66/onebase/internal/dsl/interpreter"
 	"github.com/ivantit66/onebase/internal/project"
 	"github.com/ivantit66/onebase/internal/runtime"
+	"github.com/ivantit66/onebase/internal/scheduler"
 	"github.com/ivantit66/onebase/internal/storage"
 	"github.com/ivantit66/onebase/internal/ui"
 	"github.com/ivantit66/onebase/internal/version"
@@ -110,7 +111,20 @@ func runServer(cmd *cobra.Command, _ []string) error {
 
 	interp := interpreter.New()
 	interp.LookupProc = reg.GetModuleProc
-	srv := api.New(reg, db, interp, authRepo, port, uiCfg)
+
+	if err := db.EnsureScheduledRunsTable(ctx); err != nil {
+		return fmt.Errorf("scheduled runs schema: %w", err)
+	}
+	sched := scheduler.New(db, reg, interp)
+	if err := sched.LoadJobs(proj.ScheduledJobs); err != nil {
+		return fmt.Errorf("scheduler: %w", err)
+	}
+
+	srv := api.New(reg, db, interp, authRepo, port, uiCfg, sched)
+
+	schedCtx, schedCancel := context.WithCancel(ctx)
+	defer schedCancel()
+	go sched.Start(schedCtx)
 
 	fmt.Fprintf(os.Stdout, "onebase running on :%d\n", port)
 	quit := make(chan os.Signal, 1)
@@ -121,5 +135,6 @@ func runServer(cmd *cobra.Command, _ []string) error {
 		}
 	}()
 	<-quit
+	schedCancel()
 	return srv.Shutdown(ctx)
 }

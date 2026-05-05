@@ -21,6 +21,7 @@
 | 10 | [10-subsystems.md](10-subsystems.md) | Подсистемы (разделы навигации) | ✅ Реализовано |
 | 08 | [08-document-journal.md](08-document-journal.md) | Журнал документов | ✅ Реализовано |
 | 06 | [06-hierarchical-catalogs.md](06-hierarchical-catalogs.md) | Иерархические справочники | ✅ Реализовано |
+| 17 | [17-scheduled-jobs.md](17-scheduled-jobs.md) | Фоновые / регламентные задания | ✅ Реализовано |
 
 ## Планы развития (roadmap)
 
@@ -42,7 +43,7 @@
 | ~~14~~ | ~~[14-query-object.md](14-query-object.md)~~ | ~~Объект Запрос в DSL~~ | ~~3 дня~~ | ✅ |
 | ~~15~~ | ~~[15-transactions.md](15-transactions.md)~~ | ~~Транзакции в DSL~~ | ~~2 дня~~ | ✅ |
 | ~~16~~ | ~~[16-json.md](16-json.md)~~ | ~~JSON в DSL~~ | ~~1 день~~ | ✅ |
-| 17 | [17-scheduled-jobs.md](17-scheduled-jobs.md) | Фоновые / регламентные задания | 4 дня | (опц.) 15 |
+| ~~17~~ | ~~[17-scheduled-jobs.md](17-scheduled-jobs.md)~~ | ~~Фоновые / регламентные задания~~ | ~~4 дня~~ | ✅ |
 
 ## Граф зависимостей
 
