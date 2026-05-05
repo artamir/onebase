@@ -53,6 +53,36 @@ func Convert(opts Options) (*writer.ConversionReport, error) {
 		return nil, fmt.Errorf("convert: write registers: %w", err)
 	}
 
+	// Перечисления
+	if err := writer.WriteEnums(dump.Enums, opts.OutDir, report); err != nil {
+		return nil, fmt.Errorf("convert: write enums: %w", err)
+	}
+
+	// Константы
+	if err := writer.WriteConstants(dump.Constants, opts.OutDir, report); err != nil {
+		return nil, fmt.Errorf("convert: write constants: %w", err)
+	}
+
+	// Регистры сведений
+	if err := writer.WriteInfoRegisters(dump.InfoRegisters, opts.OutDir, report); err != nil {
+		return nil, fmt.Errorf("convert: write info registers: %w", err)
+	}
+
+	// Регистры бухгалтерии
+	if err := writer.WriteAccountRegisters(dump.AccountRegisters, opts.OutDir, report); err != nil {
+		return nil, fmt.Errorf("convert: write account registers: %w", err)
+	}
+
+	// Планы счетов
+	if err := writer.WriteChartsOfAccounts(dump.ChartsOfAccounts, opts.OutDir, report); err != nil {
+		return nil, fmt.Errorf("convert: write charts of accounts: %w", err)
+	}
+
+	// Регламентные задания
+	if err := writer.WriteScheduledJobs(dump.ScheduledJobs, opts.OutDir, report); err != nil {
+		return nil, fmt.Errorf("convert: write scheduled jobs: %w", err)
+	}
+
 	// DSL-заглушки
 	if err := writer.WriteDSLStubs(dump.Documents, opts.SourceDir, opts.OutDir, report); err != nil {
 		return nil, fmt.Errorf("convert: write dsl stubs: %w", err)

@@ -52,12 +52,66 @@ type FieldType1C struct {
 	AllTypes []string
 }
 
+// EnumMeta — перечисление
+type EnumMeta struct {
+	Name   string
+	Synonym string
+	Values []string
+}
+
+// ConstantMeta — константа
+type ConstantMeta struct {
+	Name    string
+	Synonym string
+	Type    FieldType1C
+}
+
+// InfoRegMeta — регистр сведений
+type InfoRegMeta struct {
+	Name       string
+	Synonym    string
+	Periodic   bool
+	Dimensions []Attribute
+	Resources  []Attribute
+	Attributes []Attribute
+}
+
+// AccountRegMeta — регистр бухгалтерии
+type AccountRegMeta struct {
+	Name       string
+	Synonym    string
+	Dimensions []Attribute
+	Resources  []Attribute
+	Attributes []Attribute
+}
+
+// ChartOfAccountsMeta — план счетов
+type ChartOfAccountsMeta struct {
+	Name       string
+	Synonym    string
+	Attributes []Attribute
+}
+
+// ScheduledJobMeta — регламентное задание
+type ScheduledJobMeta struct {
+	Name     string
+	Synonym  string
+	Schedule string
+	Handler  string
+}
+
 // ConfigDump — всё содержимое выгрузки конфигурации
 type ConfigDump struct {
-	Catalogs   []*CatalogMeta
-	Documents  []*DocumentMeta
-	Registers  []*RegisterMeta
-	SkippedDirs []SkippedItem
+	Catalogs        []*CatalogMeta
+	Documents       []*DocumentMeta
+	Registers       []*RegisterMeta
+	Enums           []*EnumMeta
+	Constants       []*ConstantMeta
+	InfoRegisters   []*InfoRegMeta
+	AccountRegisters []*AccountRegMeta
+	ChartsOfAccounts []*ChartOfAccountsMeta
+	ScheduledJobs   []*ScheduledJobMeta
+	SkippedDirs     []SkippedItem
 }
 
 // SkippedItem — объект, который не конвертируется

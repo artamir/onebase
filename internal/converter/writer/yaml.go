@@ -103,6 +103,187 @@ func WriteRegisters(regs []*parser1c.RegisterMeta, outDir string, notes *Convers
 	return nil
 }
 
+type yamlEnum struct {
+	Name   string   `yaml:"name"`
+	Values []string `yaml:"values"`
+}
+
+type yamlConstant struct {
+	Name  string `yaml:"name"`
+	Type  string `yaml:"type"`
+	Label string `yaml:"label,omitempty"`
+}
+
+type yamlConstants struct {
+	Constants []yamlConstant `yaml:"constants"`
+}
+
+type yamlInfoReg struct {
+	Name       string      `yaml:"name"`
+	Periodic   bool        `yaml:"periodic,omitempty"`
+	Dimensions []yamlField `yaml:"dimensions"`
+	Resources  []yamlField `yaml:"resources"`
+	Attributes []yamlField `yaml:"attributes,omitempty"`
+}
+
+type yamlAccountReg struct {
+	Name      string      `yaml:"name"`
+	Resources []yamlField `yaml:"resources"`
+}
+
+type yamlAccountEntry struct {
+	Code string `yaml:"code"`
+	Name string `yaml:"name"`
+	Kind string `yaml:"kind"`
+}
+
+type yamlChartOfAccounts struct {
+	Name     string             `yaml:"name"`
+	Accounts []yamlAccountEntry `yaml:"accounts"`
+}
+
+type yamlScheduledJob struct {
+	Name      string `yaml:"name"`
+	Schedule  string `yaml:"schedule"`
+	Processor string `yaml:"processor"`
+	Enabled   bool   `yaml:"enabled"`
+}
+
+// WriteEnums записывает перечисления в out/enums/*.yaml.
+func WriteEnums(enums []*parser1c.EnumMeta, outDir string, notes *ConversionReport) error {
+	dir := filepath.Join(outDir, "enums")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	for _, e := range enums {
+		obj := yamlEnum{Name: e.Name, Values: e.Values}
+		if len(obj.Values) == 0 {
+			obj.Values = []string{"TODO"}
+		}
+		if err := writeYAML(filepath.Join(dir, fileName(e.Name)+".yaml"), obj); err != nil {
+			return err
+		}
+		notes.Enums++
+	}
+	return nil
+}
+
+// WriteConstants записывает все константы в out/constants/constants.yaml.
+func WriteConstants(consts []*parser1c.ConstantMeta, outDir string, notes *ConversionReport) error {
+	if len(consts) == 0 {
+		return nil
+	}
+	dir := filepath.Join(outDir, "constants")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	var items []yamlConstant
+	for _, c := range consts {
+		t, note := parser1c.MapType(c.Type)
+		if note != "" {
+			notes.TypeWarnings = append(notes.TypeWarnings, fmt.Sprintf("constant %s: %s", c.Name, note))
+		}
+		items = append(items, yamlConstant{Name: c.Name, Type: t, Label: c.Synonym})
+		notes.Constants++
+	}
+	obj := yamlConstants{Constants: items}
+	return writeYAML(filepath.Join(dir, "constants.yaml"), obj)
+}
+
+// WriteInfoRegisters записывает регистры сведений в out/inforegs/*.yaml.
+func WriteInfoRegisters(regs []*parser1c.InfoRegMeta, outDir string, notes *ConversionReport) error {
+	dir := filepath.Join(outDir, "inforegs")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	for _, reg := range regs {
+		obj := yamlInfoReg{
+			Name:       reg.Name,
+			Periodic:   reg.Periodic,
+			Dimensions: convertFields(reg.Dimensions, notes),
+			Resources:  convertFields(reg.Resources, notes),
+			Attributes: convertFields(reg.Attributes, notes),
+		}
+		if err := writeYAML(filepath.Join(dir, fileName(reg.Name)+".yaml"), obj); err != nil {
+			return err
+		}
+		notes.InfoRegisters++
+	}
+	return nil
+}
+
+// WriteAccountRegisters записывает регистры бухгалтерии в out/accountregs/*.yaml.
+func WriteAccountRegisters(regs []*parser1c.AccountRegMeta, outDir string, notes *ConversionReport) error {
+	dir := filepath.Join(outDir, "accountregs")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	for _, reg := range regs {
+		obj := yamlAccountReg{
+			Name:      reg.Name,
+			Resources: convertFields(reg.Resources, notes),
+		}
+		if len(obj.Resources) == 0 {
+			obj.Resources = []yamlField{{Name: "Сумма", Type: "number"}}
+		}
+		if err := writeYAML(filepath.Join(dir, fileName(reg.Name)+".yaml"), obj); err != nil {
+			return err
+		}
+		notes.AccountRegisters++
+	}
+	return nil
+}
+
+// WriteChartsOfAccounts записывает планы счетов в out/accounts/*.yaml.
+func WriteChartsOfAccounts(charts []*parser1c.ChartOfAccountsMeta, outDir string, notes *ConversionReport) error {
+	dir := filepath.Join(outDir, "accounts")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	for _, chart := range charts {
+		obj := yamlChartOfAccounts{
+			Name: chart.Name,
+			Accounts: []yamlAccountEntry{
+				{Code: "TODO", Name: "Добавьте счета вручную", Kind: "active_passive"},
+			},
+		}
+		if err := writeYAML(filepath.Join(dir, fileName(chart.Name)+".yaml"), obj); err != nil {
+			return err
+		}
+		notes.ChartsOfAccounts++
+	}
+	return nil
+}
+
+// WriteScheduledJobs записывает регламентные задания в out/scheduled/*.yaml.
+func WriteScheduledJobs(jobs []*parser1c.ScheduledJobMeta, outDir string, notes *ConversionReport) error {
+	dir := filepath.Join(outDir, "scheduled")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	for _, job := range jobs {
+		processor := job.Handler
+		if processor == "" {
+			processor = job.Name
+		}
+		schedule := job.Schedule
+		if schedule == "" {
+			schedule = "0 * * * *"
+		}
+		obj := yamlScheduledJob{
+			Name:      job.Name,
+			Schedule:  schedule,
+			Processor: processor,
+			Enabled:   false,
+		}
+		if err := writeYAML(filepath.Join(dir, fileName(job.Name)+".yaml"), obj); err != nil {
+			return err
+		}
+		notes.ScheduledJobs++
+	}
+	return nil
+}
+
 func convertFields(attrs []parser1c.Attribute, notes *ConversionReport) []yamlField {
 	var fields []yamlField
 	for _, a := range attrs {
