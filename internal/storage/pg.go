@@ -3,13 +3,16 @@ package storage
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type DB struct {
-	pool *pgxpool.Pool
+	pool     *pgxpool.Pool
+	filesDir string
 }
 
 func Connect(ctx context.Context, dsn string) (*DB, error) {
@@ -20,8 +23,21 @@ func Connect(ctx context.Context, dsn string) (*DB, error) {
 	if err := pool.Ping(ctx); err != nil {
 		return nil, fmt.Errorf("storage: ping: %w", err)
 	}
-	return &DB{pool: pool}, nil
+	filesDir := defaultFilesDir(dsn)
+	return &DB{pool: pool, filesDir: filesDir}, nil
 }
+
+func defaultFilesDir(dsn string) string {
+	cfg, err := pgxpool.ParseConfig(dsn)
+	dbName := "default"
+	if err == nil && cfg.ConnConfig.Database != "" {
+		dbName = cfg.ConnConfig.Database
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".onebase", "files", dbName)
+}
+
+func (db *DB) FilesDir() string { return db.filesDir }
 
 func (db *DB) Close() {
 	db.pool.Close()

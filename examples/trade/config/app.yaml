@@ -9,3 +9,8 @@ version: "1.0"
 #   smtp_password: env:SMTP_PASSWORD   # читается из переменной окружения
 #   from_name: "Мой склад"
 #   from_address: noreply@company.ru
+
+# Настройки вложений
+# attachments:
+#   max_file_size_mb: 50
+#   allowed_types: [pdf, png, jpg, docx, xlsx]

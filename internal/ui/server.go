@@ -16,25 +16,31 @@ import (
 
 // Config holds static info shown in «О программе».
 type Config struct {
-	AppName     string
-	AppVersion  string
-	DSN         string
-	PlatVersion string
-	Mailer      *mailer.Mailer
+	AppName       string
+	AppVersion    string
+	DSN           string
+	PlatVersion   string
+	Mailer        *mailer.Mailer
+	MaxFileSizeMB int // 0 = use default 50
 }
 
 type Server struct {
-	reg      *runtime.Registry
-	store    *storage.DB
-	interp   *interpreter.Interpreter
-	authRepo *auth.Repo
-	cfg      Config
-	sched    *scheduler.Scheduler
-	mailer   *mailer.Mailer
+	reg              *runtime.Registry
+	store            *storage.DB
+	interp           *interpreter.Interpreter
+	authRepo         *auth.Repo
+	cfg              Config
+	sched            *scheduler.Scheduler
+	mailer           *mailer.Mailer
+	maxFileSizeBytes int64
 }
 
 func New(reg *runtime.Registry, store *storage.DB, interp *interpreter.Interpreter, authRepo *auth.Repo, cfg Config, sched *scheduler.Scheduler) *Server {
-	return &Server{reg: reg, store: store, interp: interp, authRepo: authRepo, cfg: cfg, sched: sched, mailer: cfg.Mailer}
+	maxBytes := int64(cfg.MaxFileSizeMB) * 1024 * 1024
+	if maxBytes <= 0 {
+		maxBytes = 50 * 1024 * 1024
+	}
+	return &Server{reg: reg, store: store, interp: interp, authRepo: authRepo, cfg: cfg, sched: sched, mailer: cfg.Mailer, maxFileSizeBytes: maxBytes}
 }
 
 func (s *Server) Mount(r chi.Router) {
@@ -111,6 +117,12 @@ func (s *Server) Mount(r chi.Router) {
 	// Print forms
 	r.Get("/ui/{kind}/{entity}/{id}/print/{form}", s.printDocument)
 	r.Get("/ui/{kind}/{entity}/{id}/print/{form}/pdf", s.printDocumentPDF)
+
+	// Attachments
+	r.Get("/ui/{kind}/{entity}/{id}/attachments", s.attachmentsList)
+	r.Post("/ui/{kind}/{entity}/{id}/attachments", s.attachmentUpload)
+	r.Get("/ui/attachments/{aid}/download", s.attachmentDownload)
+	r.Post("/ui/attachments/{aid}/delete", s.attachmentDelete)
 
 	// Excel exports
 	r.Get("/ui/{kind}/{entity}/excel", s.listExcel)

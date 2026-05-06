@@ -68,6 +68,9 @@ func runDev(cmd *cobra.Command, _ []string) error {
 	if err := db.EnsureScheduledRunsTable(ctx); err != nil {
 		return fmt.Errorf("scheduled runs schema: %w", err)
 	}
+	if err := db.EnsureAttachmentTable(ctx); err != nil {
+		return fmt.Errorf("attachments table: %w", err)
+	}
 
 	var watchDir string
 	load := func() {
@@ -146,6 +149,9 @@ func runDev(cmd *cobra.Command, _ []string) error {
 	if appCfg != nil {
 		uiCfg.AppName = appCfg.Name
 		uiCfg.AppVersion = appCfg.Version
+		if appCfg.Attachments != nil && appCfg.Attachments.MaxFileSizeMB > 0 {
+			uiCfg.MaxFileSizeMB = appCfg.Attachments.MaxFileSizeMB
+		}
 		if appCfg.Email != nil {
 			m := mailer.New(mailer.Config{
 				SMTPHost:    appCfg.Email.SMTPHost,

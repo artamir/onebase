@@ -62,6 +62,9 @@ func runMigrate(cmd *cobra.Command, _ []string) error {
 	if err := db.MigrateConstants(ctx, proj.Constants); err != nil {
 		return err
 	}
+	if err := db.EnsureAttachmentTable(ctx); err != nil {
+		return err
+	}
 	fmt.Fprintln(os.Stdout, "migration complete")
 	return nil
 }

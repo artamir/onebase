@@ -119,6 +119,9 @@ func runServer(cmd *cobra.Command, _ []string) error {
 	if appCfg != nil {
 		uiCfg.AppName = appCfg.Name
 		uiCfg.AppVersion = appCfg.Version
+		if appCfg.Attachments != nil && appCfg.Attachments.MaxFileSizeMB > 0 {
+			uiCfg.MaxFileSizeMB = appCfg.Attachments.MaxFileSizeMB
+		}
 	}
 
 	interp := interpreter.New()
@@ -126,6 +129,9 @@ func runServer(cmd *cobra.Command, _ []string) error {
 
 	if err := db.EnsureScheduledRunsTable(ctx); err != nil {
 		return fmt.Errorf("scheduled runs schema: %w", err)
+	}
+	if err := db.EnsureAttachmentTable(ctx); err != nil {
+		return fmt.Errorf("attachments table: %w", err)
 	}
 	sched := scheduler.New(db, reg, interp)
 	if err := sched.LoadJobs(proj.ScheduledJobs); err != nil {

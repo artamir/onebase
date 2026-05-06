@@ -57,11 +57,18 @@ type EmailConfig struct {
 	FromAddress string `yaml:"from_address"`
 }
 
+// AttachmentsConfig holds file attachment settings from app.yaml.
+type AttachmentsConfig struct {
+	MaxFileSizeMB int      `yaml:"max_file_size_mb"`
+	AllowedTypes  []string `yaml:"allowed_types"`
+}
+
 // AppConfig holds the optional config/app.yaml metadata.
 type AppConfig struct {
-	Name    string       `yaml:"name"`
-	Version string       `yaml:"version"`
-	Email   *EmailConfig `yaml:"email,omitempty"`
+	Name        string             `yaml:"name"`
+	Version     string             `yaml:"version"`
+	Email       *EmailConfig       `yaml:"email,omitempty"`
+	Attachments *AttachmentsConfig `yaml:"attachments,omitempty"`
 }
 
 // LoadConfig reads config/app.yaml from the project directory.

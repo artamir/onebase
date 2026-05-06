@@ -643,6 +643,52 @@ const tplForm = `
   {{end}}
 </div>
 {{end}}
+{{if not .IsNew}}
+<div class="card" style="margin-top:16px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <h3 style="margin:0;font-size:14px;font-weight:600;color:#374151">Вложения</h3>
+    <span id="att-count" style="color:#94a3b8;font-size:12px"></span>
+  </div>
+  <div id="att-list" style="margin-bottom:12px"></div>
+  <form id="att-upload-form" method="POST" enctype="multipart/form-data"
+        action="/ui/{{lower (str .Entity.Kind)}}/{{.Entity.Name}}/{{.ID}}/attachments">
+    <input type="file" name="file" id="att-file-input" style="display:none" onchange="document.getElementById('att-upload-form').submit()">
+    <button type="button" class="btn btn-sm btn-secondary" onclick="document.getElementById('att-file-input').click()">
+      + Прикрепить файл
+    </button>
+  </form>
+</div>
+<script>
+(function(){
+  function fmtSize(b) {
+    if(b<1024) return b+' Б';
+    if(b<1024*1024) return (b/1024).toFixed(1)+' КБ';
+    return (b/1024/1024).toFixed(1)+' МБ';
+  }
+  function loadAtts() {
+    fetch('/ui/{{lower (str .Entity.Kind)}}/{{.Entity.Name}}/{{.ID}}/attachments')
+      .then(r=>r.json()).then(atts=>{
+        var cnt = document.getElementById('att-count');
+        var list = document.getElementById('att-list');
+        cnt.textContent = atts.length ? atts.length+' файл(ов)' : '';
+        if(!atts.length){ list.innerHTML='<p style="color:#94a3b8;font-size:13px;margin:0">Нет вложений</p>'; return; }
+        list.innerHTML = atts.map(a=>
+          '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f1f5f9">'+
+          '<span style="flex:1;font-size:13px;word-break:break-all">'+a.filename+'</span>'+
+          '<span style="color:#94a3b8;font-size:12px;white-space:nowrap">'+fmtSize(a.size_bytes)+'</span>'+
+          '<a href="/ui/attachments/'+a.id+'/download" class="btn btn-sm btn-secondary" style="padding:3px 10px;font-size:12px">↓</a>'+
+          '<form method="POST" action="/ui/attachments/'+a.id+'/delete" style="margin:0"'+
+          ' onsubmit="return confirm(\'Удалить вложение?\')">'+
+          '<button type="submit" class="btn btn-sm btn-danger" style="padding:3px 8px;font-size:12px">×</button>'+
+          '</form>'+
+          '</div>'
+        ).join('');
+      }).catch(function(){});
+  }
+  loadAtts();
+})();
+</script>
+{{end}}
 </div>
 <script>
 window._tpRefOpts = {{jsJSON .TPRefOptions}};
