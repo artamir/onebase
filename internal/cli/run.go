@@ -13,6 +13,7 @@ import (
 	"github.com/ivantit66/onebase/internal/api"
 	"github.com/ivantit66/onebase/internal/auth"
 	"github.com/ivantit66/onebase/internal/configdb"
+	"github.com/ivantit66/onebase/internal/mailer"
 	"github.com/ivantit66/onebase/internal/dsl/interpreter"
 	"github.com/ivantit66/onebase/internal/project"
 	"github.com/ivantit66/onebase/internal/runtime"
@@ -129,6 +130,19 @@ func runServer(cmd *cobra.Command, _ []string) error {
 	sched := scheduler.New(db, reg, interp)
 	if err := sched.LoadJobs(proj.ScheduledJobs); err != nil {
 		return fmt.Errorf("scheduler: %w", err)
+	}
+
+	if appCfg != nil && appCfg.Email != nil {
+		m := mailer.New(mailer.Config{
+			SMTPHost:    appCfg.Email.SMTPHost,
+			SMTPPort:    appCfg.Email.SMTPPort,
+			SMTPUser:    appCfg.Email.SMTPUser,
+			SMTPPass:    appCfg.Email.SMTPPass,
+			FromName:    appCfg.Email.FromName,
+			FromAddress: appCfg.Email.FromAddress,
+		})
+		uiCfg.Mailer = m
+		sched.SetMailer(m)
 	}
 
 	srv := api.New(reg, db, interp, authRepo, port, uiCfg, sched)

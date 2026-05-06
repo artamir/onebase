@@ -17,6 +17,7 @@ import (
 	"github.com/ivantit66/onebase/internal/devserver"
 	"github.com/ivantit66/onebase/internal/dsl/interpreter"
 	"github.com/ivantit66/onebase/internal/project"
+	"github.com/ivantit66/onebase/internal/mailer"
 	"github.com/ivantit66/onebase/internal/runtime"
 	"github.com/ivantit66/onebase/internal/scheduler"
 	"github.com/ivantit66/onebase/internal/storage"
@@ -145,6 +146,18 @@ func runDev(cmd *cobra.Command, _ []string) error {
 	if appCfg != nil {
 		uiCfg.AppName = appCfg.Name
 		uiCfg.AppVersion = appCfg.Version
+		if appCfg.Email != nil {
+			m := mailer.New(mailer.Config{
+				SMTPHost:    appCfg.Email.SMTPHost,
+				SMTPPort:    appCfg.Email.SMTPPort,
+				SMTPUser:    appCfg.Email.SMTPUser,
+				SMTPPass:    appCfg.Email.SMTPPass,
+				FromName:    appCfg.Email.FromName,
+				FromAddress: appCfg.Email.FromAddress,
+			})
+			uiCfg.Mailer = m
+			sched.SetMailer(m)
+		}
 	}
 	srv := api.New(reg, db, interp, authRepo, port, uiCfg, sched)
 

@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/ivantit66/onebase/internal/auth"
 	"github.com/ivantit66/onebase/internal/dsl/interpreter"
+	"github.com/ivantit66/onebase/internal/mailer"
 	"github.com/ivantit66/onebase/internal/metadata"
 	"github.com/ivantit66/onebase/internal/runtime"
 	"github.com/ivantit66/onebase/internal/scheduler"
@@ -19,6 +20,7 @@ type Config struct {
 	AppVersion  string
 	DSN         string
 	PlatVersion string
+	Mailer      *mailer.Mailer
 }
 
 type Server struct {
@@ -28,10 +30,11 @@ type Server struct {
 	authRepo *auth.Repo
 	cfg      Config
 	sched    *scheduler.Scheduler
+	mailer   *mailer.Mailer
 }
 
 func New(reg *runtime.Registry, store *storage.DB, interp *interpreter.Interpreter, authRepo *auth.Repo, cfg Config, sched *scheduler.Scheduler) *Server {
-	return &Server{reg: reg, store: store, interp: interp, authRepo: authRepo, cfg: cfg, sched: sched}
+	return &Server{reg: reg, store: store, interp: interp, authRepo: authRepo, cfg: cfg, sched: sched, mailer: cfg.Mailer}
 }
 
 func (s *Server) Mount(r chi.Router) {

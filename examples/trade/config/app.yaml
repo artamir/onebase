@@ -1,2 +1,11 @@
 name: trade
 version: "1.0"
+
+# Настройки email (раскомментируйте и заполните для отправки писем)
+# email:
+#   smtp_host: smtp.gmail.com
+#   smtp_port: 587
+#   smtp_user: noreply@company.ru
+#   smtp_password: env:SMTP_PASSWORD   # читается из переменной окружения
+#   from_name: "Мой склад"
+#   from_address: noreply@company.ru

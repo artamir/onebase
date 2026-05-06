@@ -47,10 +47,21 @@ func (p *Project) Close() {
 	}
 }
 
+// EmailConfig holds SMTP configuration from app.yaml section "email".
+type EmailConfig struct {
+	SMTPHost    string `yaml:"smtp_host"`
+	SMTPPort    int    `yaml:"smtp_port"`
+	SMTPUser    string `yaml:"smtp_user"`
+	SMTPPass    string `yaml:"smtp_password"`
+	FromName    string `yaml:"from_name"`
+	FromAddress string `yaml:"from_address"`
+}
+
 // AppConfig holds the optional config/app.yaml metadata.
 type AppConfig struct {
-	Name    string `yaml:"name"`
-	Version string `yaml:"version"`
+	Name    string       `yaml:"name"`
+	Version string       `yaml:"version"`
+	Email   *EmailConfig `yaml:"email,omitempty"`
 }
 
 // LoadConfig reads config/app.yaml from the project directory.

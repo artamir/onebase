@@ -11,6 +11,7 @@ import (
 	cronlib "github.com/robfig/cron/v3"
 
 	"github.com/ivantit66/onebase/internal/dsl/interpreter"
+	"github.com/ivantit66/onebase/internal/mailer"
 	"github.com/ivantit66/onebase/internal/metadata"
 	"github.com/ivantit66/onebase/internal/runtime"
 	"github.com/ivantit66/onebase/internal/storage"
@@ -23,6 +24,7 @@ type Scheduler struct {
 	reg    *runtime.Registry
 	interp *interpreter.Interpreter
 	log    *slog.Logger
+	mailer *mailer.Mailer
 }
 
 func New(db *storage.DB, reg *runtime.Registry, interp *interpreter.Interpreter) *Scheduler {
@@ -33,6 +35,10 @@ func New(db *storage.DB, reg *runtime.Registry, interp *interpreter.Interpreter)
 		interp: interp,
 		log:    slog.Default(),
 	}
+}
+
+func (s *Scheduler) SetMailer(m *mailer.Mailer) {
+	s.mailer = m
 }
 
 func (s *Scheduler) LoadJobs(jobs []*metadata.ScheduledJob) error {
@@ -199,6 +205,9 @@ func (s *Scheduler) buildDSLVars(ctx context.Context, mc *runtime.MovementsColle
 		"PredefinedValues":          predefined,
 	}
 	for k, v := range interpreter.NewHTTPFunctions() {
+		vars[k] = v
+	}
+	for k, v := range interpreter.NewEmailFunctions(s.mailer) {
 		vars[k] = v
 	}
 	return vars

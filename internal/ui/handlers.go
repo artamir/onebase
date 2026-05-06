@@ -1144,6 +1144,9 @@ func (s *Server) buildDSLVars(ctx context.Context, mc *runtime.MovementsCollecto
 	for k, v := range interpreter.NewHTTPFunctions() {
 		vars[k] = v
 	}
+	for k, v := range interpreter.NewEmailFunctions(s.mailer) {
+		vars[k] = v
+	}
 	return vars
 }
 

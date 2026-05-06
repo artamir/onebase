@@ -52,7 +52,7 @@
 |---|---|---|---|---|
 | 18 | [18-joins.md](18-joins.md) | JOIN в языке запросов | 2 дня | ✅ Реализовано |
 | 19 | [19-http-client.md](19-http-client.md) | HTTP-клиент в DSL | 3–4 дня | ✅ Реализовано |
-| 20 | [20-email.md](20-email.md) | Email-уведомления (SMTP) | 3 дня | ⬜ Не начато |
+| 20 | [20-email.md](20-email.md) | Email-уведомления (SMTP) | 3 дня | ✅ Реализовано |
 | 21 | [21-pdf-excel-export.md](21-pdf-excel-export.md) | Печать в PDF / экспорт в Excel | 4–5 дней | ⬜ Не начато |
 | 22 | [22-attachments.md](22-attachments.md) | Вложения к документам | 5–7 дней | ⬜ Не начато |
 | 23 | [23-search-filters.md](23-search-filters.md) | Поиск и фильтры в списках | 4–5 дней | ⬜ Не начато |
