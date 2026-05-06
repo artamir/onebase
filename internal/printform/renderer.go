@@ -15,6 +15,11 @@ var (
 
 // Render produces a complete HTML page for the given print form and data context.
 func Render(form *PrintForm, ctx *RenderContext) (RenderedForm, error) {
+	return RenderWithPDFURL(form, ctx, "")
+}
+
+// RenderWithPDFURL renders the HTML print form with an optional "Скачать PDF" button.
+func RenderWithPDFURL(form *PrintForm, ctx *RenderContext, pdfURL string) (RenderedForm, error) {
 	title := interpolate(form.Title, ctx, 0)
 	headerHTML := renderMarkdown(interpolate(form.Header, ctx, 0))
 	footerHTML := renderMarkdown(interpolate(form.Footer, ctx, 0))
@@ -24,7 +29,7 @@ func Render(form *PrintForm, ctx *RenderContext) (RenderedForm, error) {
 		tableHTML = renderTable(form.Table, ctx)
 	}
 
-	page := buildPage(title, headerHTML, tableHTML, footerHTML)
+	page := buildPageInner(title, headerHTML, tableHTML, footerHTML, pdfURL)
 	return RenderedForm(page), nil
 }
 
@@ -288,7 +293,20 @@ func inlineMarkdown(s string) string {
 	return s
 }
 
+// BuildPage is exported for use by the PDF download handler to derive the PDF URL from HTML URL.
+func BuildPage(title, headerHTML, tableHTML, footerHTML, pdfURL string) string {
+	return buildPageInner(title, headerHTML, tableHTML, footerHTML, pdfURL)
+}
+
 func buildPage(title, headerHTML, tableHTML, footerHTML string) string {
+	return buildPageInner(title, headerHTML, tableHTML, footerHTML, "")
+}
+
+func buildPageInner(title, headerHTML, tableHTML, footerHTML, pdfURL string) string {
+	pdfBtn := ""
+	if pdfURL != "" {
+		pdfBtn = `  <a href="` + template.HTMLEscapeString(pdfURL) + `" class="pf-pdf-btn">Скачать PDF</a>` + "\n  &nbsp;\n"
+	}
 	return `<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -314,6 +332,8 @@ hr{border:none;border-top:1px solid #000;margin:10px 0}
   .pf-noprint{display:block;margin-bottom:20px}
   .pf-print-btn{display:inline-block;padding:8px 20px;background:#1a5fa8;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:14px;font-family:sans-serif}
   .pf-print-btn:hover{background:#1550a0}
+  .pf-pdf-btn{display:inline-block;padding:8px 20px;background:#16a34a;color:#fff;text-decoration:none;border-radius:4px;font-size:14px;font-family:sans-serif}
+  .pf-pdf-btn:hover{background:#15803d}
   body{padding:30px;max-width:900px;margin:0 auto}
 }
 @media print{
@@ -325,7 +345,7 @@ hr{border:none;border-top:1px solid #000;margin:10px 0}
 <div class="pf-noprint">
   <button class="pf-print-btn" onclick="window.print()">Печать</button>
   &nbsp;
-  <a href="javascript:history.back()" style="font-family:sans-serif;font-size:13px;color:#666">← Назад</a>
+` + pdfBtn + `  <a href="javascript:history.back()" style="font-family:sans-serif;font-size:13px;color:#666">← Назад</a>
 </div>
 <div class="pf-title">` + template.HTMLEscapeString(title) + `</div>
 <div class="pf-header">` + headerHTML + `</div>

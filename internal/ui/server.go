@@ -110,6 +110,12 @@ func (s *Server) Mount(r chi.Router) {
 
 	// Print forms
 	r.Get("/ui/{kind}/{entity}/{id}/print/{form}", s.printDocument)
+	r.Get("/ui/{kind}/{entity}/{id}/print/{form}/pdf", s.printDocumentPDF)
+
+	// Excel exports
+	r.Get("/ui/{kind}/{entity}/excel", s.listExcel)
+	r.Get("/ui/report/{name}/excel", s.reportExcel)
+	r.Get("/ui/journal/{name}/excel", s.journalExcel)
 
 	// Journals
 	r.Get("/ui/journal/{name}", s.journalList)

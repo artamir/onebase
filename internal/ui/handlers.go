@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/ivantit66/onebase/internal/auth"
 	"github.com/ivantit66/onebase/internal/dsl/interpreter"
+	"github.com/ivantit66/onebase/internal/excel"
 	"github.com/ivantit66/onebase/internal/metadata"
 	"github.com/ivantit66/onebase/internal/printform"
 	processorpkg "github.com/ivantit66/onebase/internal/processor"
@@ -1506,7 +1507,8 @@ func (s *Server) printDocument(w http.ResponseWriter, r *http.Request) {
 		Constants:  constants,
 		Refs:       refs,
 	}
-	html, err := printform.Render(form, ctx)
+	pdfURL := r.URL.Path + "/pdf"
+	html, err := printform.RenderWithPDFURL(form, ctx, pdfURL)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
@@ -1995,6 +1997,251 @@ func formValuesFromRequest(r *http.Request, ir *metadata.InfoRegister) map[strin
 		vals[f.Name] = r.FormValue(f.Name)
 	}
 	return vals
+}
+
+// printDocumentPDF renders a print form as PDF and sends it as a download.
+func (s *Server) printDocumentPDF(w http.ResponseWriter, r *http.Request) {
+	entity := s.getEntity(w, r)
+	if entity == nil {
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "invalid id", 400)
+		return
+	}
+	formName := chi.URLParam(r, "form")
+	if dec, err2 := url.PathUnescape(formName); err2 == nil {
+		formName = dec
+	}
+
+	forms := s.reg.GetPrintForms(entity.Name)
+	var form *printform.PrintForm
+	for _, f := range forms {
+		if strings.EqualFold(f.Name, formName) {
+			form = f
+			break
+		}
+	}
+	if form == nil {
+		http.Error(w, "print form not found: "+formName, 404)
+		return
+	}
+
+	row, err := s.store.GetByID(r.Context(), entity.Name, id, entity)
+	if err != nil {
+		http.Error(w, err.Error(), 404)
+		return
+	}
+
+	tpRows := make(map[string][]map[string]any)
+	for _, tp := range entity.TableParts {
+		rows, _ := s.store.GetTablePartRows(r.Context(), entity.Name, tp.Name, id, tp)
+		tpRows[tp.Name] = rows
+	}
+
+	refs := s.buildPrintRefs(r.Context(), row, entity)
+	constants, _ := s.store.ListConstants(r.Context())
+
+	ctx := &printform.RenderContext{
+		Document:   row,
+		TableParts: tpRows,
+		Constants:  constants,
+		Refs:       refs,
+	}
+	pdfBytes, err := printform.RenderPDF(form, ctx)
+	if err != nil {
+		http.Error(w, "PDF error: "+err.Error(), 500)
+		return
+	}
+
+	filename := sanitizeFilename(form.Name) + ".pdf"
+	if num, ok := row["Номер"].(string); ok && num != "" {
+		filename = sanitizeFilename(form.Name+"_"+num) + ".pdf"
+	}
+
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	w.Write(pdfBytes)
+}
+
+// listExcel exports an entity list (with current filters) as XLSX.
+func (s *Server) listExcel(w http.ResponseWriter, r *http.Request) {
+	entity := s.getEntity(w, r)
+	if entity == nil {
+		return
+	}
+	params := parseListParams(r, entity)
+	rows, err := s.store.List(r.Context(), entity.Name, entity, params)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	s.resolveRefs(r.Context(), entity, rows)
+
+	cols := make([]string, 0, len(entity.Fields))
+	for _, f := range entity.Fields {
+		cols = append(cols, f.Name)
+	}
+
+	xlsRows := make([][]any, len(rows))
+	for i, row := range rows {
+		cells := make([]any, len(cols))
+		for j, col := range cols {
+			cells[j] = row[col]
+		}
+		xlsRows[i] = cells
+	}
+
+	data, err := excel.ExportList(cols, xlsRows)
+	if err != nil {
+		http.Error(w, "Excel error: "+err.Error(), 500)
+		return
+	}
+	filename := sanitizeFilename(entity.Name) + ".xlsx"
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	w.Write(data)
+}
+
+// reportExcel runs a report query with GET params and returns XLSX.
+func (s *Server) reportExcel(w http.ResponseWriter, r *http.Request) {
+	rep := s.getReport(w, r)
+	if rep == nil {
+		return
+	}
+	paramValues := make(map[string]any, len(rep.Params))
+	for _, p := range rep.Params {
+		val := r.URL.Query().Get(p.Name)
+		if val == "" {
+			paramValues[p.Name] = nil
+		} else {
+			if p.Type == "date" {
+				if t, err := time.Parse("2006-01-02", val); err == nil {
+					paramValues[p.Name] = t
+				} else {
+					paramValues[p.Name] = val
+				}
+			} else {
+				paramValues[p.Name] = val
+			}
+		}
+	}
+	compiled, err := query.Compile(rep.Query, query.CompileOpts{
+		Params:      paramValues,
+		Registers:   s.reg.Registers(),
+		InfoRegs:    s.reg.InfoRegisters(),
+		AccountRegs: s.reg.AccountRegisters(),
+	})
+	if err != nil {
+		http.Error(w, "query compile error: "+err.Error(), 400)
+		return
+	}
+	rows, cols, err := s.store.RunQuery(r.Context(), compiled.SQL, compiled.Args)
+	if err != nil {
+		http.Error(w, "query error: "+err.Error(), 500)
+		return
+	}
+	s.resolveUUIDsInReport(r.Context(), rows)
+
+	xlsRows := make([][]any, len(rows))
+	for i, row := range rows {
+		cells := make([]any, len(cols))
+		for j, col := range cols {
+			cells[j] = row[col]
+		}
+		xlsRows[i] = cells
+	}
+
+	data, err := excel.ExportList(cols, xlsRows)
+	if err != nil {
+		http.Error(w, "Excel error: "+err.Error(), 500)
+		return
+	}
+	filename := sanitizeFilename(rep.Name) + ".xlsx"
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	w.Write(data)
+}
+
+// journalExcel exports a journal as XLSX.
+func (s *Server) journalExcel(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	if dec, err := url.PathUnescape(name); err == nil {
+		name = dec
+	}
+	j := s.reg.GetJournal(name)
+	if j == nil {
+		http.Error(w, "unknown journal: "+name, 404)
+		return
+	}
+
+	docs := make(map[string]*metadata.Entity, len(j.Documents))
+	for _, docName := range j.Documents {
+		if e := s.reg.GetEntity(docName); e != nil {
+			docs[docName] = e
+		}
+	}
+
+	params := storage.ListParams{Filters: make(map[string]storage.FilterValue)}
+	for _, jf := range j.Filters {
+		fv := storage.FilterValue{}
+		switch {
+		case jf.Type == "date_range":
+			fv.From = r.URL.Query().Get("f." + jf.Field + ".from")
+			fv.To = r.URL.Query().Get("f." + jf.Field + ".to")
+		default:
+			fv.Value = r.URL.Query().Get("f." + jf.Field)
+		}
+		params.Filters[jf.Field] = fv
+	}
+
+	rows, _, colRefMap, err := s.store.JournalQuery(r.Context(), j, docs, params, 10000, 0)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	s.resolveJournalRefs(r.Context(), j, colRefMap, rows)
+
+	cols := make([]string, 0, len(j.Columns)+2)
+	cols = append(cols, "Дата", "Вид")
+	for _, jcol := range j.Columns {
+		cols = append(cols, jcol.Label)
+	}
+
+	xlsRows := make([][]any, len(rows))
+	for i, row := range rows {
+		cells := make([]any, len(cols))
+		cells[0] = row["date"]
+		cells[1] = row["doc_type"]
+		for ji, jcol := range j.Columns {
+			cells[2+ji] = row[jcol.Field]
+		}
+		xlsRows[i] = cells
+	}
+
+	data, err := excel.ExportList(cols, xlsRows)
+	if err != nil {
+		http.Error(w, "Excel error: "+err.Error(), 500)
+		return
+	}
+	filename := sanitizeFilename(j.Name) + ".xlsx"
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	w.Write(data)
+}
+
+// sanitizeFilename replaces characters unsafe for Content-Disposition filename.
+func sanitizeFilename(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r == '/' || r == '\\' || r == ':' || r == '*' || r == '?' || r == '"' || r == '<' || r == '>' || r == '|' {
+			b.WriteRune('_')
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // generateNumber returns the next document number.

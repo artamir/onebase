@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"net/url"
 	"strings"
 	"time"
 
@@ -73,6 +74,22 @@ var tmpl = template.Must(template.New("root").Funcs(template.FuncMap{
 			return ""
 		}
 		return "&" + strings.Join(parts, "&")
+	},
+	"reportParamQuery": func(params any, values map[string]any) string {
+		type param interface{ GetName() string }
+		// Use reflection-free approach: just iterate over values map
+		parts := []string{}
+		if values != nil {
+			for k, v := range values {
+				if v != nil && fmt.Sprintf("%v", v) != "" {
+					parts = append(parts, k+"="+url.QueryEscape(fmt.Sprintf("%v", v)))
+				}
+			}
+		}
+		if len(parts) == 0 {
+			return ""
+		}
+		return "?" + strings.Join(parts, "&")
 	},
 	"mul": func(a, b int) int { return a * b },
 	"int": func(v any) int {
@@ -250,6 +267,7 @@ const tplList = `
     {{else}}
       <a class="btn btn-primary" href="/ui/{{lower (str .Entity.Kind)}}/{{lower .Entity.Name}}/new">+ Создать</a>
     {{end}}
+    <a class="btn btn-sm" href="/ui/{{lower (str .Entity.Kind)}}/{{lower .Entity.Name}}/excel{{filterQuery .Params}}" style="background:#16a34a;color:#fff" title="Скачать Excel">Excel ↓</a>
   </div>
 </div>
 {{if .Breadcrumbs}}
@@ -716,6 +734,9 @@ const tplReport = `
 {{end}}
 {{if .QueryError}}<div class="error">Ошибка запроса: {{.QueryError}}</div>{{end}}
 {{if .Cols}}
+<div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+  <a class="btn btn-sm" href="/ui/report/{{lower .Report.Name}}/excel{{reportParamQuery .Report.Params .ParamValues}}" style="background:#16a34a;color:#fff" title="Скачать Excel">Excel ↓</a>
+</div>
 <div class="card">
 {{if .Rows}}
 <table><thead><tr>{{range .Cols}}<th>{{.}}</th>{{end}}</tr></thead>
@@ -1018,7 +1039,10 @@ const tplJournal = `
 <main>
 <div class="row-top">
   <h2>{{.Journal.Title}}</h2>
-  <span style="color:#94a3b8;font-size:13px">Всего: {{.Total}}</span>
+  <div style="display:flex;align-items:center;gap:12px">
+    <span style="color:#94a3b8;font-size:13px">Всего: {{.Total}}</span>
+    <a class="btn btn-sm" href="/ui/journal/{{lower .Journal.Name}}/excel{{filterQuery .Params}}" style="background:#16a34a;color:#fff" title="Скачать Excel">Excel ↓</a>
+  </div>
 </div>
 {{$j := .Journal}}{{$params := .Params}}{{$fmts := .ColFormats}}
 <details{{if hasFilter $params}} open{{end}}>
