@@ -53,11 +53,20 @@
 | 18 | [18-joins.md](18-joins.md) | JOIN в языке запросов | 2 дня | ✅ Реализовано |
 | 19 | [19-http-client.md](19-http-client.md) | HTTP-клиент в DSL | 3–4 дня | ✅ Реализовано |
 | 20 | [20-email.md](20-email.md) | Email-уведомления (SMTP) | 3 дня | ✅ Реализовано |
-| 21 | [21-pdf-excel-export.md](21-pdf-excel-export.md) | Печать в PDF / экспорт в Excel | 4–5 дней | ⬜ Не начато |
-| 22 | [22-attachments.md](22-attachments.md) | Вложения к документам | 5–7 дней | ⬜ Не начато |
-| 23 | [23-search-filters.md](23-search-filters.md) | Поиск и фильтры в списках | 4–5 дней | ⬜ Не начато |
-| 24 | [24-project-templates.md](24-project-templates.md) | Шаблоны проектов (`onebase init --template`) | 3–4 дня | ⬜ Не начато |
-| 25 | [25-backup.md](25-backup.md) | Бэкап и восстановление | 3–4 дня | ⬜ Не начато |
+| 21 | [21-pdf-excel-export.md](21-pdf-excel-export.md) | Печать в PDF / экспорт в Excel | 4–5 дней | ✅ Реализовано |
+| 22 | [22-attachments.md](22-attachments.md) | Вложения к документам | 5–7 дней | ✅ Реализовано |
+| 23 | [23-search-filters.md](23-search-filters.md) | Поиск и пагинация в списках | 4–5 дней | ✅ Реализовано |
+| 24 | [24-project-templates.md](24-project-templates.md) | Шаблоны проектов (`onebase init --template`) | 3–4 дня | ✅ Реализовано |
+| 25 | [25-backup.md](25-backup.md) | Бэкап и восстановление | 3–4 дня | ✅ Реализовано |
+
+### Направление Г — Интеграции и экосистема
+
+| № | Файл | Фича | Эстимейт | Статус |
+|---|---|---|---|---|
+| 26 | [26-rest-api-v2.md](26-rest-api-v2.md) | REST API v2 (фильтры, пагинация, OpenAPI) | 5–7 дней | ⬜ Не начато |
+| 27 | [27-web-configurator.md](27-web-configurator.md) | Веб-конфигуратор (редактирование схемы в браузере) | 5–6 дней | ⬜ Не начато |
+| 28 | [28-auto-backup.md](28-auto-backup.md) | Автобэкап по расписанию с ротацией | 3 дня | ⬜ Не начато |
+| 29 | [29-webhooks.md](29-webhooks.md) | Webhook-уведомления на события | 4–5 дней | ⬜ Не начато |
 
 ## Граф зависимостей
 

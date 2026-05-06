@@ -653,24 +653,27 @@ cmd/onebase/          — точка входа
 internal/
   api/                — HTTP-сервер, роутинг
   auth/               — пользователи, сессии, middleware
-  cli/                — Cobra-команды (dev, run, migrate, start, ibases, init)
+  backup/             — Dump() и Restore() через pg_dump/psql
+  cli/                — Cobra-команды (dev, run, migrate, start, ibases, init, backup, restore)
   configdb/           — хранение конфигурации в PostgreSQL
   converter/          — импорт конфигураций из 1С (v8.3 XML)
   devserver/          — файловый вотчер для hot reload
   dsl/                — лексер, парсер, AST, интерпретатор
+  excel/              — генерация .xlsx через excelize/v2
   launcher/           — лаунчер: store, runner, HTTP-сервер, шаблоны, окно
   metadata/           — загрузка и валидация YAML-метаданных
-  printform/          — загрузка и рендеринг печатных форм
+  printform/          — загрузка, HTML-рендеринг и PDF-генерация форм
   processor/          — загрузка YAML-дескрипторов обработок
-  project/            — загрузка проекта (из папки и из БД)
-  query/              — транслятор языка запросов → SQL
+  project/            — загрузка проекта; шаблоны (templates.go)
+  query/              — транслятор языка запросов → SQL (с JOIN)
   report/             — загрузка отчётов
   runtime/            — реестр объектов, движения регистров
-  storage/            — PostgreSQL: CRUD, DDL, миграция
-  ui/                 — веб-интерфейс: шаблоны, хэндлеры, админка
+  storage/            — PostgreSQL: CRUD, DDL, миграция, вложения
+  ui/                 — веб-интерфейс: шаблоны, хэндлеры, Admin
 examples/
-  simple-erp/         — пример: склад с поступлением и списанием
-  trade/              — пример: торговля с ролями, перечислениями, константами
+  simple-erp/         — склад: поступление, списание, отчёты, печатные формы
+  trade/              — торговля: роли, перечисления, константы, подсистемы, транзакции
+  accounting/         — бухгалтерия: план счетов, регистр бухгалтерии, ОСВ
 ```
 
 ### Сборка
@@ -1241,3 +1244,207 @@ resources:
 | `examples/simple-erp/` | Склад: поступление, списание, отчёт по остаткам, печатные формы |
 | `examples/trade/` | Торговля: роли, перечисления, константы, общие модули, обработки, несколько регистров, подсистемы, транзакции, JSON |
 | `examples/accounting/` | Бухгалтерия: план счетов, регистр бухгалтерии (двойная запись), отчёты ОСВ и обороты |
+
+---
+
+## Поиск и пагинация в списках
+
+Параметры запроса для `GET /ui/catalog/<имя>` и `GET /ui/documents/<имя>`:
+
+| Параметр | Тип | Описание |
+|---|---|---|
+| `q` | string | Полнотекстовый поиск: ILIKE `%q%` по всем полям типа `string` |
+| `filter[Поле]` | string | Точный фильтр по полю (по умолчанию `=`, для строк — ILIKE) |
+| `filter[Поле_from]` | date/number | Начало диапазона |
+| `filter[Поле_to]` | date/number | Конец диапазона |
+| `sort` | string | Имя поля для сортировки |
+| `dir` | `asc` / `desc` | Направление сортировки |
+| `page` | int | Номер страницы (начиная с 1) |
+| `limit` | int | Размер страницы (1–1000, по умолчанию 100) |
+
+**Ответ шаблона** получает поля: `Total int`, `Page int`, `TotalPages int`, `HasPrev bool`, `HasNext bool`, `PrevPage int`, `NextPage int`.
+
+**Go API (`internal/storage/crud.go`):**
+
+```go
+type ListParams struct {
+    Filters   map[string]FilterValue
+    Sort      string
+    Dir       string       // "asc" | "desc"
+    ParentStr string       // для иерархических справочников
+    Search    string       // ILIKE по всем string-полям
+    Limit     int          // 0 = без ограничения
+    Offset    int          // для пагинации
+}
+
+// List() возвращает строки с применением всех условий
+rows, err := db.List(ctx, "Номенклатура", entity, params)
+
+// CountList() возвращает COUNT(*) без LIMIT/OFFSET
+total, err := db.CountList(ctx, "Номенклатура", entity, params)
+```
+
+---
+
+## Вложения (File Attachments)
+
+На карточке любого документа или справочника есть секция **«Вложения»**.
+
+### HTTP API
+
+| Метод | URL | Описание |
+|---|---|---|
+| GET | `/ui/{kind}/{name}/{id}/attachments` | JSON-список вложений |
+| POST | `/ui/{kind}/{name}/{id}/attachments` | Загрузить файл (multipart/form-data) |
+| GET | `/ui/attachments/{id}/download` | Скачать файл |
+| POST | `/ui/attachments/{id}/delete` | Удалить файл |
+
+### Таблица `_attachments`
+
+```sql
+CREATE TABLE IF NOT EXISTS _attachments (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    owner_kind  TEXT NOT NULL,     -- 'catalog' / 'document'
+    owner_name  TEXT NOT NULL,
+    owner_id    UUID NOT NULL,
+    filename    TEXT NOT NULL,
+    mime_type   TEXT NOT NULL DEFAULT '',
+    size_bytes  BIGINT NOT NULL DEFAULT 0,
+    uploaded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    uploaded_by TEXT NOT NULL DEFAULT ''
+);
+```
+
+Файлы на диске: `~/.onebase/files/<dbname>/<owner_name>/<attachment-uuid>`
+
+### Настройка в `config/app.yaml`
+
+```yaml
+attachments:
+  max_file_size_mb: 50
+  allowed_types: [pdf, png, jpg, docx, xlsx]  # пустой список = все типы
+```
+
+### Go API (`internal/storage/attachments.go`)
+
+```go
+db.EnsureAttachmentTable(ctx) error
+db.ListAttachments(ctx, ownerKind, ownerName, ownerID) ([]Attachment, error)
+db.UploadAttachment(ctx, ownerKind, ownerName, ownerID, filename, mime, reader) (Attachment, error)
+db.OpenAttachment(ctx, id) (io.ReadCloser, Attachment, error)
+db.DeleteAttachment(ctx, id) error
+```
+
+---
+
+## PDF и Excel экспорт
+
+### PDF
+
+PDF-рендеринг печатных форм реализован в `internal/printform/pdf.go` через `go-pdf/fpdf` (чистый Go, без Chrome/wkhtmltopdf).
+
+Кириллица транслитерируется (builtin Helvetica не содержит кириллических глифов). Кнопка «Скачать PDF» появляется рядом с «Печать HTML» на карточке документа.
+
+**URL:** `GET /ui/{kind}/{entity}/{id}/print/{form}/pdf`
+
+### Excel
+
+Списки справочников, документов, отчётов и журналов экспортируются в `.xlsx` через `excelize/v2`.
+
+**URL:** `GET /ui/{kind}/{entity}/excel`, `GET /ui/report/{name}/excel`
+
+Кнопка «Excel ↓» появляется в заголовке каждого списка автоматически.
+
+**Go API (`internal/excel/excel.go`):**
+
+```go
+data, err := excel.ExportList(cols []string, rows [][]any) ([]byte, error)
+```
+
+Генерирует стилизованную таблицу: заголовки синего цвета, заморозка первой строки, автоширина колонок, выравнивание чисел по правому краю.
+
+**DSL-функция:**
+
+```
+// Получить данные и выгрузить в Excel (возвращает base64 xlsx)
+Запрос = Новый Запрос;
+Запрос.Текст = "ВЫБРАТЬ Наименование, Цена ИЗ Справочник.Номенклатура";
+Строки = Запрос.Выполнить();
+xlsxBase64 = ВыгрузитьВExcel(Строки);
+```
+
+---
+
+## Шаблоны проектов
+
+Встроенные шаблоны хранятся в `internal/project/templates.go`.
+
+```bash
+onebase init --list-templates           # список шаблонов
+onebase init --template tasks ./dir     # создать из шаблона
+```
+
+| Шаблон | Содержимое |
+|---|---|
+| `tasks` | Справочники Проект/Исполнитель, документ Задача, отчёты |
+| `crm` | Клиенты, сделки, платежи с проведением, регистр взаиморасчётов |
+| `warehouse` | Номенклатура (иерархич.), склад, поступление/реализация, остатки |
+| `finance` | Счета, категории, операции с проведением, остатки по счетам |
+
+Каждый шаблон — `map[string]string` (путь → содержимое файла). Новые шаблоны добавляются через `templateRegistry` в `templates.go`.
+
+---
+
+## Бэкап и восстановление
+
+`internal/backup/backup.go`:
+
+```go
+// Dump создаёт файл backup_<db>_<timestamp>.sql.gz в outDir.
+// Требует pg_dump в PATH.
+func Dump(ctx context.Context, connStr, outDir string) (string, error)
+
+// Restore восстанавливает базу из .sql.gz файла.
+// Требует psql в PATH.
+func Restore(ctx context.Context, connStr, filePath string) error
+```
+
+Формат бэкапа: `pg_dump --format=plain --no-owner --no-acl` → gzip. Восстановление: gunzip → stdin psql.
+
+**CLI:**
+```bash
+onebase backup  --db <dsn> --out ./backups/
+onebase restore --db <dsn> --file ./backups/backup_mydb_2026-05-07_10-30.sql.gz
+```
+
+---
+
+## JOIN в языке запросов
+
+```
+ВЫБРАТЬ
+    д.Номер,
+    к.Наименование КАК Контрагент,
+    д.Сумма
+ИЗ Документ.Реализация КАК д
+ВНУТРЕННЕЕ СОЕДИНЕНИЕ Справочник.Контрагент КАК к
+    ПО д.Покупатель = к.id
+ГДЕ д.Дата >= &Начало
+УПОРЯДОЧИТЬ ПО д.Дата УБЫВ
+```
+
+Поддерживаемые типы соединений: `ВНУТРЕННЕЕ` / `INNER`, `ЛЕВОЕ` / `LEFT`, `ПРАВОЕ` / `RIGHT`, `ПОЛНОЕ` / `FULL`.
+
+Псевдонимы таблиц обязательны при использовании JOIN.
+
+---
+
+## Новые CLI-команды (справочно)
+
+| Команда | Описание |
+|---|---|
+| `onebase backup --db <dsn> --out <dir>` | Создать бэкап БД в формате .sql.gz |
+| `onebase restore --db <dsn> --file <path>` | Восстановить БД из бэкапа |
+| `onebase init --template <name> <dir>` | Создать проект из шаблона |
+| `onebase init --list-templates` | Список встроенных шаблонов |
+| `onebase convert --dir <1c-xml-dir> --out <dir>` | Конвертировать конфигурацию из 1С |
