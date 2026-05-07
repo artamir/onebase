@@ -23,7 +23,7 @@ func jsonToValue(v any) any {
 	case map[string]any:
 		m := &Map{}
 		for k, val := range x {
-			m.CallMethod("Вставить", []any{k, jsonToValue(val)})
+			m.CallMethod("вставить", []any{k, jsonToValue(val)})
 		}
 		return m
 	case []any:

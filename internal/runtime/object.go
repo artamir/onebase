@@ -1,6 +1,8 @@
 package runtime
 
 import (
+	"strings"
+
 	"github.com/google/uuid"
 	"github.com/ivantit66/onebase/internal/metadata"
 )
@@ -24,6 +26,7 @@ func NewObject(entityType string, kind metadata.Kind) *Object {
 }
 
 func (o *Object) Get(name string) any {
+	name = strings.ToLower(name)
 	if o.TablePartRows != nil {
 		if rows, ok := o.TablePartRows[name]; ok {
 			return rows
@@ -33,5 +36,5 @@ func (o *Object) Get(name string) any {
 }
 
 func (o *Object) Set(name string, v any) {
-	o.Fields[name] = v
+	o.Fields[strings.ToLower(name)] = v
 }

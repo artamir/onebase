@@ -3,6 +3,7 @@ package interpreter
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/ivantit66/onebase/internal/dsl/ast"
 	"github.com/ivantit66/onebase/internal/dsl/token"
@@ -154,11 +155,12 @@ func (i *Interpreter) assign(target ast.Expr, val any, e *env) {
 		e.set(t.Tok.Literal, val)
 	case *ast.MemberExpr:
 		obj := i.evalExpr(t.Object, e)
+		field := strings.ToLower(t.Field.Literal)
 		switch o := obj.(type) {
 		case This:
-			o.Set(t.Field.Literal, val)
+			o.Set(field, val)
 		case *Struct:
-			o.Set(t.Field.Literal, val)
+			o.Set(field, val)
 		}
 	case *ast.IndexExpr:
 		obj := i.evalExpr(t.Object, e)
@@ -167,7 +169,7 @@ func (i *Interpreter) assign(target ast.Expr, val any, e *env) {
 		case *Array:
 			o.SetIndex(int(toFloatOr0(idx)), val)
 		case *Map:
-			o.CallMethod("Вставить", []any{idx, val})
+			o.CallMethod("вставить", []any{idx, val})
 		}
 	}
 }
@@ -186,13 +188,14 @@ func (i *Interpreter) evalExpr(expr ast.Expr, e *env) any {
 		return val
 	case *ast.MemberExpr:
 		obj := i.evalExpr(v.Object, e)
+		field := strings.ToLower(v.Field.Literal)
 		switch o := obj.(type) {
 		case This:
-			return o.Get(v.Field.Literal)
+			return o.Get(field)
 		case *Struct:
-			return o.Get(v.Field.Literal)
+			return o.Get(field)
 		case *KeyValue:
-			return o.Get(v.Field.Literal)
+			return o.Get(field)
 		}
 		return nil
 	case *ast.IndexExpr:
@@ -202,7 +205,7 @@ func (i *Interpreter) evalExpr(expr ast.Expr, e *env) any {
 		case *Array:
 			return o.Index(int(toFloatOr0(idx)))
 		case *Map:
-			return o.CallMethod("Получить", []any{idx})
+			return o.CallMethod("получить", []any{idx})
 		}
 		return nil
 	case *ast.NewExpr:
@@ -219,17 +222,17 @@ func (i *Interpreter) evalExpr(expr ast.Expr, e *env) any {
 
 func (i *Interpreter) evalNew(n *ast.NewExpr, e *env) any {
 	args := i.evalArgs(n.Args, e)
-	// Встроенные типы коллекций
-	switch n.TypeName.Literal {
-	case "Массив", "Array":
+	typeName := strings.ToLower(n.TypeName.Literal)
+	switch typeName {
+	case "массив", "array":
 		return &Array{}
-	case "Соответствие", "Map":
+	case "соответствие", "map":
 		return &Map{}
-	case "Структура", "Structure":
+	case "структура", "structure":
 		return newStruct(args)
 	}
 	// Расширяемые типы через env: "__factory_<ИмяТипа>"
-	if factory, ok := e.get("__factory_" + n.TypeName.Literal); ok {
+	if factory, ok := e.get("__factory_" + typeName); ok {
 		if fn, ok := factory.(func([]any) any); ok {
 			return fn(args)
 		}
@@ -328,7 +331,7 @@ func (i *Interpreter) evalCall(c *ast.CallExpr, e *env) any {
 				return i.callUserProc(proc, e, args)
 			}
 		}
-		fn, ok := builtins[fnName]
+		fn, ok := builtins[strings.ToLower(fnName)]
 		if !ok {
 			panic(dslStop{err: fmt.Errorf("%s:%d: unknown function %q", callee.Tok.File, callee.Tok.Line, fnName)})
 		}
@@ -339,11 +342,12 @@ func (i *Interpreter) evalCall(c *ast.CallExpr, e *env) any {
 		return result
 	case *ast.MemberExpr:
 		recv := i.evalExpr(callee.Object, e)
+		method := strings.ToLower(callee.Field.Literal)
 		switch o := recv.(type) {
 		case MethodCallable:
-			return o.CallMethod(callee.Field.Literal, args)
+			return o.CallMethod(method, args)
 		case *Struct:
-			return o.CallMethod(callee.Field.Literal, args)
+			return o.CallMethod(method, args)
 		}
 		return nil
 	}

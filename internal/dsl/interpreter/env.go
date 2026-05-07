@@ -1,5 +1,7 @@
 package interpreter
 
+import "strings"
+
 // This is implemented by runtime.Object; defined here to avoid import cycles.
 type This interface {
 	Get(name string) any
@@ -35,6 +37,7 @@ func (e *env) get(name string) (any, bool) {
 	if name == "this" {
 		return e.this, true
 	}
+	name = strings.ToLower(name)
 	if v, ok := e.vars[name]; ok {
 		return v, true
 	}
@@ -45,6 +48,7 @@ func (e *env) get(name string) (any, bool) {
 }
 
 func (e *env) set(name string, v any) {
+	name = strings.ToLower(name)
 	// Если переменная уже объявлена в родительском scope — обновляем там.
 	if _, ok := e.vars[name]; !ok && e.parent != nil {
 		if e.parent.has(name) {
@@ -56,6 +60,7 @@ func (e *env) set(name string, v any) {
 }
 
 func (e *env) has(name string) bool {
+	name = strings.ToLower(name)
 	if _, ok := e.vars[name]; ok {
 		return true
 	}

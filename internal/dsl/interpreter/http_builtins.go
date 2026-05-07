@@ -19,10 +19,10 @@ type dslHTTPConnection struct {
 
 func (c *dslHTTPConnection) CallMethod(name string, args []any) any {
 	switch name {
-	case "Получить", "Get":
+	case "получить", "get":
 		req := asHTTPRequest(args, 0, "HTTPСоединение.Получить")
 		return c.do(req, "GET")
-	case "ОтправитьДля", "SendFor":
+	case "отправитьдля", "sendfor":
 		req := asHTTPRequest(args, 0, "HTTPСоединение.ОтправитьДля")
 		method := "POST"
 		if len(args) >= 2 {
@@ -81,12 +81,12 @@ type dslHTTPRequest struct {
 
 func (r *dslHTTPRequest) CallMethod(name string, args []any) any {
 	switch name {
-	case "УстановитьЗаголовок", "SetHeader":
+	case "установитьзаголовок", "setheader":
 		if len(args) >= 2 {
 			r.headers[fmt.Sprintf("%v", args[0])] = fmt.Sprintf("%v", args[1])
 		}
 		return nil
-	case "УстановитьТелоИзСтроки", "SetBodyFromString":
+	case "установитьтелоизстроки", "setbodyfromstring":
 		if len(args) > 0 {
 			r.body = fmt.Sprintf("%v", args[0])
 		}
@@ -106,7 +106,7 @@ type dslHTTPResponse struct {
 // Get implements This — allows Ответ.КодСостояния property access.
 func (r *dslHTTPResponse) Get(field string) any {
 	switch field {
-	case "КодСостояния", "StatusCode":
+	case "кодсостояния", "statuscode":
 		return float64(r.statusCode)
 	}
 	return nil
@@ -116,9 +116,9 @@ func (r *dslHTTPResponse) Set(field string, val any) {}
 
 func (r *dslHTTPResponse) CallMethod(name string, args []any) any {
 	switch name {
-	case "ПолучитьТелоКакСтроку", "GetBodyAsString":
+	case "получитьтелокакстроку", "getbodyasstring":
 		return r.body
-	case "ПолучитьЗаголовок", "GetHeader":
+	case "получитьзаголовок", "getheader":
 		if len(args) > 0 {
 			return r.headers.Get(fmt.Sprintf("%v", args[0]))
 		}

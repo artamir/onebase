@@ -8,8 +8,8 @@ import (
 )
 
 func init() {
-	builtins["ВыгрузитьВExcel"] = builtinExportExcel
-	builtins["ExportExcel"] = builtinExportExcel
+	builtins["выгрузитьвexcel"] = builtinExportExcel
+	builtins["exportexcel"] = builtinExportExcel
 }
 
 // builtinExportExcel(data, title)

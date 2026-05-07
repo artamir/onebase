@@ -48,7 +48,7 @@ func NewQueryFactory(ctx context.Context, db QueryDB, reg QueryRegistry) func(ar
 
 func (q *queryProxy) Get(field string) any {
 	switch field {
-	case "Текст", "Text":
+	case "текст", "text":
 		return q.text
 	}
 	return nil
@@ -56,7 +56,7 @@ func (q *queryProxy) Get(field string) any {
 
 func (q *queryProxy) Set(field string, val any) {
 	switch field {
-	case "Текст", "Text":
+	case "текст", "text":
 		q.text = fmt.Sprintf("%v", val)
 	}
 }
@@ -65,13 +65,13 @@ func (q *queryProxy) Set(field string, val any) {
 
 func (q *queryProxy) CallMethod(name string, args []any) any {
 	switch name {
-	case "УстановитьПараметр", "SetParameter":
+	case "установитьпараметр", "setparameter":
 		if len(args) >= 2 {
 			key := fmt.Sprintf("%v", args[0])
 			q.params[key] = args[1]
 		}
 		return nil
-	case "Выполнить", "Execute":
+	case "выполнить", "execute":
 		return q.execute()
 	}
 	panic(userError{Msg: "Объект Запрос не имеет метода " + name})
@@ -98,6 +98,7 @@ func (q *queryProxy) execute() *Array {
 	for _, row := range rows {
 		s := &Struct{vals: make(map[string]any)}
 		for k, v := range row {
+			k = strings.ToLower(k)
 			s.keys = append(s.keys, k)
 			s.vals[k] = v
 		}

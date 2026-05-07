@@ -21,15 +21,15 @@ type dslEmail struct {
 
 func (e *dslEmail) Get(field string) any {
 	switch field {
-	case "Кому", "To":
+	case "кому", "to":
 		return e.to
-	case "Копия", "CC":
+	case "копия", "cc":
 		return e.cc
-	case "Тема", "Subject":
+	case "тема", "subject":
 		return e.subject
-	case "Текст", "Text", "Body":
+	case "текст", "text", "body":
 		return e.text
-	case "HTMLТело", "HTMLBody":
+	case "htmlтело", "htmlbody":
 		return e.html
 	}
 	return nil
@@ -38,22 +38,22 @@ func (e *dslEmail) Get(field string) any {
 func (e *dslEmail) Set(field string, val any) {
 	s := fmt.Sprintf("%v", val)
 	switch field {
-	case "Кому", "To":
+	case "кому", "to":
 		e.to = s
-	case "Копия", "CC":
+	case "копия", "cc":
 		e.cc = s
-	case "Тема", "Subject":
+	case "тема", "subject":
 		e.subject = s
-	case "Текст", "Text", "Body":
+	case "текст", "text", "body":
 		e.text = s
-	case "HTMLТело", "HTMLBody":
+	case "htmlтело", "htmlbody":
 		e.html = s
 	}
 }
 
 func (e *dslEmail) CallMethod(name string, args []any) any {
 	switch name {
-	case "Отправить", "Send":
+	case "отправить", "send":
 		if e.to == "" {
 			panic(userError{Msg: "ПисьмоEmail.Отправить: поле Кому не задано"})
 		}

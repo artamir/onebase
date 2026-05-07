@@ -1,5 +1,7 @@
 package token
 
+import "strings"
+
 type Type int
 
 const (
@@ -57,62 +59,62 @@ const (
 )
 
 var keywords = map[string]Type{
-	// English
-	"Procedure":    PROCEDURE,
-	"EndProcedure": ENDPROCEDURE,
-	"Function":     FUNCTION,
-	"EndFunction":  ENDFUNCTION,
-	"If":           IF,
-	"Then":         THEN,
-	"Else":         ELSE,
-	"EndIf":        ENDIF,
-	"Var":          VAR,
-	"For":          FOR,
-	"Each":         EACH,
-	"In":           IN,
-	"Do":           DO,
-	"EndDo":        ENDDO,
-	"To":           TO,
-	"Return":       RETURN,
-	// Русский
-	"Процедура":      PROCEDURE,
-	"КонецПроцедуры": ENDPROCEDURE,
-	"Функция":        FUNCTION,
-	"КонецФункции":   ENDFUNCTION,
-	"Если":           IF,
-	"Тогда":          THEN,
-	"Иначе":          ELSE,
-	"КонецЕсли":      ENDIF,
-	"Перем":          VAR,
-	"Для":            FOR,
-	"Каждого":        EACH,
-	"Из":             IN,
-	"Цикл":           DO,
-	"КонецЦикла":     ENDDO,
-	"По":             TO,
-	"Возврат":        RETURN,
+	// English (all lowercase)
+	"procedure":    PROCEDURE,
+	"endprocedure": ENDPROCEDURE,
+	"function":     FUNCTION,
+	"endfunction":  ENDFUNCTION,
+	"if":           IF,
+	"then":         THEN,
+	"else":         ELSE,
+	"endif":        ENDIF,
+	"var":          VAR,
+	"for":          FOR,
+	"each":         EACH,
+	"in":           IN,
+	"do":           DO,
+	"enddo":        ENDDO,
+	"to":           TO,
+	"return":       RETURN,
+	// Русский (все в нижнем регистре)
+	"процедура":      PROCEDURE,
+	"конецпроцедуры": ENDPROCEDURE,
+	"функция":        FUNCTION,
+	"конецфункции":   ENDFUNCTION,
+	"если":           IF,
+	"тогда":          THEN,
+	"иначе":          ELSE,
+	"конецесли":      ENDIF,
+	"перем":          VAR,
+	"для":            FOR,
+	"каждого":        EACH,
+	"из":             IN,
+	"цикл":           DO,
+	"конеццикла":     ENDDO,
+	"по":             TO,
+	"возврат":        RETURN,
 	// новый / new
-	"Новый": NEW,
-	"New":   NEW,
+	"новый": NEW,
+	"new":   NEW,
 	// логика
-	"И":     AND,
-	"And":   AND,
-	"ИЛИ":   OR,
-	"Or":    OR,
-	"НЕ":    NOT,
-	"Not":   NOT,
+	"и":   AND,
+	"and": AND,
+	"или": OR,
+	"or":  OR,
+	"не":  NOT,
+	"not": NOT,
 	// булевы литералы
-	"Истина": TRUE,
-	"True":   TRUE,
-	"Ложь":   FALSE,
-	"False":  FALSE,
+	"истина": TRUE,
+	"true":   TRUE,
+	"ложь":   FALSE,
+	"false":  FALSE,
 	// попытка / исключение
-	"Попытка":      TRY,
-	"Try":          TRY,
-	"Исключение":   EXCEPT,
-	"Except":       EXCEPT,
-	"КонецПопытки": ENDTRY,
-	"EndTry":       ENDTRY,
+	"попытка":      TRY,
+	"try":          TRY,
+	"исключение":   EXCEPT,
+	"except":       EXCEPT,
+	"конецпопытки": ENDTRY,
+	"endtry":       ENDTRY,
 }
 
 type Token struct {
@@ -124,7 +126,7 @@ type Token struct {
 }
 
 func LookupIdent(ident string) Type {
-	if t, ok := keywords[ident]; ok {
+	if t, ok := keywords[strings.ToLower(ident)]; ok {
 		return t
 	}
 	return IDENT

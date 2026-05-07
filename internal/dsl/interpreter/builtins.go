@@ -25,20 +25,18 @@ func (e *DSLError) Error() string {
 var builtins = map[string]func(args []any, file string, line int) (any, error){
 
 	// ─── Сообщения ────────────────────────────────────────────────────────
-	"Сообщить": func(args []any, file string, line int) (any, error) { return nil, nil },
-	"Message":  func(args []any, file string, line int) (any, error) { return nil, nil },
+	"сообщить": func(args []any, file string, line int) (any, error) { return nil, nil },
+	"message":  func(args []any, file string, line int) (any, error) { return nil, nil },
 
 	// ─── Ошибки ───────────────────────────────────────────────────────────
-	// Error/ВызватьИсключение панит userError — перехватывается Попыткой.
-	// Если не внутри Попытки — всплывает до Run() и конвертируется в DSLError.
-	"Error": func(args []any, file string, line int) (any, error) {
+	"error": func(args []any, file string, line int) (any, error) {
 		msg := ""
 		if len(args) > 0 {
 			msg = fmt.Sprintf("%v", args[0])
 		}
 		panic(userError{Msg: msg})
 	},
-	"ВызватьИсключение": func(args []any, file string, line int) (any, error) {
+	"вызватьисключение": func(args []any, file string, line int) (any, error) {
 		msg := ""
 		if len(args) > 0 {
 			msg = fmt.Sprintf("%v", args[0])
@@ -47,56 +45,51 @@ var builtins = map[string]func(args []any, file string, line int) (any, error){
 	},
 
 	// ─── Даты ─────────────────────────────────────────────────────────────
-	// Today() / ТекущаяДата() — текущая дата без времени
-	"Today": func(args []any, file string, line int) (any, error) {
+	"today": func(args []any, file string, line int) (any, error) {
 		t := time.Now()
 		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.Local), nil
 	},
-	"ТекущаяДата": func(args []any, file string, line int) (any, error) {
+	"текущаядата": func(args []any, file string, line int) (any, error) {
 		t := time.Now()
 		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.Local), nil
 	},
-	// Now() / ТекущаяДатаВремя() — дата и время
-	"Now": func(args []any, file string, line int) (any, error) {
+	"now": func(args []any, file string, line int) (any, error) {
 		return time.Now(), nil
 	},
-	"ТекущаяДатаВремя": func(args []any, file string, line int) (any, error) {
+	"текущаядатавремя": func(args []any, file string, line int) (any, error) {
 		return time.Now(), nil
 	},
-	// Year(d) / Год(d)
-	"Year": func(args []any, file string, line int) (any, error) {
+	"year": func(args []any, file string, line int) (any, error) {
 		if t, ok := toTime(args, 0); ok {
 			return float64(t.Year()), nil
 		}
 		return nil, nil
 	},
-	"Год": func(args []any, file string, line int) (any, error) {
+	"год": func(args []any, file string, line int) (any, error) {
 		if t, ok := toTime(args, 0); ok {
 			return float64(t.Year()), nil
 		}
 		return nil, nil
 	},
-	// Month(d) / Месяц(d)
-	"Month": func(args []any, file string, line int) (any, error) {
+	"month": func(args []any, file string, line int) (any, error) {
 		if t, ok := toTime(args, 0); ok {
 			return float64(t.Month()), nil
 		}
 		return nil, nil
 	},
-	"Месяц": func(args []any, file string, line int) (any, error) {
+	"месяц": func(args []any, file string, line int) (any, error) {
 		if t, ok := toTime(args, 0); ok {
 			return float64(t.Month()), nil
 		}
 		return nil, nil
 	},
-	// Day(d) / День(d)
-	"Day": func(args []any, file string, line int) (any, error) {
+	"day": func(args []any, file string, line int) (any, error) {
 		if t, ok := toTime(args, 0); ok {
 			return float64(t.Day()), nil
 		}
 		return nil, nil
 	},
-	"День": func(args []any, file string, line int) (any, error) {
+	"день": func(args []any, file string, line int) (any, error) {
 		if t, ok := toTime(args, 0); ok {
 			return float64(t.Day()), nil
 		}
@@ -104,8 +97,7 @@ var builtins = map[string]func(args []any, file string, line int) (any, error){
 	},
 
 	// ─── Строки ───────────────────────────────────────────────────────────
-	// Str(n) / Строка(n) — число → строка
-	"Str": func(args []any, file string, line int) (any, error) {
+	"str": func(args []any, file string, line int) (any, error) {
 		if len(args) == 0 {
 			return "", nil
 		}
@@ -117,7 +109,7 @@ var builtins = map[string]func(args []any, file string, line int) (any, error){
 		}
 		return fmt.Sprintf("%v", args[0]), nil
 	},
-	"Строка": func(args []any, file string, line int) (any, error) {
+	"строка": func(args []any, file string, line int) (any, error) {
 		if len(args) == 0 {
 			return "", nil
 		}
@@ -129,8 +121,7 @@ var builtins = map[string]func(args []any, file string, line int) (any, error){
 		}
 		return fmt.Sprintf("%v", args[0]), nil
 	},
-	// Number(s) / Число(s) — строка → число
-	"Number": func(args []any, file string, line int) (any, error) {
+	"number": func(args []any, file string, line int) (any, error) {
 		if len(args) == 0 {
 			return float64(0), nil
 		}
@@ -141,7 +132,7 @@ var builtins = map[string]func(args []any, file string, line int) (any, error){
 		}
 		return f, nil
 	},
-	"Число": func(args []any, file string, line int) (any, error) {
+	"число": func(args []any, file string, line int) (any, error) {
 		if len(args) == 0 {
 			return float64(0), nil
 		}
@@ -152,29 +143,25 @@ var builtins = map[string]func(args []any, file string, line int) (any, error){
 		}
 		return f, nil
 	},
-	// Upper(s) / ВРег(s)
-	"Upper": func(args []any, file string, line int) (any, error) {
+	"upper": func(args []any, file string, line int) (any, error) {
 		return strings.ToUpper(strArg(args, 0)), nil
 	},
-	"ВРег": func(args []any, file string, line int) (any, error) {
+	"врег": func(args []any, file string, line int) (any, error) {
 		return strings.ToUpper(strArg(args, 0)), nil
 	},
-	// Lower(s) / НРег(s)
-	"Lower": func(args []any, file string, line int) (any, error) {
+	"lower": func(args []any, file string, line int) (any, error) {
 		return strings.ToLower(strArg(args, 0)), nil
 	},
-	"НРег": func(args []any, file string, line int) (any, error) {
+	"нрег": func(args []any, file string, line int) (any, error) {
 		return strings.ToLower(strArg(args, 0)), nil
 	},
-	// TrimAll(s) / СокрЛП(s)
-	"TrimAll": func(args []any, file string, line int) (any, error) {
+	"trimall": func(args []any, file string, line int) (any, error) {
 		return strings.TrimSpace(strArg(args, 0)), nil
 	},
-	"СокрЛП": func(args []any, file string, line int) (any, error) {
+	"сокрлп": func(args []any, file string, line int) (any, error) {
 		return strings.TrimSpace(strArg(args, 0)), nil
 	},
-	// Left(s, n) / Лев(s, n)
-	"Left": func(args []any, file string, line int) (any, error) {
+	"left": func(args []any, file string, line int) (any, error) {
 		s := []rune(strArg(args, 0))
 		n := int(floatArg(args, 1))
 		if n > len(s) {
@@ -185,7 +172,7 @@ var builtins = map[string]func(args []any, file string, line int) (any, error){
 		}
 		return string(s[:n]), nil
 	},
-	"Лев": func(args []any, file string, line int) (any, error) {
+	"лев": func(args []any, file string, line int) (any, error) {
 		s := []rune(strArg(args, 0))
 		n := int(floatArg(args, 1))
 		if n > len(s) {
@@ -196,8 +183,7 @@ var builtins = map[string]func(args []any, file string, line int) (any, error){
 		}
 		return string(s[:n]), nil
 	},
-	// Right(s, n) / Прав(s, n)
-	"Right": func(args []any, file string, line int) (any, error) {
+	"right": func(args []any, file string, line int) (any, error) {
 		s := []rune(strArg(args, 0))
 		n := int(floatArg(args, 1))
 		if n > len(s) {
@@ -208,7 +194,7 @@ var builtins = map[string]func(args []any, file string, line int) (any, error){
 		}
 		return string(s[len(s)-n:]), nil
 	},
-	"Прав": func(args []any, file string, line int) (any, error) {
+	"прав": func(args []any, file string, line int) (any, error) {
 		s := []rune(strArg(args, 0))
 		n := int(floatArg(args, 1))
 		if n > len(s) {
@@ -219,22 +205,19 @@ var builtins = map[string]func(args []any, file string, line int) (any, error){
 		}
 		return string(s[len(s)-n:]), nil
 	},
-	// Mid(s, start, len) / Сред(s, start, len) — 1-based
-	"Mid": func(args []any, file string, line int) (any, error) {
+	"mid": func(args []any, file string, line int) (any, error) {
 		return midStr(args), nil
 	},
-	"Сред": func(args []any, file string, line int) (any, error) {
+	"сред": func(args []any, file string, line int) (any, error) {
 		return midStr(args), nil
 	},
-	// StrLen(s) / СтрДлина(s)
-	"StrLen": func(args []any, file string, line int) (any, error) {
+	"strlen": func(args []any, file string, line int) (any, error) {
 		return float64(len([]rune(strArg(args, 0)))), nil
 	},
-	"СтрДлина": func(args []any, file string, line int) (any, error) {
+	"стрдлина": func(args []any, file string, line int) (any, error) {
 		return float64(len([]rune(strArg(args, 0)))), nil
 	},
-	// StrFind(s, sub) / СтрНайти(s, sub) — 1-based, 0 если не нашли
-	"StrFind": func(args []any, file string, line int) (any, error) {
+	"strfind": func(args []any, file string, line int) (any, error) {
 		s := strArg(args, 0)
 		sub := strArg(args, 1)
 		idx := strings.Index(s, sub)
@@ -243,7 +226,7 @@ var builtins = map[string]func(args []any, file string, line int) (any, error){
 		}
 		return float64(len([]rune(s[:idx])) + 1), nil
 	},
-	"СтрНайти": func(args []any, file string, line int) (any, error) {
+	"стрнайти": func(args []any, file string, line int) (any, error) {
 		s := strArg(args, 0)
 		sub := strArg(args, 1)
 		idx := strings.Index(s, sub)
@@ -254,55 +237,48 @@ var builtins = map[string]func(args []any, file string, line int) (any, error){
 	},
 
 	// ─── Математика ───────────────────────────────────────────────────────
-	// Round(n, digits) / Окр(n, digits)
-	"Round": func(args []any, file string, line int) (any, error) {
+	"round": func(args []any, file string, line int) (any, error) {
 		n := floatArg(args, 0)
 		d := int(floatArg(args, 1))
 		p := math.Pow(10, float64(d))
 		return math.Round(n*p) / p, nil
 	},
-	"Окр": func(args []any, file string, line int) (any, error) {
+	"окр": func(args []any, file string, line int) (any, error) {
 		n := floatArg(args, 0)
 		d := int(floatArg(args, 1))
 		p := math.Pow(10, float64(d))
 		return math.Round(n*p) / p, nil
 	},
-	// Abs(n) / Абс(n)
-	"Abs": func(args []any, file string, line int) (any, error) {
+	"abs": func(args []any, file string, line int) (any, error) {
 		return math.Abs(floatArg(args, 0)), nil
 	},
-	"Абс": func(args []any, file string, line int) (any, error) {
+	"абс": func(args []any, file string, line int) (any, error) {
 		return math.Abs(floatArg(args, 0)), nil
 	},
-	// Int(n) / Цел(n) — целая часть
-	"Int": func(args []any, file string, line int) (any, error) {
+	"int": func(args []any, file string, line int) (any, error) {
 		return math.Trunc(floatArg(args, 0)), nil
 	},
-	"Цел": func(args []any, file string, line int) (any, error) {
+	"цел": func(args []any, file string, line int) (any, error) {
 		return math.Trunc(floatArg(args, 0)), nil
 	},
-	// Max(a, b) / Макс(a, b)
-	"Max": func(args []any, file string, line int) (any, error) {
+	"max": func(args []any, file string, line int) (any, error) {
 		return math.Max(floatArg(args, 0), floatArg(args, 1)), nil
 	},
-	"Макс": func(args []any, file string, line int) (any, error) {
+	"макс": func(args []any, file string, line int) (any, error) {
 		return math.Max(floatArg(args, 0), floatArg(args, 1)), nil
 	},
-	// Min(a, b) / Мин(a, b)
-	"Min": func(args []any, file string, line int) (any, error) {
+	"min": func(args []any, file string, line int) (any, error) {
 		return math.Min(floatArg(args, 0), floatArg(args, 1)), nil
 	},
-	"Мин": func(args []any, file string, line int) (any, error) {
+	"мин": func(args []any, file string, line int) (any, error) {
 		return math.Min(floatArg(args, 0), floatArg(args, 1)), nil
 	},
 
 	// ─── JSON ─────────────────────────────────────────────────────────────
-	// ПрочитатьJSON(s) / ReadJSON(s) — JSON-строка → Соответствие / Массив / примитив
-	"ПрочитатьJSON": builtinReadJSON,
-	"ReadJSON":       builtinReadJSON,
-	// ЗаписатьJSON(v) / WriteJSON(v) — Соответствие / Массив / примитив → JSON-строка
-	"ЗаписатьJSON": builtinWriteJSON,
-	"WriteJSON":     builtinWriteJSON,
+	"прочитатьjson": builtinReadJSON,
+	"readjson":      builtinReadJSON,
+	"записатьjson":  builtinWriteJSON,
+	"writejson":     builtinWriteJSON,
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────

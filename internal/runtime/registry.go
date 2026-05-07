@@ -80,7 +80,7 @@ func (r *Registry) Load(entities []*metadata.Entity, programs map[string]*ast.Pr
 	for entityName, prog := range programs {
 		pm := make(map[string]*ast.ProcedureDecl, len(prog.Procedures))
 		for _, p := range prog.Procedures {
-			pm[p.Name.Literal] = p
+			pm[strings.ToLower(p.Name.Literal)] = p
 		}
 		newProcs[entityName] = pm
 	}
@@ -247,17 +247,17 @@ func (r *Registry) Entities() []*metadata.Entity {
 	return out
 }
 
-// eventAliases maps canonical English event names to their Russian equivalents.
+// eventAliases maps lowercase English event names to their Russian equivalents.
 var eventAliases = map[string]string{
-	"OnWrite": "ПриЗаписи",
-	"OnPost":  "ОбработкаПроведения",
+	"onwrite": "призаписи",
+	"onpost":  "обработкапроведения",
 }
 
 func (r *Registry) LoadModules(modules map[string]*ast.Program) {
 	flat := make(map[string]*ast.ProcedureDecl)
 	for _, prog := range modules {
 		for _, p := range prog.Procedures {
-			flat[p.Name.Literal] = p
+			flat[strings.ToLower(p.Name.Literal)] = p
 		}
 	}
 	r.mu.Lock()
@@ -278,7 +278,7 @@ func (r *Registry) LoadProcessors(procs []*processor.Processor) {
 func (r *Registry) GetModuleProc(name string) *ast.ProcedureDecl {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.moduleProcs[name]
+	return r.moduleProcs[strings.ToLower(name)]
 }
 
 func (r *Registry) Processors() []*processor.Processor {
@@ -374,11 +374,12 @@ func (r *Registry) GetProcedure(entityName, procName string) *ast.ProcedureDecl 
 			return nil
 		}
 	}
-	if p, ok := pm[procName]; ok {
+	procLower := strings.ToLower(procName)
+	if p, ok := pm[procLower]; ok {
 		return p
 	}
-	// try Russian alias
-	if ru, ok := eventAliases[procName]; ok {
+	// try English alias → Russian proc name (both stored as lowercase)
+	if ru, ok := eventAliases[procLower]; ok {
 		return pm[ru]
 	}
 	return nil

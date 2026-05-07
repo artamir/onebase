@@ -1,6 +1,9 @@
 package interpreter
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // ─── Array (Массив) ───────────────────────────────────────────────────────────
 
@@ -10,25 +13,25 @@ type Array struct {
 
 func (a *Array) CallMethod(name string, args []any) any {
 	switch name {
-	case "Добавить", "Add":
+	case "добавить", "add":
 		if len(args) > 0 {
 			a.items = append(a.items, args[0])
 		}
-	case "Количество", "Count":
+	case "количество", "count":
 		return float64(len(a.items))
-	case "Получить", "Get":
+	case "получить", "get":
 		idx := int(floatArg(args, 0))
 		if idx >= 0 && idx < len(a.items) {
 			return a.items[idx]
 		}
-	case "Удалить", "Delete":
+	case "удалить", "delete":
 		idx := int(floatArg(args, 0))
 		if idx >= 0 && idx < len(a.items) {
 			a.items = append(a.items[:idx], a.items[idx+1:]...)
 		}
-	case "Очистить", "Clear":
+	case "очистить", "clear":
 		a.items = nil
-	case "Вставить", "Insert":
+	case "вставить", "insert":
 		if len(args) >= 2 {
 			idx := int(floatArg(args, 0))
 			val := args[1]
@@ -77,6 +80,7 @@ func newStruct(args []any) *Struct {
 	// args[0] — строка с именами полей через запятую
 	fields := splitComma(strArg(args, 0))
 	for i, f := range fields {
+		f = strings.ToLower(f)
 		s.keys = append(s.keys, f)
 		if i+1 < len(args) {
 			s.vals[f] = args[i+1]
@@ -87,14 +91,14 @@ func newStruct(args []any) *Struct {
 	return s
 }
 
-func (s *Struct) Get(field string) any    { return s.vals[field] }
-func (s *Struct) Set(field string, v any) { s.vals[field] = v }
+func (s *Struct) Get(field string) any    { return s.vals[strings.ToLower(field)] }
+func (s *Struct) Set(field string, v any) { s.vals[strings.ToLower(field)] = v }
 
 func (s *Struct) CallMethod(name string, args []any) any {
 	switch name {
-	case "Вставить", "Insert":
+	case "вставить", "insert":
 		if len(args) >= 1 {
-			key := strArg(args, 0)
+			key := strings.ToLower(strArg(args, 0))
 			if _, exists := s.vals[key]; !exists {
 				s.keys = append(s.keys, key)
 			}
@@ -104,8 +108,8 @@ func (s *Struct) CallMethod(name string, args []any) any {
 			}
 			s.vals[key] = val
 		}
-	case "Удалить", "Delete":
-		key := strArg(args, 0)
+	case "удалить", "delete":
+		key := strings.ToLower(strArg(args, 0))
 		delete(s.vals, key)
 		for i, k := range s.keys {
 			if k == key {
@@ -113,10 +117,10 @@ func (s *Struct) CallMethod(name string, args []any) any {
 				break
 			}
 		}
-	case "Количество", "Count":
+	case "количество", "count":
 		return float64(len(s.keys))
-	case "Свойство", "Property":
-		key := strArg(args, 0)
+	case "свойство", "property":
+		key := strings.ToLower(strArg(args, 0))
 		v, ok := s.vals[key]
 		if !ok {
 			return nil
@@ -145,7 +149,7 @@ func (m *Map) findIdx(key any) int {
 
 func (m *Map) CallMethod(name string, args []any) any {
 	switch name {
-	case "Вставить", "Insert":
+	case "вставить", "insert":
 		if len(args) >= 1 {
 			key := args[0]
 			var val any
@@ -159,22 +163,22 @@ func (m *Map) CallMethod(name string, args []any) any {
 				m.vals = append(m.vals, val)
 			}
 		}
-	case "Получить", "Get":
+	case "получить", "get":
 		if len(args) >= 1 {
 			if idx := m.findIdx(args[0]); idx >= 0 {
 				return m.vals[idx]
 			}
 		}
-	case "Удалить", "Delete":
+	case "удалить", "delete":
 		if len(args) >= 1 {
 			if idx := m.findIdx(args[0]); idx >= 0 {
 				m.keys = append(m.keys[:idx], m.keys[idx+1:]...)
 				m.vals = append(m.vals[:idx], m.vals[idx+1:]...)
 			}
 		}
-	case "Количество", "Count":
+	case "количество", "count":
 		return float64(len(m.keys))
-	case "Очистить", "Clear":
+	case "очистить", "clear":
 		m.keys = nil
 		m.vals = nil
 	}
@@ -190,9 +194,9 @@ type KeyValue struct {
 
 func (kv *KeyValue) Get(field string) any {
 	switch field {
-	case "Ключ", "Key":
+	case "ключ", "key":
 		return kv.Key
-	case "Значение", "Value":
+	case "значение", "value":
 		return kv.Value
 	}
 	return nil
