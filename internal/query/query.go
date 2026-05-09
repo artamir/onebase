@@ -479,7 +479,7 @@ func (tr *translator) findInfoRegister(name string) *metadata.InfoRegister {
 func dimCols(dims []metadata.Field) []string {
 	names := make([]string, len(dims))
 	for i, d := range dims {
-		names[i] = strings.ToLower(d.Name)
+		names[i] = metadata.ColumnName(d)
 	}
 	return names
 }

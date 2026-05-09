@@ -28,11 +28,18 @@ func NewObject(entityType string, kind metadata.Kind) *Object {
 func (o *Object) Get(name string) any {
 	name = strings.ToLower(name)
 	if o.TablePartRows != nil {
-		if rows, ok := o.TablePartRows[name]; ok {
-			return rows
+		for k, v := range o.TablePartRows {
+			if strings.ToLower(k) == name {
+				return v
+			}
 		}
 	}
-	return o.Fields[name]
+	for k, v := range o.Fields {
+		if strings.ToLower(k) == name {
+			return v
+		}
+	}
+	return nil
 }
 
 func (o *Object) Set(name string, v any) {
