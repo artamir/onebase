@@ -26,7 +26,7 @@ type userError struct{ Msg string }
 type DebugHook interface {
 	HookCheckBreakpoint(file string, line int) bool
 	HookShouldStep(stackDepth int) bool
-	HookOnPause(file string, line int, vars map[string]any, evalFn func(string) (any, error))
+	HookOnPause(file string, line int, vars map[string]any, evalFn func(string) (any, error), reason string)
 	HookPushFrame(procedure string, line int)
 	HookPopFrame()
 }
@@ -121,11 +121,15 @@ func (i *Interpreter) beforeStmt(s ast.Stmt, e *env) {
 		return
 	}
 
+	reason := "step"
+	if hitBP {
+		reason = "breakpoint"
+	}
 	vars := e.GetAllVariables()
 	evalFn := func(expr string) (any, error) {
 		return i.evaluateExprString(expr, e)
 	}
-	i.DebugHook.HookOnPause(loc.File, loc.Line, vars, evalFn)
+	i.DebugHook.HookOnPause(loc.File, loc.Line, vars, evalFn, reason)
 }
 
 func stackDepth(e *env) int {

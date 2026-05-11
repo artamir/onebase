@@ -87,6 +87,7 @@ type StatusSnapshot struct {
 	Variables   []VarEntry      `json:"variables,omitempty"`
 	Stack       []StackFrame    `json:"stack,omitempty"`
 	Breakpoints []Breakpoint    `json:"breakpoints,omitempty"`
+	PauseReason string          `json:"pause_reason,omitempty"` // "breakpoint" or "step"
 	Error       string          `json:"error,omitempty"`
 
 	// Diagnostics — filled when debug is enabled

@@ -38,9 +38,10 @@ type ActiveSession struct {
 	breakpoints map[string]map[int]*Breakpoint
 
 	// Snapshot captured at pause time
-	currentLoc *Location
-	callStack  []StackFrame
-	vars       map[string]any
+	currentLoc  *Location
+	callStack   []StackFrame
+	vars        map[string]any
+	pauseReason string // "breakpoint" or "step"
 
 	// Diagnostics — last check info
 	diagLastFile string
@@ -306,12 +307,13 @@ func (s *ActiveSession) StackDepth() int {
 // Pause is called by the interpreter goroutine when it hits a breakpoint or step.
 // It blocks until Continue/Step/Stop is called from an HTTP handler.
 // The evalFn callback is called for expression evaluation requests during pause.
-func (s *ActiveSession) Pause(loc Location, vars map[string]any, stack []StackFrame, evalFn func(string) (any, error)) {
+func (s *ActiveSession) Pause(loc Location, vars map[string]any, stack []StackFrame, evalFn func(string) (any, error), reason string) {
 	s.mu.Lock()
 	s.State = StatePaused
 	s.currentLoc = &loc
 	s.vars = vars
 	s.callStack = stack
+	s.pauseReason = reason
 	s.mu.Unlock()
 
 	// Signal that we're paused (non-blocking write to buffered channel)
@@ -395,15 +397,22 @@ func (s *ActiveSession) ShouldStep(currentDepth int) bool {
 	if mode == StepNone {
 		return false
 	}
+	var result bool
 	switch mode {
 	case StepOver:
-		return currentDepth <= sd
+		result = currentDepth <= sd
 	case StepInto:
-		return true
+		result = true
 	case StepOut:
-		return currentDepth < sd
+		result = currentDepth < sd
 	}
-	return false
+	s.mu.Lock()
+	s.diagMessages = append(s.diagMessages, fmt.Sprintf("step mode=%s depth=%d stepDepth=%d result=%v", mode, currentDepth, sd, result))
+	if len(s.diagMessages) > 50 {
+		s.diagMessages = s.diagMessages[len(s.diagMessages)-50:]
+	}
+	s.mu.Unlock()
+	return result
 }
 
 // ── State queries (for HTTP API) ─────────────────────────────────
@@ -418,6 +427,7 @@ func (s *ActiveSession) Snapshot() StatusSnapshot {
 		Location:     s.currentLoc,
 		Stack:        make([]StackFrame, len(s.callStack)),
 		Breakpoints:  make([]Breakpoint, 0),
+		PauseReason:  s.pauseReason,
 		DiagLastFile: s.diagLastFile,
 		DiagLastLine: s.diagLastLine,
 		DiagMessages: s.diagMessages,
@@ -486,10 +496,10 @@ func (s *ActiveSession) HookShouldStep(depth int) bool {
 	return s.ShouldStep(depth)
 }
 
-func (s *ActiveSession) HookOnPause(file string, line int, vars map[string]any, evalFn func(string) (any, error)) {
+func (s *ActiveSession) HookOnPause(file string, line int, vars map[string]any, evalFn func(string) (any, error), reason string) {
 	loc := Location{File: normalizeFilePath(file), Line: line}
 	stack := s.GetCallStack()
-	s.Pause(loc, vars, stack, evalFn)
+	s.Pause(loc, vars, stack, evalFn, reason)
 }
 
 func (s *ActiveSession) HookPushFrame(procedure string, line int) {

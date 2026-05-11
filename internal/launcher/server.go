@@ -10,9 +10,10 @@ import (
 
 // Server is the launcher HTTP server (list of registered bases).
 type Server struct {
-	h    *handler
-	ln   net.Listener
-	quit chan struct{}
+	h      *handler
+	ln     net.Listener
+	quit   chan struct{}
+	httpSrv *http.Server
 }
 
 // NewServer creates a launcher server bound to a random available port.
@@ -30,6 +31,13 @@ func (s *Server) URL() string { return "http://" + s.ln.Addr().String() }
 
 // Done returns a channel that is closed when /quit is received.
 func (s *Server) Done() <-chan struct{} { return s.quit }
+
+// Close shuts down the HTTP server and closes the listener.
+func (s *Server) Close() {
+	if s.httpSrv != nil {
+		s.httpSrv.Close()
+	}
+}
 
 func (s *Server) ListenAndServe() error {
 	r := chi.NewRouter()
@@ -75,5 +83,6 @@ func (s *Server) ListenAndServe() error {
 		close(s.quit)
 	})
 
-	return http.Serve(s.ln, r)
+	s.httpSrv = &http.Server{Handler: r}
+	return s.httpSrv.Serve(s.ln)
 }

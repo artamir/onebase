@@ -240,11 +240,12 @@ pre.convert-out{background:#f5f7fa;border:1px solid #e2e6ed;padding:12px;border-
 .dbg-tab.active{color:#1a4a80;border-bottom-color:#1a4a80;font-weight:600}
 
 .dbg-content{flex:1;overflow-y:auto;padding:8px 10px;font-size:12px;color:#334}
-.dbg-var-row{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #f7f8fb}
+.dbg-var-row{display:flex;padding:2px 4px;border-bottom:1px solid #e2e6ed;font-family:'Cascadia Code','Fira Code',monospace;font-size:11px}
 .dbg-var-row:last-child{border-bottom:none}
-.dbg-var-name{color:#1a4a80;font-weight:500;font-family:'Cascadia Code','Fira Code',monospace;font-size:11px}
-.dbg-var-val{color:#334;font-family:'Cascadia Code','Fira Code',monospace;font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dbg-var-type{color:#94a3b8;font-size:10px;margin-left:4px}
+.dbg-var-row:nth-child(even){background:#f8fafc}
+.dbg-var-name{width:35%;color:#1a4a80;font-weight:500;padding-right:8px;border-right:1px solid #e2e6ed;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dbg-var-val{width:45%;color:#334;padding:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-right:1px solid #e2e6ed}
+.dbg-var-type{width:20%;color:#94a3b8;font-size:10px;padding-left:8px}
 .dbg-stack-row{padding:4px 0;border-bottom:1px solid #f7f8fb;font-size:11px}
 .dbg-stack-row .proc{color:#1a4a80;font-weight:600}
 .dbg-stack-row .loc{color:#64748b;font-size:10px}
@@ -327,8 +328,8 @@ const cfgFoot = `{{define "cfg-foot"}}
   <div class="dbg-status" id="dbg-status"><span class="dot disabled"></span> Отладка: ВЫКЛ</div>
   <div class="dbg-controls" id="dbg-controls" style="display:none">
     <button onclick="dbgContinue()">&#9654; Продолжить</button>
-    <button onclick="dbgStep('into')">&#11015; Шаг с заходом</button>
-    <button onclick="dbgStep('over')">&#10145; Шаг с обходом</button>
+    <button onclick="dbgStep('over')" style="font-weight:600">&#10145; Шаг (F10)</button>
+    <button onclick="dbgStep('into')">&#11015; Шаг с заходом (F11)</button>
     <button onclick="dbgStep('out')">&#11014; Шаг с выходом</button>
     <button onclick="dbgStop()">&#9209; Стоп</button>
   </div>
@@ -1174,6 +1175,7 @@ var _dbgEnabled = false;
 var _dbgPollTimer = null;
 var _dbgPollCount = 0;
 var _dbgBreakpoints = {}; // { editorId: { line: true } }
+var _lastVarsKey = '';
 var _dbgCurrentLineDecos = {}; // { editorId: decorationIds }
 
 // ── Configurator menu ─────────────────────────────────────────────
@@ -1298,23 +1300,31 @@ function dbgPoll() {
         dbgClearLineHighlight();
       }
 
-      // NOW update status (reads _dbgHighlightLog set by dbgShowLocation)
+      // NOW update status (reads _dbgHighlightLog and _dbgPauseReason)
+      _dbgPauseReason = snap.pause_reason || '';
       dbgUpdateStatus(st, snap.state);
       // update button color
       var btn = document.getElementById('dbg-toggle');
       if (st === 'paused') btn.className = 'dbg-topbar-btn dbg-paused';
       else if (st === 'running') btn.className = 'dbg-topbar-btn dbg-on';
 
-      // variables
+      // variables — only update DOM if changed
       if (snap.variables && snap.variables.length) {
-        var h = '';
-        snap.variables.forEach(function(v){
-          h += '<div class="dbg-var-row"><span class="dbg-var-name">' + esc(v.name) + '</span>'
-            + '<span><span class="dbg-var-val">' + esc(v.value) + '</span><span class="dbg-var-type">' + esc(v.type) + '</span></span></div>';
-        });
-        document.getElementById('dbg-vars').innerHTML = h;
+        var varsKey = snap.variables.map(function(v){return v.name+'='+v.value;}).join('|');
+        if (varsKey !== _lastVarsKey) {
+          _lastVarsKey = varsKey;
+          var h = '';
+          snap.variables.forEach(function(v){
+            h += '<div class="dbg-var-row"><span class="dbg-var-name">' + esc(v.name) + '</span>'
+              + '<span class="dbg-var-val">' + esc(v.value) + '</span><span class="dbg-var-type">' + esc(v.type) + '</span></div>';
+          });
+          document.getElementById('dbg-vars').innerHTML = h;
+        }
       } else if (st !== 'paused') {
-        document.getElementById('dbg-vars').innerHTML = '<div class="dbg-empty">Нет переменных</div>';
+        if (_lastVarsKey !== '') {
+          _lastVarsKey = '';
+          document.getElementById('dbg-vars').innerHTML = '<div class="dbg-empty">Нет переменных</div>';
+        }
       }
 
       // stack
@@ -1330,20 +1340,10 @@ function dbgPoll() {
       // breakpoints — always render from local state
       dbgRenderBPList();
 
-      // diagnostics — always show in console tab when debug is enabled
+      // diagnostics — show only detailed check messages in console tab
       var diagEl = document.getElementById('dbg-diag');
       if (diagEl && snap.state !== 'disabled') {
         var dh = '';
-        dh += '<div style="margin-bottom:4px;color:#60a5fa;font-size:10px">Poll: state=' + esc(String(snap.state)) + ' dbg=' + (snap.dbg_ptr||'?') + '</div>';
-        if (snap.location) {
-          dh += '<div style="margin-bottom:4px;color:#f472b6;font-size:10px">Location: ' + esc(snap.location.file) + ':' + snap.location.line + '</div>';
-        }
-        dh += '<div style="margin-bottom:4px;color:#fbbf24;font-size:10px">BP count: ' + (snap.diag_bp_count||0) + ' keys: ' + (snap.diag_bp_keys ? snap.diag_bp_keys.map(esc).join(', ') : 'none') + '</div>';
-        if (snap.diag_last_file) {
-          dh += '<div style="margin-bottom:4px;color:#16a34a;font-size:10px">Last check: ' + esc(snap.diag_last_file) + ':' + snap.diag_last_line + '</div>';
-        } else {
-          dh += '<div style="margin-bottom:4px;color:#9ca3af;font-size:10px">No statement checked yet</div>';
-        }
         if (snap.diag_messages && snap.diag_messages.length) {
           var msgs = snap.diag_messages.slice(-12);
           msgs.forEach(function(m){ dh += '<div class="dbg-console-line">' + esc(m) + '</div>'; });
@@ -1360,10 +1360,14 @@ function dbgPoll() {
 }
 
 var _dbgHighlightLog = '';
+var _dbgPauseReason = '';
 function dbgUpdateStatus(st, rawState) {
   var el = document.getElementById('dbg-status');
   var labels = {disabled:'Отладка: ВЫКЛ', running:'Отладка: выполнение...', paused:'Отладка: пауза', stopped:'Отладка: останов'};
   var dot = '<span class="dot ' + st + '"></span> ' + (labels[st]||st);
+  if (_dbgPauseReason && st === 'paused') {
+    dot += ' <span style="font-size:10px;color:#94a3b8">(' + (_dbgPauseReason === 'breakpoint' ? 'точка останова' : 'шаг') + ')</span>';
+  }
   if (_dbgHighlightLog) {
     el.innerHTML = dot + ' <span style="font-size:9px;color:#f97316">' + _dbgHighlightLog + '</span>';
   } else {
@@ -1390,7 +1394,7 @@ function dbgStep(mode) {
         fetch('/bases/' + _dbgBase + '/debug/status?_=' + Date.now())
           .then(function(r){return r.json()})
           .then(function(snap){
-            dbgWatchDebug('step poll #' + tries + ' state=' + snap.state + ' loc=' + (snap.location ? snap.location.file + ':' + snap.location.line : 'none'));
+            dbgWatchDebug('step poll #' + tries + ' state=' + snap.state + ' reason=' + (snap.pause_reason||'?') + ' loc=' + (snap.location ? snap.location.file + ':' + snap.location.line : 'none'));
             if (snap.state === 'paused' && snap.location) {
               dbgPoll(); // run full poll to update everything
             } else {
@@ -1403,6 +1407,12 @@ function dbgStep(mode) {
     pollUntilPaused();
   }).catch(function(e){console.error(e);});
 }
+document.addEventListener('keydown', function(e) {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.key === 'F10') { e.preventDefault(); e.stopPropagation(); dbgStep('over'); }
+  else if (e.key === 'F11' && !e.shiftKey) { e.preventDefault(); e.stopPropagation(); dbgStep('into'); }
+  else if (e.key === 'F11' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); dbgStep('out'); }
+});
 function dbgStop() {
   fetch('/bases/' + _dbgBase + '/debug/stop', {method:'POST'})
     .then(function(){
@@ -1753,13 +1763,26 @@ function dbgRenderBPList() {
   keys.forEach(function(file){
     var lines = Object.keys(_dbgBreakpoints[file]);
     lines.forEach(function(ln){
-      h += '<div class="dbg-bp-row"><span style="color:#ef4444">&#9679;</span>'
+      h += '<div class="dbg-bp-row" style="cursor:pointer" onclick="dbgGoToBP(\'' + esc(file).replace(/'/g,"\\'") + '\',' + ln + ')">'
+        + '<span style="color:#ef4444">&#9679;</span>'
         + '<span class="bp-file">' + esc(file) + '</span>'
         + '<span class="bp-line">:' + ln + '</span></div>';
     });
   });
   if (!h) h = '<div class="dbg-empty">Нет точек останова</div>';
   el.innerHTML = h;
+}
+function dbgGoToBP(file, line) {
+  // Open the editor tab if available
+  var tab = document.querySelector('[data-file-id="' + file + '"]');
+  if (tab) { selItem(tab); tab.scrollIntoView(); }
+  // Activate Monaco and scroll to line
+  var pre = document.getElementById('pre-' + file);
+  if (pre && !pre.querySelector('.monaco-target')) { startEdit(file); }
+  setTimeout(function(){
+    var ed = monacoEditors[file];
+    if (ed) { ed.revealLineInCenter(line); ed.setPosition({lineNumber:line,column:1}); ed.focus(); }
+  }, 200);
 }
 
 function dbgRenderBreakpoints(editorId) {
