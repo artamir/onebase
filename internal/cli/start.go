@@ -34,17 +34,17 @@ func runStart(_ *cobra.Command, _ []string) error {
 		}
 	}()
 
-	// Force exit after 3s regardless of lingering threads.
-	go func() {
-		time.Sleep(3 * time.Second)
-		os.Exit(0)
-	}()
-
 	// OpenWindow blocks until the window/browser is closed or /quit is called.
 	// For the webview build it MUST run on the main goroutine (Win32 requirement).
 	_ = launcher.OpenWindow(srv.URL(), "onebase — Информационные базы", srv.Done())
 
+	// Window closed — shut down server and force exit after a short grace period
+	// for lingering goroutines/threads.
 	srv.Close()
+	go func() {
+		time.Sleep(3 * time.Second)
+		os.Exit(0)
+	}()
 	os.Exit(0)
 	return nil
 }
