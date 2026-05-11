@@ -70,8 +70,10 @@ body{font-family:'Segoe UI',Arial,sans-serif;font-size:13px;background:#f0f2f5;h
 
 /* ── Two-panel tree ─────────────────────────────────── */
 .cfg-split{display:flex;flex:1;overflow:hidden}
-
-.cfg-left{width:220px;flex-shrink:0;background:#fff;border-right:1px solid #d8dde8;overflow-y:auto;padding:6px 0}
+.cfg-left{width:220px;flex-shrink:0;background:#fff;border-right:1px solid #d8dde8;overflow-y:auto;padding:6px 0;transition:width .2s}
+.cfg-left.collapsed{width:0;padding:0;overflow:hidden;border:none}
+.sidebar-toggle{position:absolute;left:220px;top:50%;z-index:10;width:16px;height:40px;background:#e8ecf2;border:1px solid #d8dde8;border-left:none;border-radius:0 4px 4px 0;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:10px;color:#666;transition:left .2s}
+.sidebar-toggle.collapsed{left:0}
 .cfg-group{font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;padding:10px 12px 4px;margin-top:4px}
 .cfg-tree details summary{font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;padding:10px 12px 4px;margin-top:4px;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center}
 .cfg-tree details summary::-webkit-details-marker{display:none}
@@ -200,7 +202,7 @@ pre.convert-out{background:#f5f7fa;border:1px solid #e2e6ed;padding:12px;border-
 .qb-row{display:flex;gap:4px;margin-bottom:5px;align-items:center;flex-wrap:wrap}
 
 /* ── Monaco editor ─────────────────────────────────── */
-.monaco-target{width:100%;height:300px;border-radius:6px;overflow:hidden}
+.monaco-target{width:100%;min-height:400px;height:calc(100vh - 340px);border-radius:6px;overflow:hidden}
 .code-wrap{position:relative}
 
 /* ── Debug panel ─────────────────────────────────── */
@@ -625,6 +627,13 @@ function formTab(el,showId,hideId){
   document.getElementById(hideId).classList.remove('active');
 }
 // ── Panel selection ────────────────────────────────────────────
+function toggleSidebar() {
+  var sb = document.getElementById('cfg-sidebar');
+  var btn = document.getElementById('sidebar-toggle');
+  sb.classList.toggle('collapsed');
+  btn.classList.toggle('collapsed');
+  btn.textContent = sb.classList.contains('collapsed') ? '▶' : '◀';
+}
 function selItem(el) {
   document.querySelectorAll('.cfg-item').forEach(function(e){e.classList.remove('sel')});
   document.querySelectorAll('.cfg-panel').forEach(function(e){e.classList.remove('active')});
@@ -1824,7 +1833,8 @@ const cfgTabTree = `{{define "tab-tree"}}
 <div class="cfg-split">
 
 {{/* ── Left panel ── */}}
-<div class="cfg-left">
+<div class="cfg-left" id="cfg-sidebar">
+<button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()" title="Свернуть дерево">◀</button>
   <div class="cfg-group">Конфигурация</div>
   <div class="cfg-item" data-id="panel-app" onclick="selItem(this)">
     <span class="ic">⚙</span>{{if .AppName}}{{.AppName}}{{else}}Без названия{{end}}
@@ -2341,6 +2351,63 @@ const cfgTabTree = `{{define "tab-tree"}}
 <input type="hidden" name="entity_kind" value="{{$e.Kind}}">
 {{range $e.TableParts}}<input type="hidden" name="tp_names" value="{{.Name}}">{{end}}
 
+{{/* Module section — shown first for quick access */}}
+<details open><summary class="section-hd" style="cursor:pointer">Модули</summary>
+<div class="module-editor-wrap">
+  <div class="module-tabs">
+    <div class="module-tab active" onclick="modTab(this,'mp-obj-{{$e.Name}}')">📝 Модуль объекта</div>
+    {{if eq $e.Kind "Документ"}}<div class="module-tab" onclick="modTab(this,'mp-post-{{$e.Name}}')">✅ ОбработкаПроведения</div>{{end}}
+    <div class="module-tab" onclick="modTab(this,'mp-mgr-{{$e.Name}}')">📋 Модуль менеджера</div>
+  </div>
+
+  <div class="module-pane active" id="mp-obj-{{$e.Name}}">
+    <form method="POST" action="/bases/{{.BaseID}}/configurator/module">
+      <input type="hidden" name="entity" value="{{$e.Name}}">
+      <input type="hidden" name="module_type" value="object">
+      <div class="code-wrap" title="Кликните для редактирования">
+        <pre class="os-code clickable-code" id="pre-{{$e.Name}}"
+             onclick="startEdit('{{$e.Name}}')">{{if $e.Source}}{{$e.Source}}{{else}}// Кликните для редактирования&#10;Процедура ПриЗаписи()&#10;&#10;КонецПроцедуры{{end}}</pre>
+        <textarea class="os-edit" id="ta-{{$e.Name}}" name="source"
+                  style="display:none"
+                  onblur="endEdit('{{$e.Name}}')">{{$e.Source}}</textarea>
+      </div>
+      <div class="module-save-row">
+        <button class="btn-save" type="submit">Сохранить</button>
+        <span class="edit-hint">✎ кликните на код для редактирования</span>
+        {{if and $.ModuleSaved (eq $.ModuleSavedEntity $e.Name)}}<span class="save-ok">✓ Сохранено</span>{{end}}
+      </div>
+    </form>
+  </div>
+
+  {{if eq $e.Kind "Документ"}}
+  <div class="module-pane" id="mp-post-{{$e.Name}}">
+    <div style="font-size:11px;color:#64748b;margin-bottom:6px">Процедура <b>ОбработкаПроведения()</b> — вызывается при нажатии «Провести». Активируется флагом <b>Проводится</b> в свойствах документа. Здесь пишите движения регистров.</div>
+    <form method="POST" action="/bases/{{.BaseID}}/configurator/module">
+      <input type="hidden" name="entity" value="{{$e.Name}}">
+      <input type="hidden" name="module_type" value="posting">
+      <div class="code-wrap" title="Кликните для редактирования">
+        <pre class="os-code clickable-code" id="pre-post-{{$e.Name}}"
+             onclick="startEdit('post-{{$e.Name}}')">{{if $e.PostingSource}}{{$e.PostingSource}}{{else}}Процедура ОбработкаПроведения()&#10;  // Движения.ИмяРегистра.Очистить()&#10;  // Дв = Движения.ИмяРегистра.Добавить()&#10;  // Дв.ВидДвижения = "Приход"&#10;  // Дв.Номенклатура = Строка.Номенклатура&#10;  // Дв.Количество = Строка.Количество&#10;КонецПроцедуры{{end}}</pre>
+        <textarea class="os-edit" id="ta-post-{{$e.Name}}" name="source"
+                  style="display:none"
+                  onblur="endEdit('post-{{$e.Name}}')">{{$e.PostingSource}}</textarea>
+      </div>
+      <div class="module-save-row">
+        <button class="btn-save" type="submit">Сохранить</button>
+        <span class="edit-hint">✎ кликните на код для редактирования</span>
+        {{if and $.ModuleSaved (eq $.ModuleSavedEntity $e.Name)}}<span class="save-ok">✓ Сохранено</span>{{end}}
+      </div>
+    </form>
+  </div>
+  {{end}}
+
+  <div class="module-pane" id="mp-mgr-{{$e.Name}}">
+    <div class="module-empty" style="padding:12px 0">Модуль менеджера — в разработке.</div>
+  </div>
+</div>
+
+</details>
+
 {{if eq $e.Kind "Документ"}}
 <div class="section-hd">Свойства</div>
 <div style="margin-bottom:10px">
@@ -2420,63 +2487,6 @@ const cfgTabTree = `{{define "tab-tree"}}
   {{if and $fSaved (eq $fSavedEnt $e.Name)}}<span class="save-ok">✓ Сохранено</span>{{end}}
 </div>
 </form>
-
-{{/* Module section */}}
-<details open><summary class="section-hd" style="cursor:pointer">Модули</summary>
-<div class="module-editor-wrap">
-  <div class="module-tabs">
-    <div class="module-tab active" onclick="modTab(this,'mp-obj-{{$e.Name}}')">📝 Модуль объекта</div>
-    {{if eq $e.Kind "Документ"}}<div class="module-tab" onclick="modTab(this,'mp-post-{{$e.Name}}')">✅ ОбработкаПроведения</div>{{end}}
-    <div class="module-tab" onclick="modTab(this,'mp-mgr-{{$e.Name}}')">📋 Модуль менеджера</div>
-  </div>
-
-  <div class="module-pane active" id="mp-obj-{{$e.Name}}">
-    <form method="POST" action="/bases/{{.BaseID}}/configurator/module">
-      <input type="hidden" name="entity" value="{{$e.Name}}">
-      <input type="hidden" name="module_type" value="object">
-      <div class="code-wrap" title="Кликните для редактирования">
-        <pre class="os-code clickable-code" id="pre-{{$e.Name}}"
-             onclick="startEdit('{{$e.Name}}')">{{if $e.Source}}{{$e.Source}}{{else}}// Кликните для редактирования&#10;Процедура ПриЗаписи()&#10;&#10;КонецПроцедуры{{end}}</pre>
-        <textarea class="os-edit" id="ta-{{$e.Name}}" name="source"
-                  style="display:none"
-                  onblur="endEdit('{{$e.Name}}')">{{$e.Source}}</textarea>
-      </div>
-      <div class="module-save-row">
-        <button class="btn-save" type="submit">Сохранить</button>
-        <span class="edit-hint">✎ кликните на код для редактирования</span>
-        {{if and $.ModuleSaved (eq $.ModuleSavedEntity $e.Name)}}<span class="save-ok">✓ Сохранено</span>{{end}}
-      </div>
-    </form>
-  </div>
-
-  {{if eq $e.Kind "Документ"}}
-  <div class="module-pane" id="mp-post-{{$e.Name}}">
-    <div style="font-size:11px;color:#64748b;margin-bottom:6px">Процедура <b>ОбработкаПроведения()</b> — вызывается при нажатии «Провести». Активируется флагом <b>Проводится</b> в свойствах документа. Здесь пишите движения регистров.</div>
-    <form method="POST" action="/bases/{{.BaseID}}/configurator/module">
-      <input type="hidden" name="entity" value="{{$e.Name}}">
-      <input type="hidden" name="module_type" value="posting">
-      <div class="code-wrap" title="Кликните для редактирования">
-        <pre class="os-code clickable-code" id="pre-post-{{$e.Name}}"
-             onclick="startEdit('post-{{$e.Name}}')">{{if $e.PostingSource}}{{$e.PostingSource}}{{else}}Процедура ОбработкаПроведения()&#10;  // Движения.ИмяРегистра.Очистить()&#10;  // Дв = Движения.ИмяРегистра.Добавить()&#10;  // Дв.ВидДвижения = "Приход"&#10;  // Дв.Номенклатура = Строка.Номенклатура&#10;  // Дв.Количество = Строка.Количество&#10;КонецПроцедуры{{end}}</pre>
-        <textarea class="os-edit" id="ta-post-{{$e.Name}}" name="source"
-                  style="display:none"
-                  onblur="endEdit('post-{{$e.Name}}')">{{$e.PostingSource}}</textarea>
-      </div>
-      <div class="module-save-row">
-        <button class="btn-save" type="submit">Сохранить</button>
-        <span class="edit-hint">✎ кликните на код для редактирования</span>
-        {{if and $.ModuleSaved (eq $.ModuleSavedEntity $e.Name)}}<span class="save-ok">✓ Сохранено</span>{{end}}
-      </div>
-    </form>
-  </div>
-  {{end}}
-
-  <div class="module-pane" id="mp-mgr-{{$e.Name}}">
-    <div class="module-empty" style="padding:12px 0">Модуль менеджера — в разработке.</div>
-  </div>
-</div>
-
-</details>
 
 {{/* Linked print forms */}}
 {{if $e.LinkedPrintForms}}

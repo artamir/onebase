@@ -47,7 +47,8 @@ func getLocation(stmt ast.Stmt) *sourceLocation {
 	return &sourceLocation{File: file, Line: line, Col: col}
 }
 
-// getExprLocation extracts source location from an AST expression
+// getExprLocation extracts source location from an AST expression.
+// Returns the leftmost token position for accurate line tracking.
 func getExprLocation(expr ast.Expr) (string, int, int) {
 	if expr == nil {
 		return "", 0, 0

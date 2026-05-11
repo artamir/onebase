@@ -188,8 +188,16 @@ func (s *ActiveSession) CheckBreakpoint(file string, line int) *Breakpoint {
 		s.diagMessages = append(s.diagMessages, fmt.Sprintf("  bp key=%q keyNorm=%q match=%v", key, keyNorm, match))
 		if match {
 			for bpLine, bp := range locMap {
-				s.diagMessages = append(s.diagMessages, fmt.Sprintf("  line cmp: bpLine=%d curLine=%d", bpLine, line))
-				if bpLine == line && bp.Enabled {
+				if !bp.Enabled {
+					continue
+				}
+				if bpLine == line {
+					bp.HitCount++
+					return bp
+				}
+				// Fuzzy match: +/-1 to handle AST line offset
+				if (bpLine == line-1 || bpLine == line+1) && bp.Enabled {
+					s.diagMessages = append(s.diagMessages, fmt.Sprintf("  fuzzy hit: bpLine=%d curLine=%d", bpLine, line))
 					bp.HitCount++
 					return bp
 				}
