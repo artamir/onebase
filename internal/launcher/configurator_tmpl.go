@@ -299,10 +299,10 @@ const cfgHead = `{{define "cfg-head"}}<!DOCTYPE html>
   <div class="cfg-menu-wrap">
     <button class="cfg-menu-btn" onclick="cfgMenuToggle()">Меню &#9662;</button>
     <div class="cfg-menu-dropdown" id="cfg-menu">
-      <a href="#" onclick="cfgMenuOpen('/ui/about');return false">О программе</a>
-      <a href="#" onclick="cfgMenuOpen('/ui/admin/users');return false">Пользователи</a>
-      <a href="#" onclick="cfgMenuOpen('/ui/admin/sessions');return false">Активные пользователи</a>
-      <a href="#" onclick="cfgMenuOpen('/ui/admin/audit');return false">Журнал регистрации</a>
+      <a href="#" onclick="cfgAdmin('about');return false">О программе</a>
+      <a href="#" onclick="cfgAdmin('users');return false">Пользователи</a>
+      <a href="#" onclick="cfgAdmin('sessions');return false">Активные пользователи</a>
+      <a href="#" onclick="cfgAdmin('audit');return false">Журнал регистрации</a>
     </div>
   </div>
   <a href="/?sel={{.Base.ID}}">← Лаунчер</a>
@@ -1180,6 +1180,7 @@ function mqbGen(){
 // ── Debug panel ──────────────────────────────────────────────────
 var _dbgBase = '{{.Base.ID}}'; // base ID for debug proxy
 var _basePort = {{.Base.Port}};
+var _sessionToken = '{{.SessionToken}}';
 var _dbgEnabled = false;
 var _dbgPollTimer = null;
 var _dbgPollCount = 0;
@@ -1187,30 +1188,22 @@ var _dbgBreakpoints = {}; // { editorId: { line: true } }
 var _lastVarsKey = '';
 var _dbgCurrentLineDecos = {}; // { editorId: decorationIds }
 
-// ── Configurator menu ─────────────────────────────────────────────
-var _cfgModalTitles = {
-  '/ui/about': 'О программе',
-  '/ui/admin/users': 'Пользователи',
-  '/ui/admin/sessions': 'Активные пользователи',
-  '/ui/admin/audit': 'Журнал регистрации'
-};
+// ── Configurator admin panels ────────────────────────────────────
+function cfgAdmin(name) {
+  document.getElementById('cfg-menu').classList.remove('open');
+  document.querySelectorAll('.cfg-panel').forEach(function(e){e.classList.remove('active')});
+  document.querySelectorAll('.cfg-item').forEach(function(e){e.classList.remove('sel')});
+  var panel = document.getElementById('panel-admin');
+  panel.classList.add('active');
+  panel.innerHTML = '<div style="padding:20px;text-align:center;color:#888">Загрузка...</div>';
+  fetch('/bases/' + _dbgBase + '/configurator/admin/' + name)
+    .then(function(r){ return r.text(); })
+    .then(function(html){ panel.innerHTML = html; });
+}
 
 function cfgMenuToggle() {
   var m = document.getElementById('cfg-menu');
   m.classList.toggle('open');
-}
-function cfgMenuOpen(path) {
-  document.getElementById('cfg-menu').classList.remove('open');
-  var title = _cfgModalTitles[path] || path;
-  document.getElementById('cfg-modal-title').textContent = title;
-  var loading = document.getElementById('cfg-modal-loading');
-  loading.style.display = 'flex';
-  // Ensure base is running, then open in iframe
-  fetch('/bases/' + _dbgBase + '/start', {method:'POST'}).catch(function(){}).then(function(){
-    var iframe = document.getElementById('cfg-modal-iframe');
-    iframe.src = 'http://localhost:' + _basePort + path;
-    document.getElementById('cfg-modal').classList.add('active');
-  });
 }
 function cfgModalClose() {
   var modal = document.getElementById('cfg-modal');
@@ -1230,13 +1223,46 @@ document.addEventListener('click', function(e) {
 function launchEnterprise() {
   var btn = document.querySelector('.run-enterprise-btn');
   btn.style.background = '#a3a3a3';
-  // Start the base first (safe to call if already running)
+  var url = _sessionToken
+    ? 'http://localhost:' + _basePort + '/ui?_tk=' + encodeURIComponent(_sessionToken)
+    : 'http://localhost:' + _basePort + '/ui';
   fetch('/bases/' + _dbgBase + '/start', {method:'POST'}).then(function(){
-    setTimeout(function(){ window.open('http://localhost:' + _basePort + '/ui', '_blank'); btn.style.background = ''; }, 1500);
+    setTimeout(function(){ window.open(url, '_blank'); btn.style.background = ''; }, 1500);
   }).catch(function(){
-    // Already running or error — just open
-    window.open('http://localhost:' + _basePort + '/ui', '_blank'); btn.style.background = '';
+    window.open(url, '_blank'); btn.style.background = '';
   });
+}
+
+function runMigrate() {
+  var btn = document.getElementById('btn-migrate');
+  var result = document.getElementById('migrate-result');
+  btn.disabled = true;
+  btn.textContent = 'Обновление...';
+  result.style.display = 'none';
+  fetch('/bases/' + _dbgBase + '/configurator/migrate', {method:'POST'})
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      btn.disabled = false;
+      btn.textContent = 'Обновить БД';
+      result.style.display = 'block';
+      if (d.error) {
+        result.style.background = '#fff0f0';
+        result.style.color = '#c00';
+        result.textContent = d.error;
+      } else {
+        result.style.background = '#f0fdf4';
+        result.style.color = '#15803d';
+        result.textContent = d.output || 'Обновление завершено';
+      }
+    })
+    .catch(function(e){
+      btn.disabled = false;
+      btn.textContent = 'Обновить БД';
+      result.style.display = 'block';
+      result.style.background = '#fff0f0';
+      result.style.color = '#c00';
+      result.textContent = 'Ошибка: ' + e.message;
+    });
 }
 
 function dbgToggle() {
@@ -1965,10 +1991,17 @@ const cfgTabTree = `{{define "tab-tree"}}
       </div>
     </form>
   </div>
+  <div style="margin-top:12px;padding:8px 12px;border-top:1px solid #d8dde8">
+    <button onclick="runMigrate()" id="btn-migrate" style="width:100%;padding:7px 10px;background:#1a4a80;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px">Обновить БД</button>
+    <div id="migrate-result" style="display:none;margin-top:6px;font-size:11px;padding:6px;border-radius:3px;max-height:120px;overflow-y:auto"></div>
+  </div>
 </div>
 
 {{/* ── Right panel ── */}}
 <div class="cfg-right">
+
+  {{/* Admin panel (loaded via AJAX) */}}
+  <div class="cfg-panel" id="panel-admin" style="overflow-y:auto"></div>
 
   {{/* App config */}}
   <div class="cfg-panel" id="panel-app">

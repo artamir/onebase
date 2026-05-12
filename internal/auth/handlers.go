@@ -143,12 +143,17 @@ func (h *Handlers) Status(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"requires_auth": hasUsers})
 }
 
-// Bootstrap sets session cookie from token param and redirects to /ui.
+// Bootstrap sets session cookie from token param and redirects.
 // Used by the launcher to pass the session into a new browser window.
+// Optional "return" query param specifies the redirect target (default: /ui).
 func (h *Handlers) Bootstrap(w http.ResponseWriter, r *http.Request) {
+	returnURL := r.URL.Query().Get("return")
+	if returnURL == "" || !isLocalURL(returnURL) {
+		returnURL = "/ui"
+	}
 	token := r.URL.Query().Get("token")
 	if token == "" {
-		http.Redirect(w, r, "/ui", http.StatusFound)
+		http.Redirect(w, r, returnURL, http.StatusFound)
 		return
 	}
 	if _, err := h.Repo.LookupSession(r.Context(), token); err != nil {
@@ -162,7 +167,7 @@ func (h *Handlers) Bootstrap(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
-	http.Redirect(w, r, "/ui", http.StatusFound)
+	http.Redirect(w, r, returnURL, http.StatusFound)
 }
 
 func isLocalURL(s string) bool {

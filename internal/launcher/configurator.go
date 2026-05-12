@@ -181,6 +181,8 @@ type configuratorData struct {
 	BackupMessage  string
 	BackupFiles    []backupFile
 	BackupSettings backupSettings
+	// session token for passing to UI server (bootstrap auth)
+	SessionToken string
 }
 
 type backupFile struct {
@@ -209,6 +211,9 @@ func (h *handler) configuratorPage(w http.ResponseWriter, r *http.Request) {
 		tab = "tree"
 	}
 	data := h.loadCfgData(r.Context(), b, tab)
+	if cookie, cerr := r.Cookie("onebase_session"); cerr == nil {
+		data.SessionToken = cookie.Value
+	}
 	renderCfg(w, data)
 }
 
