@@ -238,23 +238,19 @@ func (h *handler) killAll(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirect, http.StatusFound)
 }
 
-func (h *handler) migrate(w http.ResponseWriter, r *http.Request) {
+func (h *handler) configuratorMigrate(w http.ResponseWriter, r *http.Request) {
 	b, err := h.store.Get(chi.URLParam(r, "id"))
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 	out, runErr := h.runner.MigrateBase(r.Context(), b)
-	errMsg := ""
+	w.Header().Set("Content-Type", "application/json")
 	if runErr != nil {
-		errMsg = runErr.Error()
+		json.NewEncoder(w).Encode(map[string]any{"output": out, "error": runErr.Error()})
+		return
 	}
-	render(w, "page-migrate", map[string]any{
-		"Title":  "onebase — Обновление БД",
-		"Name":   b.Name,
-		"Output": out,
-		"Error":  errMsg,
-	})
+	json.NewEncoder(w).Encode(map[string]any{"output": out, "error": ""})
 }
 
 func (h *handler) configExport(w http.ResponseWriter, r *http.Request) {

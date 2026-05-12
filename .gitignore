@@ -1,0 +1,13 @@
+# Binaries
+onebase
+onebase.exe
+onebase-gui.exe
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp

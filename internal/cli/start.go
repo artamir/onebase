@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/ivantit66/onebase/internal/launcher"
@@ -35,5 +36,15 @@ func runStart(_ *cobra.Command, _ []string) error {
 
 	// OpenWindow blocks until the window/browser is closed or /quit is called.
 	// For the webview build it MUST run on the main goroutine (Win32 requirement).
-	return launcher.OpenWindow(srv.URL(), "onebase — Информационные базы", srv.Done())
+	_ = launcher.OpenWindow(srv.URL(), "onebase — Информационные базы", srv.Done())
+
+	// Window closed — shut down server and force exit after a short grace period
+	// for lingering goroutines/threads.
+	srv.Close()
+	go func() {
+		time.Sleep(3 * time.Second)
+		os.Exit(0)
+	}()
+	os.Exit(0)
+	return nil
 }
