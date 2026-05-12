@@ -94,6 +94,11 @@ body{font-family:'Segoe UI',Arial,sans-serif;font-size:13px;background:#f0f2f5;h
 .cfg-panel{display:none}
 .cfg-panel.active{display:block}
 
+/* ── Layout tabs ────────────────────────────────────── */
+.ltab{padding:6px 16px;font-size:12px;font-weight:600;color:#64748b;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:color .15s,border-color .15s}
+.ltab:hover{color:#1a4a80}
+.ltab.active{color:#1a4a80;border-bottom-color:#1a4a80}
+
 /* ── Panel content ──────────────────────────────────── */
 .panel-title{font-size:16px;font-weight:700;color:#1a3a6a;margin-bottom:4px;display:flex;align-items:center;gap:8px}
 .panel-kind{font-size:11px;color:#888;font-weight:400;margin-bottom:14px}
@@ -765,12 +770,37 @@ function updateCellProp(n,prop,val){
   else{c[prop]=val;}
   renderLayoutEditor(n);
 }
-function toggleLayoutView(n,mode){
-  var views=['preview','editor','yaml'];
-  for(var i=0;i<views.length;i++){
-    var el=document.getElementById('lview-'+views[i]+'-'+n);
-    if(el)el.style.display=views[i]===mode?'block':'none';
+function switchLayoutTab(n,mode){
+  var tabs=['editor','preview','yaml'];
+  // sync: serialize editor data to YAML before leaving editor
+  if(window.jsyaml&&_led[n]){
+    var y=jsyaml.dump(_led[n].data,{lineWidth:-1,quotingType:'"'});
+    var ta=document.getElementById('ta-mkt-'+n);
+    var pre=document.getElementById('pre-mkt-'+n);
+    if(ta)ta.value=y;
+    if(pre)pre.textContent=y;
+    var src=document.getElementById('yaml-src-'+n);
+    if(src)src.value=y;
   }
+  // sync: parse YAML back before leaving yaml tab
+  if(mode!=='yaml'&&window.jsyaml){
+    var ta2=document.getElementById('ta-mkt-'+n);
+    if(ta2&&ta2.value){
+      try{
+        var d=jsyaml.parse(ta2.value);
+        if(_led[n])_led[n].data=d;
+      }catch(e){}
+    }
+  }
+  for(var i=0;i<tabs.length;i++){
+    var el=document.getElementById('ltab-'+tabs[i]+'-'+n);
+    if(el)el.style.display=tabs[i]===mode?'block':'none';
+  }
+  var tabBtns=document.querySelectorAll('#mkt-'+n+' .ltab');
+  for(var j=0;j<tabBtns.length;j++){
+    tabBtns[j].classList.toggle('active',tabBtns[j].getAttribute('data-tab')===mode);
+  }
+  if(mode==='editor'&&_led[n])renderLayoutEditor(n);
 }
 function applyYaml(n){
   var ta=document.getElementById('ta-mkt-'+n);
@@ -2536,20 +2566,16 @@ const cfgTabTree = `{{define "tab-tree"}}
   {{if .HasLayout}}
   <div class="cfg-panel" id="mkt-{{.Name}}">
     <div class="panel-title">&#x1F4D0; Макет: {{.Name}}</div>
-    <div class="panel-kind">Визуальный редактор шаблона</div>
     <form method="POST" action="/bases/{{$.Base.ID}}/configurator/layout" onsubmit="return saveLayoutEditor('{{.Name}}')">
       <input type="hidden" name="layout_name" value="{{.Name}}">
       <textarea id="yaml-src-{{.Name}}" name="source" style="display:none">{{.LayoutYAML}}</textarea>
-      <div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap">
-        <button type="button" class="btn-save" style="font-size:12px;padding:4px 10px;background:#6366f1" onclick="toggleLayoutView('{{.Name}}','preview')">Предпросмотр</button>
-        <button type="button" class="btn-save" style="font-size:12px;padding:4px 10px" onclick="toggleLayoutView('{{.Name}}','editor')">Редактор</button>
-        <button type="button" class="btn-save" style="font-size:12px;padding:4px 10px" onclick="toggleLayoutView('{{.Name}}','yaml')">YAML</button>
+      <div class="ltabs" style="display:flex;border-bottom:2px solid #e2e8f0;margin:10px 0 0;gap:0">
+        <div class="ltab active" data-tab="editor" onclick="switchLayoutTab('{{.Name}}','editor')">Редактор</div>
+        <div class="ltab" data-tab="preview" onclick="switchLayoutTab('{{.Name}}','preview')">Предпросмотр</div>
+        <div class="ltab" data-tab="yaml" onclick="switchLayoutTab('{{.Name}}','yaml')">YAML</div>
       </div>
-      <div id="lview-preview-{{.Name}}" style="display:none;padding:12px;background:#fff;border:1px solid #e2e8f0;border-radius:6px">
-        {{.LayoutPreview}}
-      </div>
-      <div id="lview-editor-{{.Name}}" style="display:block">
-        <div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap">
+      <div id="ltab-editor-{{.Name}}" class="ltab-content" style="display:block;padding-top:8px">
+        <div style="display:flex;gap:8px;margin:4px 0 8px;flex-wrap:wrap">
           <button type="button" class="btn-save" onclick="addLayoutArea('{{.Name}}')" style="font-size:12px;padding:4px 10px">+ Область</button>
         </div>
         <div id="veditor-{{.Name}}"></div>
@@ -2569,7 +2595,10 @@ const cfgTabTree = `{{define "tab-tree"}}
           </div>
         </div>
       </div>
-      <div id="lview-yaml-{{.Name}}" style="display:none">
+      <div id="ltab-preview-{{.Name}}" class="ltab-content" style="display:none;padding:12px;background:#fff;border:1px solid #e2e8f0;border-radius:0 0 6px 6px">
+        {{.LayoutPreview}}
+      </div>
+      <div id="ltab-yaml-{{.Name}}" class="ltab-content" style="display:none;padding-top:8px">
         <div class="code-wrap">
           <pre class="os-code" id="pre-mkt-{{.Name}}" onclick="startEdit('mkt-{{.Name}}')">{{.LayoutYAML}}</pre>
           <textarea class="os-edit" id="ta-mkt-{{.Name}}" style="display:none"
@@ -2578,7 +2607,6 @@ const cfgTabTree = `{{define "tab-tree"}}
       </div>
       <div class="module-save-row">
         <button class="btn-save" type="submit">Сохранить</button>
-        {{if and $.FieldsSaved (eq $.FieldsSavedEntity (printf "layout-%s" .Name))}}<span class="save-ok">&#10003; Сохранено</span>{{end}}
       </div>
     </form>
   </div>
