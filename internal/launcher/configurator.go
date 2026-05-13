@@ -374,11 +374,6 @@ func (h *handler) loadCfgData(ctx context.Context, b *Base, tab string) *configu
 			data.Error = cerr.Error()
 			return data
 		}
-		empty, _ := repo.IsEmpty(ctx)
-		if empty {
-			data.Error = "РљРѕРЅС„РёРіСѓСЂР°С†РёСЏ РЅРµ Р·Р°РіСЂСѓР¶РµРЅР° РІ Р±Р°Р·Сѓ РґР°РЅРЅС‹С…. Р’РѕСЃРїРѕР»СЊР·СѓР№С‚РµСЃСЊ РІРєР»Р°РґРєРѕР№ В«Р¤Р°Р№Р»С‹В»."
-			return data
-		}
 		proj, err = project.LoadFromDB(ctx, repo)
 	} else {
 		proj, err = project.Load(b.Path)
