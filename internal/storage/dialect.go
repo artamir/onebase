@@ -143,7 +143,10 @@ type SQLiteDialect struct{}
 func (SQLiteDialect) Name() string                  { return "sqlite" }
 func (SQLiteDialect) Placeholder(n int) string      { return "?" }
 func (SQLiteDialect) Now() string                   { return "datetime('now')" }
-func (SQLiteDialect) CurrentTimestampTZ() string    { return "datetime('now')" }
+
+// CurrentTimestampTZ wraps datetime('now') in parens because SQLite requires
+// non-constant DEFAULT expressions to be parenthesised.
+func (SQLiteDialect) CurrentTimestampTZ() string { return "(datetime('now'))" }
 func (SQLiteDialect) LowerLike(col string) string {
 	return "LOWER(CAST(" + col + " AS TEXT))"
 }

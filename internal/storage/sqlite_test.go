@@ -1,0 +1,133 @@
+package storage
+
+import (
+	"context"
+	"path/filepath"
+	"testing"
+)
+
+func TestSQLiteSmoke(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+
+	db, err := ConnectSQLite(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("ConnectSQLite: %v", err)
+	}
+	defer db.Close()
+
+	if !db.IsSQLite() || db.IsPostgres() {
+		t.Fatalf("unexpected backend flags: sqlite=%v pg=%v", db.IsSQLite(), db.IsPostgres())
+	}
+	if db.Dialect().Name() != "sqlite" {
+		t.Fatalf("dialect name = %q, want sqlite", db.Dialect().Name())
+	}
+	if got := db.Dialect().Placeholder(3); got != "?" {
+		t.Fatalf("Placeholder(3) = %q, want ?", got)
+	}
+
+	// DDL — use dialect types so the same source works on PG too.
+	d := db.Dialect()
+	createSQL := "CREATE TABLE t (id " + d.TypeUUID() + " PRIMARY KEY, name " + d.TypeText() +
+		", amount " + d.TypeNumber(18, 4) + ", created_at " + d.TypeTimestamp() + " DEFAULT " + d.CurrentTimestampTZ() + ")"
+	if _, err := db.Exec(ctx, createSQL); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+
+	// Insert via placeholders.
+	ph1, ph2, ph3 := d.Placeholder(1), d.Placeholder(2), d.Placeholder(3)
+	insertSQL := "INSERT INTO t(id,name,amount) VALUES(" + ph1 + "," + ph2 + "," + ph3 + ")"
+	tag, err := db.Exec(ctx, insertSQL, "id-1", "alpha", "12.34")
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	if tag.RowsAffected != 1 {
+		t.Fatalf("RowsAffected = %d, want 1", tag.RowsAffected)
+	}
+
+	// QueryRow single value.
+	var name string
+	if err := db.QueryRow(ctx, "SELECT name FROM t WHERE id="+ph1, "id-1").Scan(&name); err != nil {
+		t.Fatalf("queryRow: %v", err)
+	}
+	if name != "alpha" {
+		t.Fatalf("name = %q, want alpha", name)
+	}
+
+	// Query rows.
+	rows, err := db.Query(ctx, "SELECT id, name FROM t")
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	defer rows.Close()
+	count := 0
+	for rows.Next() {
+		var id, n string
+		if err := rows.Scan(&id, &n); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		count++
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows.Err: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("rows count = %d, want 1", count)
+	}
+
+	// Transaction — insert two rows, rollback, expect still 1 total.
+	tx, txCtx, err := db.BeginTx(ctx)
+	if err != nil {
+		t.Fatalf("BeginTx: %v", err)
+	}
+	if _, err := db.Exec(txCtx, insertSQL, "id-2", "beta", "0"); err != nil {
+		t.Fatalf("tx insert 1: %v", err)
+	}
+	if _, err := db.Exec(txCtx, insertSQL, "id-3", "gamma", "0"); err != nil {
+		t.Fatalf("tx insert 2: %v", err)
+	}
+	if err := tx.Rollback(ctx); err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+
+	var total int
+	if err := db.QueryRow(ctx, "SELECT count(*) FROM t").Scan(&total); err != nil {
+		t.Fatalf("count after rollback: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("after rollback total = %d, want 1", total)
+	}
+
+	// ColumnExists via dialect.
+	exists, err := d.ColumnExists(ctx, db, "t", "name")
+	if err != nil {
+		t.Fatalf("ColumnExists: %v", err)
+	}
+	if !exists {
+		t.Fatal("column 'name' not found via PRAGMA")
+	}
+	exists, err = d.ColumnExists(ctx, db, "t", "missing")
+	if err != nil {
+		t.Fatalf("ColumnExists missing: %v", err)
+	}
+	if exists {
+		t.Fatal("column 'missing' should not exist")
+	}
+}
+
+func TestSQLiteDialectLatestPerKey(t *testing.T) {
+	d := SQLiteDialect{}
+	sql := d.LatestPerKey(
+		[]string{"k", "v"},
+		[]string{"k"},
+		[]string{"ts DESC"},
+		"reg",
+		"r",
+		"k IS NOT NULL",
+	)
+	want := "SELECT k, v FROM (SELECT k, v, ROW_NUMBER() OVER (PARTITION BY k ORDER BY ts DESC) AS _rn FROM reg AS r WHERE k IS NOT NULL) _w WHERE _rn = 1"
+	if sql != want {
+		t.Fatalf("LatestPerKey:\n  got:  %s\n  want: %s", sql, want)
+	}
+}
