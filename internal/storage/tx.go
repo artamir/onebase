@@ -135,13 +135,9 @@ func (db *DB) QueryRow(ctx context.Context, sqlText string, args ...any) Row {
 	return pgxRow{r: db.pool.QueryRow(ctx, sqlText, args...)}
 }
 
-// exec is the internal helper retained for existing internal callers (PG only).
+// exec is the internal helper. Routes through DB.Exec so SQLite works too.
 func (db *DB) exec(ctx context.Context, sql string, args ...any) error {
-	if tx, ok := ctx.Value(txKey{}).(pgx.Tx); ok {
-		_, err := tx.Exec(ctx, sql, args...)
-		return err
-	}
-	_, err := db.pool.Exec(ctx, sql, args...)
+	_, err := db.Exec(ctx, sql, args...)
 	return err
 }
 

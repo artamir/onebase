@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/ivantit66/onebase/internal/metadata"
 )
 
@@ -212,6 +213,42 @@ func TestSQLiteMigrateMinimal(t *testing.T) {
 	}
 	if v != "hello" {
 		t.Fatalf("constant = %v, want hello", v)
+	}
+
+	// End-to-end CRUD on SQLite: insert catalog entry, fetch by id, list with
+	// search filter, count.
+	cat := entities[0] // Counterparty
+	id := uuid.New()
+	if err := db.Upsert(ctx, cat.Name, id, map[string]any{"Name": "Alfa", "INN": "1234567890"}, cat); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	got, err := db.GetByID(ctx, cat.Name, id, cat)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got["Name"] != "Alfa" {
+		t.Fatalf("GetByID Name = %v, want Alfa", got["Name"])
+	}
+
+	// Add second row and verify List + filter.
+	id2 := uuid.New()
+	if err := db.Upsert(ctx, cat.Name, id2, map[string]any{"Name": "Beta", "INN": "9876543210"}, cat); err != nil {
+		t.Fatalf("Upsert 2: %v", err)
+	}
+	rows, err := db.List(ctx, cat.Name, cat, ListParams{Search: "alfa"})
+	if err != nil {
+		t.Fatalf("List with search: %v", err)
+	}
+	if len(rows) != 1 || rows[0]["Name"] != "Alfa" {
+		t.Fatalf("List search alfa: got %d rows, expected 1 with Name=Alfa: %v", len(rows), rows)
+	}
+
+	total, err := db.CountList(ctx, cat.Name, cat, ListParams{})
+	if err != nil {
+		t.Fatalf("CountList: %v", err)
+	}
+	if total != 2 {
+		t.Fatalf("CountList = %d, want 2", total)
 	}
 }
 
