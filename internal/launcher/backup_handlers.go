@@ -81,6 +81,22 @@ func restoreForBase(ctx context.Context, b *Base, fp string) error {
 	return backup.Restore(ctx, b.DB, fp)
 }
 
+// checkBackupFileMismatch returns an error when the backup file engine does not
+// match the target base engine (e.g. restoring a .sql.gz PG dump into SQLite).
+func checkBackupFileMismatch(b *Base, filename string) error {
+	lower := strings.ToLower(filename)
+	isPGDump := strings.HasSuffix(lower, ".sql.gz") || strings.HasSuffix(lower, ".sql")
+	isSQLiteDump := strings.HasSuffix(lower, ".db") || strings.HasSuffix(lower, ".sqlite")
+	targetSQLite := b.DBType == "sqlite"
+	if isPGDump && targetSQLite {
+		return fmt.Errorf("PostgreSQL backup cannot be restored into a SQLite database (%s)", filename)
+	}
+	if isSQLiteDump && !targetSQLite {
+		return fmt.Errorf("SQLite backup cannot be restored into a PostgreSQL database (%s)", filename)
+	}
+	return nil
+}
+
 func (h *handler) backupCreate(w http.ResponseWriter, r *http.Request) {
 	b, err := h.store.Get(chi.URLParam(r, "id"))
 	if err != nil {
@@ -235,6 +251,13 @@ func (h *handler) backupRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := checkBackupFileMismatch(b, file); err != nil {
+		data := h.loadCfgData(r.Context(), b, "backup")
+		data.Error = err.Error()
+		renderCfg(w, data)
+		return
+	}
+
 	wasRunning := h.runner.IsRunning(b.ID)
 	if wasRunning {
 		h.runner.Stop(b.ID)
@@ -287,7 +310,11 @@ func (h *handler) backupFullExport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Read dump error: "+err.Error(), 500)
 		return
 	}
-	f, _ := zw.Create("database.sql.gz")
+	dumpEntryName := "database.sql.gz"
+	if b.DBType == "sqlite" {
+		dumpEntryName = "database.db"
+	}
+	f, _ := zw.Create(dumpEntryName)
 	f.Write(dumpData)
 
 	// Configuration
@@ -331,8 +358,12 @@ func (h *handler) backupFullExport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Metadata
-	meta := fmt.Sprintf("onebase_full_export\nversion=1.0\ndate=%s\nbase=%s\nsource=%s\n",
-		time.Now().Format("2006-01-02T15:04:05"), b.Name, b.ConfigSource)
+	exportDBType := b.DBType
+	if exportDBType == "" {
+		exportDBType = "postgres"
+	}
+	meta := fmt.Sprintf("onebase_full_export\nversion=1.0\ndate=%s\nbase=%s\nsource=%s\ndb_type=%s\n",
+		time.Now().Format("2006-01-02T15:04:05"), b.Name, b.ConfigSource, exportDBType)
 	mf, _ := zw.Create("META.txt")
 	mf.Write([]byte(meta))
 
@@ -386,6 +417,24 @@ func (h *handler) backupFullImport(w http.ResponseWriter, r *http.Request) {
 	}
 	defer os.RemoveAll(tmpDir)
 
+	// Pre-scan META.txt to detect archive db_type.
+	archiveDBType := ""
+	for _, af := range reader.File {
+		if af.Name == "META.txt" {
+			rc, merr := af.Open()
+			if merr == nil {
+				metaBytes, _ := io.ReadAll(rc)
+				rc.Close()
+				for _, line := range strings.Split(string(metaBytes), "\n") {
+					if strings.HasPrefix(line, "db_type=") {
+						archiveDBType = strings.TrimSpace(strings.TrimPrefix(line, "db_type="))
+					}
+				}
+			}
+			break
+		}
+	}
+
 	var dumpFile string
 	var configDir string
 
@@ -409,12 +458,36 @@ func (h *handler) backupFullImport(w http.ResponseWriter, r *http.Request) {
 		outFile.Close()
 		rc.Close()
 
-		if f.Name == "database.sql.gz" {
+		switch f.Name {
+		case "database.sql.gz":
 			dumpFile = outPath
+			if archiveDBType == "" {
+				archiveDBType = "postgres"
+			}
+		case "database.db":
+			dumpFile = outPath
+			if archiveDBType == "" {
+				archiveDBType = "sqlite"
+			}
 		}
 		if strings.HasPrefix(f.Name, "config/") && configDir == "" {
 			configDir = filepath.Join(tmpDir, "config")
 		}
+	}
+
+	// Reject cross-engine restores.
+	targetDBType := b.DBType
+	if targetDBType == "" {
+		targetDBType = "postgres"
+	}
+	if archiveDBType != "" && archiveDBType != targetDBType {
+		data := h.loadCfgData(r.Context(), b, "backup")
+		data.Error = fmt.Sprintf(
+			"archive db_type=%s does not match target db_type=%s: cannot restore across database engines",
+			archiveDBType, targetDBType,
+		)
+		renderCfg(w, data)
+		return
 	}
 
 	// Р—Р°РїСѓС‰РµРЅРЅС‹Р№ РїСЂРѕС†РµСЃСЃ РґРµСЂР¶РёС‚ СЃС‚Р°СЂСѓСЋ РєРѕРЅС„РёРіСѓСЂР°С†РёСЋ РІ РїР°РјСЏС‚Рё Рё СЃРµСЃСЃРёСЋ Рє Р‘Р” вЂ”
@@ -430,7 +503,7 @@ func (h *handler) backupFullImport(w http.ResponseWriter, r *http.Request) {
 	if dumpFile != "" {
 		restoreErr = restoreForBase(r.Context(), b, dumpFile)
 	} else {
-		restoreErr = fmt.Errorf("С„Р°Р№Р» database.sql.gz РЅРµ РЅР°Р№РґРµРЅ РІ Р°СЂС…РёРІРµ")
+		restoreErr = fmt.Errorf("database dump not found in archive (expected database.sql.gz or database.db)")
 	}
 
 	// Import configuration
