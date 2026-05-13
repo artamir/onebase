@@ -177,6 +177,42 @@ func TestSQLiteMigrateMinimal(t *testing.T) {
 	if !exists {
 		t.Fatal("invoice.deletion_mark column missing after migrate")
 	}
+
+	// Verify system schemas (audit, attachments, scheduled, constants) work on SQLite.
+	if err := db.EnsureAuditSchema(ctx); err != nil {
+		t.Fatalf("EnsureAuditSchema: %v", err)
+	}
+	if err := db.EnsureAttachmentTable(ctx); err != nil {
+		t.Fatalf("EnsureAttachmentTable: %v", err)
+	}
+	if err := db.EnsureScheduledRunsTable(ctx); err != nil {
+		t.Fatalf("EnsureScheduledRunsTable: %v", err)
+	}
+	if err := db.MigrateConstants(ctx, nil); err != nil {
+		t.Fatalf("MigrateConstants: %v", err)
+	}
+
+	// Test seq numbering — RETURNING + ON CONFLICT must work on SQLite.
+	n1, err := db.NextNum(ctx, "Invoice")
+	if err != nil {
+		t.Fatalf("NextNum first: %v", err)
+	}
+	n2, _ := db.NextNum(ctx, "Invoice")
+	if n2 != n1+1 {
+		t.Fatalf("NextNum: %d → %d, expected sequential", n1, n2)
+	}
+
+	// Constant set/get with JSON-roundtrip.
+	if err := db.SetConstant(ctx, "TestKey", "hello"); err != nil {
+		t.Fatalf("SetConstant: %v", err)
+	}
+	v, err := db.GetConstant(ctx, "TestKey")
+	if err != nil {
+		t.Fatalf("GetConstant: %v", err)
+	}
+	if v != "hello" {
+		t.Fatalf("constant = %v, want hello", v)
+	}
 }
 
 func TestSQLiteDialectLatestPerKey(t *testing.T) {

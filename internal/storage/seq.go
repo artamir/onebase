@@ -1,6 +1,9 @@
 package storage
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // EnsureSeqTable creates the _sequences table if it does not exist.
 func (db *DB) EnsureSeqTable(ctx context.Context) error {
@@ -15,12 +18,14 @@ func (db *DB) EnsureSeqTable(ctx context.Context) error {
 // NextNum atomically increments and returns the next sequence number for
 // the given entity type. Safe under concurrent requests.
 func (db *DB) NextNum(ctx context.Context, entityName string) (int64, error) {
-	var n int64
-	err := db.QueryRow(ctx, `
-		INSERT INTO _sequences (entity_name, last_num) VALUES ($1, 1)
+	d := db.dialect
+	q := fmt.Sprintf(`
+		INSERT INTO _sequences (entity_name, last_num) VALUES (%s, 1)
 		ON CONFLICT (entity_name) DO UPDATE
 			SET last_num = _sequences.last_num + 1
 		RETURNING last_num
-	`, entityName).Scan(&n)
+	`, d.Placeholder(1))
+	var n int64
+	err := db.QueryRow(ctx, q, entityName).Scan(&n)
 	return n, err
 }

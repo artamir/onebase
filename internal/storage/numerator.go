@@ -24,14 +24,16 @@ func (db *DB) EnsureNumeratorSchema(ctx context.Context) error {
 // NextNumber atomically increments and returns the next sequence number
 // for (entityName, periodKey). Safe under concurrent requests.
 func (db *DB) NextNumber(ctx context.Context, entityName, periodKey string) (int, error) {
-	var n int
-	err := db.QueryRow(ctx, `
+	d := db.dialect
+	q := fmt.Sprintf(`
 		INSERT INTO _numerators (entity_name, period_key, last_number)
-		VALUES ($1, $2, 1)
+		VALUES (%s, %s, 1)
 		ON CONFLICT (entity_name, period_key) DO UPDATE
 			SET last_number = _numerators.last_number + 1
 		RETURNING last_number
-	`, entityName, periodKey).Scan(&n)
+	`, d.Placeholder(1), d.Placeholder(2))
+	var n int
+	err := db.QueryRow(ctx, q, entityName, periodKey).Scan(&n)
 	return n, err
 }
 

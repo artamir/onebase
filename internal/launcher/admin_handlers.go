@@ -20,12 +20,12 @@ func (h *handler) cfgAdminUsers(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", 404)
 		return
 	}
-	pool, err := getAuthPool(r.Context(), b.DB)
+	db, err := getAuthDB(r.Context(), b)
 	if err != nil {
 		w.Write([]byte(`<div style="padding:16px;color:#c00">Нет подключения к БД</div>`))
 		return
 	}
-	repo := auth.NewRepoFromPool(pool)
+	repo := auth.NewRepo(db)
 	repo.EnsureSchema(r.Context())
 	users, _ := repo.List(r.Context())
 
@@ -103,12 +103,12 @@ func (h *handler) cfgAdminUserCreate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]any{"error": "Логин и пароль обязательны"})
 		return
 	}
-	pool, err := getAuthPool(r.Context(), b.DB)
+	db, err := getAuthDB(r.Context(), b)
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
-	repo := auth.NewRepoFromPool(pool)
+	repo := auth.NewRepo(db)
 	if _, err := repo.Create(r.Context(), req.Login, req.Password, req.FullName, req.IsAdmin); err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
@@ -129,12 +129,12 @@ func (h *handler) cfgAdminUserDelete(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]any{"error": err.Error()})
 		return
 	}
-	pool, err := getAuthPool(r.Context(), b.DB)
+	db, err := getAuthDB(r.Context(), b)
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
-	repo := auth.NewRepoFromPool(pool)
+	repo := auth.NewRepo(db)
 	if err := repo.Delete(r.Context(), req.ID); err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
@@ -148,12 +148,12 @@ func (h *handler) cfgAdminSessions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", 404)
 		return
 	}
-	pool, err := getAuthPool(r.Context(), b.DB)
+	db, err := getAuthDB(r.Context(), b)
 	if err != nil {
 		w.Write([]byte(`<div style="padding:16px;color:#c00">Нет подключения к БД</div>`))
 		return
 	}
-	repo := auth.NewRepoFromPool(pool)
+	repo := auth.NewRepo(db)
 	repo.EnsureSchema(r.Context())
 	sessions, _ := repo.ActiveSessions(r.Context())
 
@@ -201,12 +201,12 @@ func (h *handler) cfgAdminSessionKick(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]any{"error": err.Error()})
 		return
 	}
-	pool, err := getAuthPool(r.Context(), b.DB)
+	db, err := getAuthDB(r.Context(), b)
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
-	repo := auth.NewRepoFromPool(pool)
+	repo := auth.NewRepo(db)
 	repo.KickUser(r.Context(), req.Login)
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
@@ -217,12 +217,12 @@ func (h *handler) cfgAdminAudit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", 404)
 		return
 	}
-	pool, err := getAuthPool(r.Context(), b.DB)
+	db, err := getAuthDB(r.Context(), b)
 	if err != nil {
 		w.Write([]byte(`<div style="padding:16px;color:#c00">Нет подключения к БД</div>`))
 		return
 	}
-	rows, err := pool.Query(r.Context(), `
+	rows, err := db.Query(r.Context(), `
 		SELECT user_login, action, entity_kind, entity_name, at
 		FROM _audit ORDER BY at DESC LIMIT 100`)
 	if err != nil {
