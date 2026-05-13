@@ -253,14 +253,14 @@ func (db *DB) LogAction(ctx context.Context, action, kind, entityName, recordID,
 	})
 }
 
-type pgxRows interface {
+type auditRowsScanner interface {
 	Next() bool
 	Scan(dest ...any) error
 	Err() error
 	Close()
 }
 
-func scanAuditRows(rows pgxRows) ([]*AuditEntry, error) {
+func scanAuditRows(rows auditRowsScanner) ([]*AuditEntry, error) {
 	defer rows.Close()
 	var entries []*AuditEntry
 	for rows.Next() {

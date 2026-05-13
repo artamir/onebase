@@ -282,7 +282,7 @@ func (h *handler) configuratorConvert(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			defer db.Close()
-			repo := configdb.New(db.Pool())
+			repo := configdb.New(db)
 			repo.EnsureSchema(r.Context())
 			if cerr := repo.ImportFromDir(r.Context(), outDir); cerr != nil {
 				data.Error = "Ошибка импорта: " + cerr.Error()
@@ -364,7 +364,7 @@ func (h *handler) loadCfgData(ctx context.Context, b *Base, tab string) *configu
 			return data
 		}
 		defer db.Close()
-		repo := configdb.New(db.Pool())
+		repo := configdb.New(db)
 		if cerr := repo.EnsureSchema(ctx); cerr != nil {
 			data.Error = cerr.Error()
 			return data
@@ -1492,7 +1492,7 @@ func (h *handler) configuratorNewObject(w http.ResponseWriter, r *http.Request) 
 			saveErr = cerr
 		} else {
 			defer db.Close()
-			repo := configdb.New(db.Pool())
+			repo := configdb.New(db)
 			repo.EnsureSchema(r.Context())
 			path := subdir + "/" + filename
 			_, saveErr = db.Pool().Exec(r.Context(), `

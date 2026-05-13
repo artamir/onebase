@@ -152,7 +152,7 @@ func (h *handler) configImportZip(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	repo := configdb.New(db.Pool())
+	repo := configdb.New(db)
 	if err := repo.ImportFromDir(r.Context(), tmpDir); err != nil {
 		data := h.loadCfgData(r.Context(), b, "backup")
 		data.Error = "Import error: " + err.Error()

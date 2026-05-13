@@ -431,7 +431,7 @@ func (h *handler) backupFullImport(w http.ResponseWriter, r *http.Request) {
 				configErr = cerr
 			} else {
 				defer db.Close()
-				repo := configdb.New(db.Pool())
+				repo := configdb.New(db)
 				configErr = repo.ImportFromDir(r.Context(), configDir)
 			}
 		} else {

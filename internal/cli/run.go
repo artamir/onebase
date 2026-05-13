@@ -73,14 +73,14 @@ func runServer(cmd *cobra.Command, _ []string) error {
 	}
 	defer db.Close()
 
-	authRepo := auth.NewRepo(db.Pool())
+	authRepo := auth.NewRepo(db)
 	if err := authRepo.EnsureSchema(ctx); err != nil {
 		return fmt.Errorf("auth schema: %w", err)
 	}
 
 	var proj *project.Project
 	if configSource == "database" {
-		cfgRepo := configdb.New(db.Pool())
+		cfgRepo := configdb.New(db)
 		if err := cfgRepo.EnsureSchema(ctx); err != nil {
 			return fmt.Errorf("configdb schema: %w", err)
 		}

@@ -51,7 +51,7 @@ func runDev(cmd *cobra.Command, _ []string) error {
 	}
 	defer db.Close()
 
-	authRepo := auth.NewRepo(db.Pool())
+	authRepo := auth.NewRepo(db)
 	if err := authRepo.EnsureSchema(ctx); err != nil {
 		return fmt.Errorf("auth schema: %w", err)
 	}
@@ -78,7 +78,7 @@ func runDev(cmd *cobra.Command, _ []string) error {
 		var lerr error
 
 		if configSource == "database" {
-			cfgRepo := configdb.New(db.Pool())
+			cfgRepo := configdb.New(db)
 			if err := cfgRepo.EnsureSchema(ctx); err != nil {
 				fmt.Fprintln(os.Stderr, "[dev] configdb error:", err)
 				return

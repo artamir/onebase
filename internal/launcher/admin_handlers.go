@@ -25,7 +25,7 @@ func (h *handler) cfgAdminUsers(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`<div style="padding:16px;color:#c00">Нет подключения к БД</div>`))
 		return
 	}
-	repo := auth.NewRepo(pool)
+	repo := auth.NewRepoFromPool(pool)
 	repo.EnsureSchema(r.Context())
 	users, _ := repo.List(r.Context())
 
@@ -108,7 +108,7 @@ func (h *handler) cfgAdminUserCreate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
-	repo := auth.NewRepo(pool)
+	repo := auth.NewRepoFromPool(pool)
 	if _, err := repo.Create(r.Context(), req.Login, req.Password, req.FullName, req.IsAdmin); err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
@@ -134,7 +134,7 @@ func (h *handler) cfgAdminUserDelete(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
-	repo := auth.NewRepo(pool)
+	repo := auth.NewRepoFromPool(pool)
 	if err := repo.Delete(r.Context(), req.ID); err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
@@ -153,7 +153,7 @@ func (h *handler) cfgAdminSessions(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`<div style="padding:16px;color:#c00">Нет подключения к БД</div>`))
 		return
 	}
-	repo := auth.NewRepo(pool)
+	repo := auth.NewRepoFromPool(pool)
 	repo.EnsureSchema(r.Context())
 	sessions, _ := repo.ActiveSessions(r.Context())
 
@@ -206,7 +206,7 @@ func (h *handler) cfgAdminSessionKick(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
-	repo := auth.NewRepo(pool)
+	repo := auth.NewRepoFromPool(pool)
 	repo.KickUser(r.Context(), req.Login)
 	writeJSON(w, 200, map[string]any{"ok": true})
 }

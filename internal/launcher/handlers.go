@@ -284,7 +284,7 @@ func (h *handler) configExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo := configdb.New(db.Pool())
+	repo := configdb.New(db)
 	if err := repo.ExportToDir(r.Context(), workDir); err != nil {
 		render(w, "page-config-result", map[string]any{
 			"Title": "onebase — Конфигуратор", "Message": "",
@@ -325,7 +325,7 @@ func (h *handler) configImport(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	repo := configdb.New(db.Pool())
+	repo := configdb.New(db)
 	if err := repo.ImportFromDir(r.Context(), srcDir); err != nil {
 		render(w, "page-config-result", map[string]any{
 			"Title": "onebase — Загрузка конфигурации", "Message": "",
@@ -353,7 +353,7 @@ func (h *handler) initDatabaseBase(ctx context.Context, b *Base, scaffold bool) 
 	}
 	defer db.Close()
 
-	repo := configdb.New(db.Pool())
+	repo := configdb.New(db)
 	if err := repo.EnsureSchema(ctx); err != nil {
 		return fmt.Errorf("создание схемы configdb: %w", err)
 	}

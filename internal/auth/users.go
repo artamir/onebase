@@ -10,6 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/ivantit66/onebase/internal/storage"
 )
 
 type User struct {
@@ -25,7 +27,17 @@ type Repo struct {
 	pool *pgxpool.Pool
 }
 
-func NewRepo(pool *pgxpool.Pool) *Repo {
+// NewRepo wires the auth repository to the storage layer. We keep an
+// underlying pgxpool.Pool for now (Этап 1) — Этап 3 will switch internal
+// queries to the storage.DB abstraction so SQLite can be plugged in.
+func NewRepo(db *storage.DB) *Repo {
+	return &Repo{pool: db.Pool()}
+}
+
+// NewRepoFromPool is a temporary constructor for callers that still hold a
+// raw pgxpool.Pool (configurator auth cache). Will be removed in Этап 3 when
+// the auth.Repo internals switch to storage.DB.
+func NewRepoFromPool(pool *pgxpool.Pool) *Repo {
 	return &Repo{pool: pool}
 }
 

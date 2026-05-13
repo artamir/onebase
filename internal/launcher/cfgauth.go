@@ -107,7 +107,7 @@ func (h *handler) cfgLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo := auth.NewRepo(pool)
+	repo := auth.NewRepoFromPool(pool)
 	if err := repo.EnsureSchema(r.Context()); err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(500)
@@ -163,7 +163,7 @@ func (h *handler) cfgAuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		repo := auth.NewRepo(pool)
+		repo := auth.NewRepoFromPool(pool)
 		if err := repo.EnsureSchema(r.Context()); err != nil {
 			next.ServeHTTP(w, r)
 			return

@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/ivantit66/onebase/internal/storage"
 )
 
 // MigrateContent fixes known content issues in stored YAML files.
@@ -57,8 +59,11 @@ type Repo struct {
 	pool *pgxpool.Pool
 }
 
-func New(pool *pgxpool.Pool) *Repo {
-	return &Repo{pool: pool}
+// New wires the configdb repository to the storage layer. The underlying
+// pgxpool.Pool is kept inside the repo for now (Этап 1) — Этап 3 will switch
+// internal queries to the storage.DB abstraction so SQLite can be plugged in.
+func New(db *storage.DB) *Repo {
+	return &Repo{pool: db.Pool()}
 }
 
 func (r *Repo) EnsureSchema(ctx context.Context) error {
