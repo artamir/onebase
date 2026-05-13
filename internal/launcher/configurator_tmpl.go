@@ -596,21 +596,11 @@ function startEdit(name) {
       wordWrap: 'on',
       tabSize: 2,
       glyphMargin: true,
-      automaticLayout: true
+      automaticLayout: true,
+      contextmenu: false // используем своё контекстное меню (см. document-level handler)
     });
     editor._fileId = name;
     monacoEditors[name] = editor;
-    // Регистрируем пункт «Конструктор запроса» в стандартном меню Monaco
-    // (наш document-level contextmenu не получает события — Monaco перехватывает их сам).
-    try {
-      editor.addAction({
-        id: 'onebase-query-builder',
-        label: 'Конструктор запроса',
-        contextMenuGroupId: 'navigation',
-        contextMenuOrder: 1.5,
-        run: function(ed) { openQBModalMonaco(ed._fileId || name); }
-      });
-    } catch (e) { /* Monaco may not be fully ready in some edge cases */ }
     // Gutter click for breakpoint toggle — setTimeout decouples from Monaco internals
     editor.onMouseDown(function(e) {
       try {
@@ -1051,18 +1041,23 @@ function repAddParam(tableId) {
   tr.querySelector('input[type=text]').focus();
 }
 
-// ── Editor context menu (только для textarea/pre — Monaco использует editor.addAction) ──
+// ── Editor context menu — наше меню для textarea, pre и Monaco ──
+// Monaco создан с contextmenu:false, поэтому его внутренний обработчик не глотает событие.
 (function(){
-var _cTA=null,_cM=null;
+var _cTA=null,_cMonacoName=null,_cM=null;
 document.addEventListener('contextmenu',function(e){
-  // Monaco сам перехватывает contextmenu и показывает своё меню; не вмешиваемся.
-  if(e.target.closest('.monaco-target')){hideC();return;}
   var ta=e.target.closest('.os-edit');
   var pre=e.target.closest('pre.os-code');
-  if(!ta&&!pre){hideC();return;}
+  var mon=e.target.closest('.monaco-target');
+  if(!ta&&!pre&&!mon){hideC();return;}
   e.preventDefault();
-  if(pre&&!ta){var nm=pre.id.replace('pre-','');startEdit(nm);ta=document.getElementById('ta-'+nm);}
-  _cTA=ta;
+  _cMonacoName=null; _cTA=null;
+  if(mon){
+    _cMonacoName=mon._editorId||null;
+  } else {
+    if(pre&&!ta){var nm=pre.id.replace('pre-','');startEdit(nm);ta=document.getElementById('ta-'+nm);}
+    _cTA=ta;
+  }
   showC(e.clientX,e.clientY);
 });
 function showC(x,y){
@@ -1075,7 +1070,11 @@ function showC(x,y){
 }
 function hideC(){if(_cM)_cM.style.display='none';}
 document.addEventListener('click',hideC);
-window.cfgOpenQB=function(){ hideC(); if(_cTA) openQBModal(_cTA); };
+window.cfgOpenQB=function(){
+  hideC();
+  if(_cMonacoName && monacoEditors[_cMonacoName]) openQBModalMonaco(_cMonacoName);
+  else if(_cTA) openQBModal(_cTA);
+};
 })();
 
 // ── Inline query builder ──────────────────────────────────
