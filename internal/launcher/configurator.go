@@ -157,6 +157,7 @@ type configuratorData struct {
 	Base       *Base
 	AppName    string
 	AppVersion string
+	DSNMasked  string
 	Tab        string // "tree" | "convert" | "files"
 	Entities  []cfgEntity
 	Catalogs  []cfgEntity
@@ -304,7 +305,7 @@ func (h *handler) configuratorConvert(w http.ResponseWriter, r *http.Request) {
 // ── data loading ──────────────────────────────────────────────────────────────
 
 func (h *handler) loadCfgData(ctx context.Context, b *Base, tab string) *configuratorData {
-	data := &configuratorData{Base: b, Tab: tab, PlatformVer: version.String(), UIServerURL: fmt.Sprintf("http://localhost:%d", b.Port)}
+	data := &configuratorData{Base: b, Tab: tab, PlatformVer: version.String(), UIServerURL: fmt.Sprintf("http://localhost:%d", b.Port), DSNMasked: maskDSN(b.DB)}
 
 	var proj *project.Project
 	var err error

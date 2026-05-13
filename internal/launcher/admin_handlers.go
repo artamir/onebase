@@ -280,7 +280,7 @@ func (h *handler) cfgAdminAbout(w http.ResponseWriter, r *http.Request) {
 	</div>`,
 		escHTML(version.String()),
 		escHTML(b.ConfigSource),
-		escHTML(b.DB),
+		maskDSN(escHTML(b.DB)),
 		b.Port)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(html))
@@ -289,4 +289,29 @@ func (h *handler) cfgAdminAbout(w http.ResponseWriter, r *http.Request) {
 func escHTML(s string) string {
 	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;")
 	return r.Replace(s)
+}
+
+// maskDSN hides password in a connection string.
+// postgres://user:secret@host:5432/db → postgres://user:***@host:5432/db
+func maskDSN(dsn string) string {
+	// URL format: postgres://user:pass@host/db
+	if i := strings.Index(dsn, "://"); i >= 0 {
+		rest := dsn[i+3:]
+		if at := strings.Index(rest, "@"); at >= 0 {
+			userPart := rest[:at]
+			if colon := strings.LastIndex(userPart, ":"); colon >= 0 {
+				return dsn[:i+3+colon+1] + "***" + dsn[i+3+at:]
+			}
+		}
+	}
+	// DSN format: host=... password=secret ...
+	if i := strings.Index(dsn, "password="); i >= 0 {
+		end := i + len("password=")
+		rest := dsn[end:]
+		if sp := strings.IndexByte(rest, ' '); sp >= 0 {
+			return dsn[:end] + "***" + rest[sp:]
+		}
+		return dsn[:end] + "***"
+	}
+	return dsn
 }

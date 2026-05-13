@@ -315,7 +315,7 @@ const cfgHead = `{{define "cfg-head"}}<!DOCTYPE html>
   </div>
   <a href="/?sel={{.Base.ID}}">← Лаунчер</a>
   <h1>Конфигуратор — {{if .AppName}}{{.AppName}}{{else}}{{.Base.Name}}{{end}}</h1>
-  <span style="font-size:11px;color:#7aa8d8">{{.Base.DB}} · :{{.Base.Port}} · платформа {{.PlatformVer}}</span>
+  <span style="font-size:11px;color:#7aa8d8">{{.DSNMasked}} · :{{.Base.Port}} · платформа {{.PlatformVer}}</span>
   <button onclick="launchEnterprise()" title="Запустить предприятие" class="run-enterprise-btn"><svg viewBox="0 0 24 24" fill="#333"><polygon points="6,3 20,12 6,21"/></svg></button>
   <button id="dbg-toggle" class="dbg-topbar-btn" onclick="dbgToggle()">&#128027; Отладка: ВЫКЛ</button>
   <span id="monaco-status" style="font-size:9px;color:#94a3b8">Monaco:...</span>
