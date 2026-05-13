@@ -930,10 +930,13 @@ func (s *Server) processorRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userKey := userKeyFromRequest(r)
 	var messages []string
 	msgFunc := interpreter.BuiltinFunc(func(args []any, file string, line int) (any, error) {
 		if len(args) > 0 {
-			messages = append(messages, fmt.Sprintf("%v", args[0]))
+			text := fmt.Sprintf("%v", args[0])
+			messages = append(messages, text)
+			s.messages.Push(userKey, text)
 		}
 		return nil, nil
 	})
@@ -1212,9 +1215,14 @@ func (s *Server) buildDSLVars(ctx context.Context, mc *runtime.MovementsCollecto
 
 func (s *Server) buildDSLVarsWithMessages(ctx context.Context, mc *runtime.MovementsCollector, msgs *[]string) map[string]any {
 	vars := s.buildDSLVars(ctx, mc)
+	userKey := userKeyFromCtx(ctx)
 	msgFunc := interpreter.BuiltinFunc(func(args []any, file string, line int) (any, error) {
-		if len(args) > 0 && msgs != nil {
-			*msgs = append(*msgs, fmt.Sprintf("%v", args[0]))
+		if len(args) > 0 {
+			text := fmt.Sprintf("%v", args[0])
+			if msgs != nil {
+				*msgs = append(*msgs, text)
+			}
+			s.messages.Push(userKey, text)
 		}
 		return nil, nil
 	})
