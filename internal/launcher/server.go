@@ -32,8 +32,21 @@ func (s *Server) URL() string { return "http://" + s.ln.Addr().String() }
 // Done returns a channel that is closed when /quit is received.
 func (s *Server) Done() <-chan struct{} { return s.quit }
 
-// Close shuts down the HTTP server and closes the listener.
+// Close shuts down the HTTP server, closes auth pools and kills any running
+// base processes — otherwise onebase-gui.exe children survive as zombies when
+// the launcher window is closed via the X button.
 func (s *Server) Close() {
+	if s.h != nil && s.h.runner != nil {
+		var ports []int
+		if s.h.store != nil {
+			if bases, err := s.h.store.List(); err == nil {
+				for _, b := range bases {
+					ports = append(ports, b.Port)
+				}
+			}
+		}
+		s.h.runner.StopAll(ports)
+	}
 	CloseAuthPools()
 	if s.httpSrv != nil {
 		s.httpSrv.Close()

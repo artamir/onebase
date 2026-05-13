@@ -224,6 +224,12 @@ func (h *handler) backupRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	wasRunning := h.runner.IsRunning(b.ID)
+	if wasRunning {
+		h.runner.Stop(b.ID)
+		waitPortFree(b.Port, 3*time.Second)
+	}
+
 	restoreErr := backup.Restore(r.Context(), b.DB, fp)
 	data := h.loadCfgData(r.Context(), b, "backup")
 	if restoreErr != nil {
@@ -231,7 +237,11 @@ func (h *handler) backupRestore(w http.ResponseWriter, r *http.Request) {
 	} else {
 		data.FieldsSaved = true
 		data.FieldsSavedEntity = "panel-backup"
-		data.BackupMessage = "База данных восстановлена из: " + file
+		msg := "База данных восстановлена из: " + file
+		if wasRunning {
+			msg += ". База остановлена — запустите её заново для применения изменений."
+		}
+		data.BackupMessage = msg
 	}
 	renderCfg(w, data)
 }
@@ -396,6 +406,14 @@ func (h *handler) backupFullImport(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Запущенный процесс держит старую конфигурацию в памяти и сессию к БД —
+	// иначе после restore миграция и новые .os-файлы не будут видны до перезапуска.
+	wasRunning := h.runner.IsRunning(b.ID)
+	if wasRunning {
+		h.runner.Stop(b.ID)
+		waitPortFree(b.Port, 3*time.Second)
+	}
+
 	// Restore database
 	var restoreErr error
 	if dumpFile != "" {
@@ -446,7 +464,11 @@ func (h *handler) backupFullImport(w http.ResponseWriter, r *http.Request) {
 	} else {
 		data.FieldsSaved = true
 		data.FieldsSavedEntity = "panel-backup"
-		data.BackupMessage = "Полное восстановление выполнено: база данных + конфигурация"
+		msg := "Полное восстановление выполнено: база данных + конфигурация"
+		if wasRunning {
+			msg += ". База остановлена — запустите её заново для применения изменений."
+		}
+		data.BackupMessage = msg
 	}
 	renderCfg(w, data)
 }
