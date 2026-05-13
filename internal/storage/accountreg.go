@@ -120,10 +120,11 @@ func (db *DB) migrateAccountReg(ctx context.Context, ar *metadata.AccountRegiste
 // WriteAccountMovements inserts account register movements for a document.
 // It first clears existing movements for this recorder.
 func (db *DB) WriteAccountMovements(ctx context.Context, regName, docType string, docID uuid.UUID, rows []map[string]any, ar *metadata.AccountRegister, period *time.Time) error {
+	d := db.dialect
 	table := metadata.AccountRegTableName(regName)
-	// clear existing movements for this recorder
 	if _, err := db.Exec(ctx,
-		fmt.Sprintf("DELETE FROM %s WHERE регистратор=$1", table), docID,
+		fmt.Sprintf("DELETE FROM %s WHERE регистратор=%s", table, d.Placeholder(1)),
+		idArg(d, docID),
 	); err != nil {
 		return fmt.Errorf("clear account movements %s: %w", regName, err)
 	}
@@ -148,27 +149,24 @@ func (db *DB) WriteAccountMovements(ctx context.Context, regName, docType string
 		dtCode := fmt.Sprintf("%v", dtRaw)
 		ktCode := fmt.Sprintf("%v", ktRaw)
 
-		// build columns and values for resource fields
 		var extraCols []string
 		var extraArgs []any
-		argIdx := 5
 		for _, r := range ar.Resources {
 			col := metadata.ColumnName(r)
 			extraCols = append(extraCols, col)
-			argIdx++
 			extraArgs = append(extraArgs, ciGet(row, r.Name))
 		}
 
 		colList := "period, регистратор, регистратор_тип, счётдт, счёткт"
-		placeholders := "$1, $2, $3, $4, $5"
-		args := []any{*p, docID, docType, dtCode, ktCode}
+		phs := []string{d.Placeholder(1), d.Placeholder(2), d.Placeholder(3), d.Placeholder(4), d.Placeholder(5)}
+		args := []any{*p, idArg(d, docID), docType, dtCode, ktCode}
 		for i, ec := range extraCols {
 			colList += ", " + ec
-			placeholders += fmt.Sprintf(", $%d", 6+i)
+			phs = append(phs, d.Placeholder(6+i))
 			args = append(args, extraArgs[i])
 		}
 
-		sql := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", table, colList, placeholders)
+		sql := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", table, colList, strings.Join(phs, ", "))
 		if _, err := db.Exec(ctx, sql, args...); err != nil {
 			return fmt.Errorf("insert account movement %s: %w", regName, err)
 		}
@@ -178,9 +176,11 @@ func (db *DB) WriteAccountMovements(ctx context.Context, regName, docType string
 
 // ClearAccountMovements removes all movements for a given document from the register.
 func (db *DB) ClearAccountMovements(ctx context.Context, regName string, docID uuid.UUID) error {
+	d := db.dialect
 	table := metadata.AccountRegTableName(regName)
 	_, err := db.Exec(ctx,
-		fmt.Sprintf("DELETE FROM %s WHERE регистратор=$1", table), docID,
+		fmt.Sprintf("DELETE FROM %s WHERE регистратор=%s", table, d.Placeholder(1)),
+		idArg(d, docID),
 	)
 	return err
 }
@@ -241,13 +241,14 @@ func (db *DB) AccountBalances(ctx context.Context, regName, planName string, asO
 		selectCols += ", " + strings.Join(resourceCols, ", ")
 	}
 
+	d := db.dialect
 	query := fmt.Sprintf(`
 SELECT %s
 FROM _accounts a
-LEFT JOIN %s r ON (r.счётдт = a.code OR r.счёткт = a.code) AND r.period <= $1
-WHERE a.plan = $2
+LEFT JOIN %s r ON (r.счётдт = a.code OR r.счёткт = a.code) AND r.period <= %s
+WHERE a.plan = %s
 GROUP BY a.code, a.name, a.kind
-ORDER BY a.code`, selectCols, table)
+ORDER BY a.code`, selectCols, table, d.Placeholder(1), d.Placeholder(2))
 
 	rows, err := db.Query(ctx, query, asOf, planName)
 	if err != nil {
@@ -312,15 +313,16 @@ func (db *DB) AccountTurnovers(ctx context.Context, regName, planName string, fr
 		selectCols += ", " + strings.Join(resourceCols, ", ")
 	}
 
+	d := db.dialect
 	query := fmt.Sprintf(`
 SELECT %s
 FROM _accounts a
-LEFT JOIN %s r ON (r.счётдт = a.code OR r.счёткт = a.code) AND r.period >= $1 AND r.period <= $2
-WHERE a.plan = $3
+LEFT JOIN %s r ON (r.счётдт = a.code OR r.счёткт = a.code) AND r.period >= %s AND r.period <= %s
+WHERE a.plan = %s
 GROUP BY a.code, a.name, a.kind
 HAVING SUM(CASE WHEN r.счётдт = a.code THEN 1 ELSE 0 END) > 0
     OR SUM(CASE WHEN r.счёткт = a.code THEN 1 ELSE 0 END) > 0
-ORDER BY a.code`, selectCols, table)
+ORDER BY a.code`, selectCols, table, d.Placeholder(1), d.Placeholder(2), d.Placeholder(3))
 
 	rows, err := db.Query(ctx, query, from, to, planName)
 	if err != nil {

@@ -12,6 +12,7 @@ import (
 // InfoRegSet upserts a record in an info register.
 // For periodic registers, period must be non-nil.
 func (db *DB) InfoRegSet(ctx context.Context, ir *metadata.InfoRegister, dimKey map[string]any, resources map[string]any, period *time.Time) error {
+	d := db.dialect
 	table := metadata.InfoRegTableName(ir.Name)
 
 	cols := []string{}
@@ -24,7 +25,7 @@ func (db *DB) InfoRegSet(ctx context.Context, ir *metadata.InfoRegister, dimKey 
 			return fmt.Errorf("info register %s is periodic: period is required", ir.Name)
 		}
 		cols = append(cols, "period")
-		phs = append(phs, fmt.Sprintf("$%d", idx))
+		phs = append(phs, d.Placeholder(idx))
 		args = append(args, *period)
 		idx++
 	}
@@ -32,19 +33,19 @@ func (db *DB) InfoRegSet(ctx context.Context, ir *metadata.InfoRegister, dimKey 
 	for _, f := range ir.Dimensions {
 		col := metadata.ColumnName(f)
 		cols = append(cols, col)
-		phs = append(phs, fmt.Sprintf("$%d", idx))
+		phs = append(phs, d.Placeholder(idx))
 		args = append(args, dimKey[f.Name])
 		idx++
 	}
 	for _, f := range ir.Resources {
 		col := metadata.ColumnName(f)
 		cols = append(cols, col)
-		phs = append(phs, fmt.Sprintf("$%d", idx))
+		phs = append(phs, d.Placeholder(idx))
 		args = append(args, resources[f.Name])
 		idx++
 	}
 	cols = append(cols, "updated_at")
-	phs = append(phs, fmt.Sprintf("$%d", idx))
+	phs = append(phs, d.Placeholder(idx))
 	args = append(args, time.Now())
 	idx++
 
@@ -71,7 +72,7 @@ func (db *DB) InfoRegSet(ctx context.Context, ir *metadata.InfoRegister, dimKey 
 func (db *DB) InfoRegGet(ctx context.Context, ir *metadata.InfoRegister, dimKey map[string]any) (map[string]any, error) {
 	table := metadata.InfoRegTableName(ir.Name)
 	allCols := resourceAndDimCols(ir)
-	where, args := dimWhere(ir, dimKey, 1)
+	where, args := dimWhere(db.dialect, ir, dimKey, 1)
 	sql := fmt.Sprintf("SELECT %s FROM %s WHERE %s LIMIT 1",
 		strings.Join(allCols, ", "), table, where)
 	return db.infoRegScan(ctx, ir, sql, args)
@@ -79,13 +80,14 @@ func (db *DB) InfoRegGet(ctx context.Context, ir *metadata.InfoRegister, dimKey 
 
 // InfoRegGetLast returns the most recent record on or before onDate for the given dimensions.
 func (db *DB) InfoRegGetLast(ctx context.Context, ir *metadata.InfoRegister, dimKey map[string]any, onDate time.Time) (map[string]any, error) {
+	d := db.dialect
 	table := metadata.InfoRegTableName(ir.Name)
 	allCols := append([]string{"period"}, resourceAndDimCols(ir)...)
-	where, args := dimWhere(ir, dimKey, 1)
+	where, args := dimWhere(d, ir, dimKey, 1)
 	args = append(args, onDate)
 	sql := fmt.Sprintf(
-		"SELECT %s FROM %s WHERE %s AND period <= $%d ORDER BY period DESC LIMIT 1",
-		strings.Join(allCols, ", "), table, where, len(args))
+		"SELECT %s FROM %s WHERE %s AND period <= %s ORDER BY period DESC LIMIT 1",
+		strings.Join(allCols, ", "), table, where, d.Placeholder(len(args)))
 	return db.infoRegScan(ctx, ir, sql, args)
 }
 
@@ -148,17 +150,18 @@ func (db *DB) InfoRegList(ctx context.Context, ir *metadata.InfoRegister) ([]map
 
 // InfoRegDelete removes a record by its primary key.
 func (db *DB) InfoRegDelete(ctx context.Context, ir *metadata.InfoRegister, dimKey map[string]any, period *time.Time) error {
+	d := db.dialect
 	table := metadata.InfoRegTableName(ir.Name)
 	args := []any{}
 	conds := []string{}
 	idx := 1
 	if ir.Periodic && period != nil {
-		conds = append(conds, fmt.Sprintf("period = $%d", idx))
+		conds = append(conds, fmt.Sprintf("period = %s", d.Placeholder(idx)))
 		args = append(args, *period)
 		idx++
 	}
 	for _, f := range ir.Dimensions {
-		conds = append(conds, fmt.Sprintf("%s = $%d", metadata.ColumnName(f), idx))
+		conds = append(conds, fmt.Sprintf("%s = %s", metadata.ColumnName(f), d.Placeholder(idx)))
 		args = append(args, dimKey[f.Name])
 		idx++
 	}
@@ -192,18 +195,18 @@ func resourceAndDimCols(ir *metadata.InfoRegister) []string {
 	return cols
 }
 
-func dimWhere(ir *metadata.InfoRegister, dimKey map[string]any, startIdx int) (string, []any) {
+func dimWhere(d Dialect, ir *metadata.InfoRegister, dimKey map[string]any, startIdx int) (string, []any) {
 	var conds []string
 	var args []any
 	idx := startIdx
 	for _, f := range ir.Dimensions {
 		col := metadata.ColumnName(f)
-		conds = append(conds, fmt.Sprintf("%s = $%d", col, idx))
+		conds = append(conds, fmt.Sprintf("%s = %s", col, d.Placeholder(idx)))
 		args = append(args, dimKey[f.Name])
 		idx++
 	}
 	if len(conds) == 0 {
-		return "TRUE", nil
+		return "1=1", nil
 	}
 	return strings.Join(conds, " AND "), args
 }
