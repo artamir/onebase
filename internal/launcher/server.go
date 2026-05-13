@@ -96,6 +96,8 @@ func (s *Server) ListenAndServe() error {
 		r.Post("/bases/{id}/configurator/backup/settings", s.h.backupSettings)
 			r.Post("/bases/{id}/configurator/backup/upload", s.h.backupUpload)
 			r.Post("/bases/{id}/configurator/backup/{file}/restore", s.h.backupRestore)
+			r.Get("/bases/{id}/configurator/backup/full-export", s.h.backupFullExport)
+			r.Post("/bases/{id}/configurator/backup/full-import", s.h.backupFullImport)
 		// Debug proxy — forwards /bases/{id}/debug/{action} to UI server (avoids CORS in webview)
 		r.HandleFunc("/bases/{id}/debug/{action}", s.h.debugProxy) // GET + POST
 	})

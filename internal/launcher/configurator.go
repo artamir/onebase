@@ -523,8 +523,9 @@ func (h *handler) loadCfgData(ctx context.Context, b *Base, tab string) *configu
 	// Generate query builder schema
 	data.QBSchema = buildQBSchema(data)
 
-	// Backup files
-	backupDir := h.backupDir(b)
+	// Backup dir & files
+	data.BackupDir = h.backupDir(b)
+	backupDir := data.BackupDir
 	if files, err := filepath.Glob(filepath.Join(backupDir, "backup_*.sql.gz")); err == nil {
 		for _, f := range files {
 			info, _ := os.Stat(f)

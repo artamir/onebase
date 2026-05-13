@@ -3151,12 +3151,22 @@ const cfgTabBackup = `{{define "tab-backup"}}
     </div>
     <div style="margin-bottom:8px">
       <label style="font-size:12px;color:#64748b;display:block;margin-bottom:4px">Директория (пусто = по умолчанию)</label>
-      <input type="text" name="backup_dir" value="{{.BackupSettings.Directory}}" placeholder="" style="width:100%;max-width:400px;padding:4px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:13px">
+      <input type="text" name="backup_dir" value="{{.BackupSettings.Directory}}" placeholder="{{.BackupDir}}" style="width:100%;max-width:500px;padding:6px 10px;border:1px solid #d1d5db;border-radius:4px;font-size:13px;background:#fff">
     </div>
     <button class="btn-save" type="submit">Сохранить настройки</button>
   </form>
   </details>
-  <details style="margin-top:20px"><summary style="font-size:13px;font-weight:600;color:#374151;cursor:pointer;margin-bottom:8px">Перенос конфигурации</summary>
+  <details style="margin-top:20px"><summary style="font-size:13px;font-weight:600;color:#374151;cursor:pointer;margin-bottom:8px">Полная выгрузка (база + конфигурация)</summary>
+  <p style="font-size:12px;color:#64748b;margin:0 0 12px">Выгрузка базы данных и конфигурации в один файл (.dt). Позволяет полностью перенести базу на другой сервер.</p>
+  <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
+    <a href="/bases/{{.Base.ID}}/configurator/backup/full-export" class="btn-save" style="text-decoration:none;display:inline-block">Выгрузить всё в .dt</a>
+    <form method="POST" action="/bases/{{.Base.ID}}/configurator/backup/full-import" enctype="multipart/form-data" style="display:flex;align-items:center;gap:8px" onsubmit="return confirm('Восстановить из .dt файла? Все текущие данные будут заменены!')">
+      <input type="file" name="dt_file" accept=".dt" required style="font-size:12px">
+      <button class="btn-save" type="submit" style="background:#dc2626">Загрузить из .dt</button>
+    </form>
+  </div>
+  </details>
+  <details style="margin-top:12px"><summary style="font-size:13px;font-weight:600;color:#374151;cursor:pointer;margin-bottom:8px">Перенос конфигурации (только метаданные)</summary>
   <p style="font-size:12px;color:#64748b;margin:0 0 12px">Экспортируйте конфигурацию в ZIP для переноса на другой сервер или импортируйте из архива.</p>
   <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
     <a href="/bases/{{.Base.ID}}/configurator/config/export-zip" class="btn-save" style="text-decoration:none;display:inline-block">Экспорт в ZIP</a>

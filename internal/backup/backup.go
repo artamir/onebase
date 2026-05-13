@@ -33,7 +33,7 @@ func Dump(ctx context.Context, connStr, outDir string) (string, error) {
 	outPath := filepath.Join(outDir, filename)
 
 	// pg_dump → stdout → gzip → file
-	cmd := exec.CommandContext(ctx, pgDump, "--format=plain", "--no-owner", "--no-acl", connStr)
+	cmd := exec.CommandContext(ctx, pgDump, "--format=plain", "--no-owner", "--no-acl", "--clean", "--if-exists", connStr)
 	r, err := cmd.StdoutPipe()
 	if err != nil {
 		return "", err
