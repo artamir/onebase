@@ -1360,6 +1360,8 @@ var _dbgBreakpoints = {}; // { editorId: { line: true } }
 var _lastVarsKey = '';
 var _lastStackHtml = '';
 var _lastDiagHtml = '';
+// auto-open admin panel if redirected from another tab
+(function(){var m=window.location.search.match(/[?&]_admin=([^&]+)/);if(m){setTimeout(function(){cfgAdmin(m[1]);},300);}})();
 var _dbgCurrentLineDecos = {}; // { editorId: decorationIds }
 
 // ── Configurator admin panels ────────────────────────────────────
@@ -1368,6 +1370,7 @@ function cfgAdmin(name) {
   document.querySelectorAll('.cfg-panel').forEach(function(e){e.classList.remove('active')});
   document.querySelectorAll('.cfg-item').forEach(function(e){e.classList.remove('sel')});
   var panel = document.getElementById('panel-admin');
+  if(!panel){window.location.href='/bases/'+_dbgBase+'/configurator?tab=tree&_admin='+name;return;}
   panel.classList.add('active');
   panel.innerHTML = '<div style="padding:20px;text-align:center;color:#888">Загрузка...</div>';
   fetch('/bases/' + _dbgBase + '/configurator/admin/' + name)
