@@ -904,6 +904,19 @@ const tplReport = `
 </div>
 {{end}}
 {{if .QueryError}}<div class="error">Ошибка запроса: {{.QueryError}}</div>{{end}}
+{{if .ChartOption}}
+<div class="card" style="margin-bottom:16px">
+  <div id="ob-chart" style="width:100%;min-height:400px"></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<script>
+(function(){
+  var c=echarts.init(document.getElementById('ob-chart'));
+  c.setOption({{jsJSON .ChartOption}});
+  window.addEventListener('resize',function(){c.resize()});
+})();
+</script>
+{{end}}
 {{if .Cols}}
 <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
   <a class="btn btn-sm" href="/ui/report/{{lower .Report.Name}}/excel{{reportParamQuery .Report.Params .ParamValues}}" style="background:#16a34a;color:#fff" title="Скачать Excel">Excel ↓</a>

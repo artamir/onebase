@@ -14,10 +14,11 @@ type Param struct {
 }
 
 type Report struct {
-	Name   string  `yaml:"name"`
-	Title  string  `yaml:"title"`
-	Params []Param `yaml:"params"`
-	Query  string  `yaml:"query"`
+	Name      string  `yaml:"name"`
+	Title     string  `yaml:"title"`
+	Params    []Param `yaml:"params"`
+	Query     string  `yaml:"query"`
+	ChartProc string  `yaml:"chart_proc"`
 }
 
 func (p *Param) DisplayLabel() string {

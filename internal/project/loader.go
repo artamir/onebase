@@ -338,6 +338,7 @@ func (p *Project) loadDSL() error {
 		isModule := strings.HasSuffix(name, ".module.os")
 		isProc := strings.HasSuffix(name, ".proc.os")
 		isPosting := strings.HasSuffix(name, ".posting.os")
+		isReport := strings.HasSuffix(name, ".rep.os")
 
 		fullPath := filepath.Join(srcDir, name)
 		data, err := os.ReadFile(fullPath)
@@ -361,6 +362,15 @@ func (p *Project) loadDSL() error {
 		if isProc {
 			base := strings.TrimSuffix(name, ".proc.os")
 			entityName := fileNameToEntityBase(base)
+			p.Programs[entityName] = prog
+			continue
+		}
+		if isReport {
+			base := strings.TrimSuffix(name, ".rep.os")
+			entityName := fileNameToEntityBase(base)
+			if actual := p.findReportName(entityName); actual != "" {
+				entityName = actual
+			}
 			p.Programs[entityName] = prog
 			continue
 		}
@@ -408,6 +418,16 @@ func (p *Project) findEntityName(s string) string {
 	for _, e := range p.Entities {
 		if strings.ToLower(e.Name) == sl {
 			return e.Name
+		}
+	}
+	return ""
+}
+
+func (p *Project) findReportName(s string) string {
+	sl := strings.ToLower(s)
+	for _, r := range p.Reports {
+		if strings.ToLower(r.Name) == sl {
+			return r.Name
 		}
 	}
 	return ""

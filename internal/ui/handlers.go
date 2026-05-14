@@ -895,12 +895,52 @@ func (s *Server) runReport(w http.ResponseWriter, r *http.Request, rep *reportpk
 		return
 	}
 	s.resolveUUIDsInReport(r.Context(), rows)
+
+	var chartOption map[string]any
+	if rep.ChartProc != "" {
+		chartOption = s.runChartProc(r.Context(), rep, rows, paramValues)
+	}
+
 	s.render(w, r, "page-report", map[string]any{
 		"Report":      rep,
 		"Cols":        cols,
 		"Rows":        rows,
 		"ParamValues": paramValues,
+		"ChartOption": chartOption,
 	})
+}
+
+func (s *Server) runChartProc(ctx context.Context, rep *reportpkg.Report, rows []map[string]any, paramValues map[string]any) map[string]any {
+	procDecl := s.reg.GetProcedure(rep.Name, rep.ChartProc)
+	if procDecl == nil {
+		procDecl = s.reg.GetModuleProc(rep.ChartProc)
+	}
+	if procDecl == nil {
+		return nil
+	}
+
+	mc := runtime.NewMovementsCollector("report", uuid.Nil)
+	dslVars := s.buildDSLVars(ctx, mc)
+
+	resultArray := &interpreter.Array{}
+	for _, row := range rows {
+		st := interpreter.NewStructFromMap(row)
+		resultArray.CallMethod("добавить", []any{st})
+	}
+	dslVars["Результат"] = resultArray
+	dslVars["Result"] = resultArray
+	dslVars["Параметры"] = &interpreter.MapThis{M: paramValues}
+
+	var result any
+	if err := s.interp.RunWithResult(procDecl, &interpreter.MapThis{M: paramValues}, &result, dslVars); err != nil {
+		return nil
+	}
+
+	chart, ok := result.(*interpreter.Chart)
+	if !ok {
+		return nil
+	}
+	return chart.ToEChartsOption()
 }
 
 func (s *Server) processorForm(w http.ResponseWriter, r *http.Request) {
@@ -1213,6 +1253,9 @@ func (s *Server) buildDSLVars(ctx context.Context, mc *runtime.MovementsCollecto
 		vars[k] = v
 	}
 	for k, v := range interpreter.NewSpreadsheetFunctions() {
+		vars[k] = v
+	}
+	for k, v := range interpreter.NewChartFunctions() {
 		vars[k] = v
 	}
 	return vars

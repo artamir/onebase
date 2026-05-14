@@ -72,6 +72,17 @@ type Struct struct {
 	vals map[string]any
 }
 
+// NewStructFromMap creates a Struct from a string map.
+func NewStructFromMap(m map[string]any) *Struct {
+	s := &Struct{vals: make(map[string]any, len(m))}
+	for k, v := range m {
+		kl := strings.ToLower(k)
+		s.keys = append(s.keys, kl)
+		s.vals[kl] = v
+	}
+	return s
+}
+
 func newStruct(args []any) *Struct {
 	s := &Struct{vals: make(map[string]any)}
 	if len(args) == 0 {
