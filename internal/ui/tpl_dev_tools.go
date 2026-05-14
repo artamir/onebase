@@ -134,7 +134,7 @@ require(['vs/editor/editor.main'], function() {
     keywords: ['ВЫБРАТЬ','ИЗ','ГДЕ','СГРУППИРОВАТЬ','УПОРЯДОЧИТЬ','ПО','ИМЕЯ','КАК','И','ИЛИ','НЕ','В','ВЫБОР','КОГДА','ТОГДА','ИНАЧЕ','КОНЕЦ','УБЫВ','ВОЗР','РАЗЛИЧНЫЕ','ЕСТЬ','ПУСТО','ОБЪЕДИНИТЬ','ВСЕ','ЛЕВОЕ','ВНУТРЕННЕЕ','ПРАВОЕ','ПОЛНОЕ','СОЕДИНЕНИЕ','СУММА','КОЛИЧЕСТВО','МИНИМУМ','МАКСИМУМ','СРЕДНЕЕ','SELECT','FROM','WHERE','GROUP','ORDER','BY','ON','AND','OR','NOT','IN','AS','JOIN','INNER','LEFT','RIGHT','FULL','HAVING'],
     tokenizer: {
       root: [
-        [/&[А-Яа-яёЁA-Za-z_]\w*/, 'variable.predefined'],
+        [/&[А-Яа-яёЁA-Za-z_][А-Яа-яёЁA-Za-z_0-9]*/, 'variable.predefined'],
         [/"[^"]*"/, 'string'],
         [/'[^']*'/, 'string'],
         [/\d+(\.\d+)?/, 'number'],
@@ -172,7 +172,7 @@ function qcToggleBuilder() {
 function qcParseQueryToBuilder() {
   var code = window.qcEditor ? window.qcEditor.getValue() : '';
   if (!code.trim()) return;
-  var fromM = code.match(/\bИЗ\s+([\wА-Яа-яёЁ.]+(?:\([^)]*\))?)/i);
+  var fromM = code.match(/(?:^|\s)ИЗ\s+([\wА-Яа-яёЁ.]+(?:\([^)]*\))?)/i);
   if (!fromM) return;
   var fromExpr = fromM[1].trim().replace(/\(.*$/, '').toLowerCase().trim();
   var srcId = null;
@@ -197,7 +197,7 @@ function qcExec() {
   var params = {};
   var emptyParams = [];
   document.querySelectorAll('.qc-param-row').forEach(function(row) {
-    var k = row.querySelector('.qc-pk').value.trim();
+    var k = (row.dataset.name || '').trim();
     var v = row.querySelector('.qc-pv').value;
     var t = row.dataset.type || 'string';
     if (k) {
@@ -260,7 +260,7 @@ function qcClear() {
 
 function qcDetectParams() {
   var code = window.qcEditor.getValue();
-  var re = /&([А-Яа-яёЁA-Za-z_]\w*)/g;
+  var re = /&([А-Яа-яёЁA-Za-z_][А-Яа-яёЁA-Za-z_0-9]*)/g;
   var found = {};
   var m;
   while ((m = re.exec(code)) !== null) { found[m[1]] = true; }
@@ -278,19 +278,36 @@ function qcDetectParams() {
     var types = data.paramTypes || {};
     var existing = {};
     document.querySelectorAll('.qc-param-row').forEach(function(row) {
-      var k = row.querySelector('.qc-pk').value.trim();
+      var k = row.dataset.name || '';
       existing[k] = row.querySelector('.qc-pv').value;
     });
     var html = '';
     names.forEach(function(name) {
       var t = types[name] || 'string';
       var prev = existing[name] || '';
-      var hint = t === 'uuid' ? 'UUID' : t === 'number' ? 'Число' : t === 'date' ? 'Дата' : 'Строка';
-      html += '<div class="qc-param-row" data-type="'+t+'" style="display:flex;gap:8px;align-items:center;margin-bottom:6px">'
+      var hint;
+      if (t === 'number') hint = 'Число';
+      else if (t === 'date') hint = 'Дата';
+      else if (t === 'uuid') hint = 'UUID';
+      else if (t.indexOf('reference:') === 0) hint = t.replace('reference:', '');
+      else hint = 'Строка';
+      html += '<div class="qc-param-row" data-type="'+t+'" data-name="'+escHtml(name)+'" style="display:flex;gap:8px;align-items:center;margin-bottom:6px">'
         + '<span style="width:140px;font-size:13px;font-weight:600;color:#334155">&amp;'+escHtml(name)+'</span>'
-        + '<span style="font-size:11px;color:#94a3b8;width:60px">'+hint+'</span>'
-        + '<input class="qc-pv" value="'+escHtml(prev)+'" placeholder="значение" style="flex:1;font-size:13px;border:1px solid #e2e8f0;border-radius:4px;padding:4px 8px">'
-        + '</div>';
+        + '<span style="font-size:11px;color:#94a3b8;min-width:90px">'+escHtml(hint)+'</span>';
+      if (t.indexOf('reference:') === 0) {
+        var entityType = t.replace('reference:', '');
+        html += '<div style="flex:1;display:flex;gap:4px;position:relative">'
+          + '<div style="flex:1;position:relative">'
+          + '<input class="qc-pn" autocomplete="off" placeholder="введите для поиска" style="width:100%;box-sizing:border-box;font-size:13px;border:1px solid #e2e8f0;border-radius:4px;padding:4px 8px">'
+          + '<input class="qc-pv" type="hidden" value="'+escHtml(prev)+'">'
+          + '<div class="qc-suggest-list" style="display:none;position:absolute;top:100%;left:0;right:0;border:1px solid #e2e8f0;border-radius:4px;background:#fff;z-index:100;max-height:180px;overflow-y:auto;box-shadow:0 4px 8px rgba(0,0,0,.12)"></div>'
+          + '</div>'
+          + '<button type="button" onclick="qcOpenPicker(this,\''+escHtml(entityType)+'\')" title="Выбрать из справочника" style="padding:4px 8px;font-size:13px;border:1px solid #e2e8f0;border-radius:4px;background:#f8fafc;cursor:pointer;white-space:nowrap">...</button>'
+          + '</div>';
+      } else {
+        html += '<input class="qc-pv" value="'+escHtml(prev)+'" placeholder="значение" style="flex:1;font-size:13px;border:1px solid #e2e8f0;border-radius:4px;padding:4px 8px">';
+      }
+      html += '</div>';
     });
     document.getElementById('qc-params').innerHTML = html;
   }).catch(function() {
@@ -299,9 +316,9 @@ function qcDetectParams() {
     names.forEach(function(name) {
       var prev = '';
       document.querySelectorAll('.qc-param-row').forEach(function(row) {
-        if (row.querySelector('.qc-pk') && row.querySelector('.qc-pk').value.trim() === name) prev = row.querySelector('.qc-pv').value;
+        if ((row.dataset.name || '') === name) prev = row.querySelector('.qc-pv').value;
       });
-      html += '<div class="qc-param-row" data-type="string" style="display:flex;gap:8px;align-items:center;margin-bottom:6px">'
+      html += '<div class="qc-param-row" data-type="string" data-name="'+escHtml(name)+'" style="display:flex;gap:8px;align-items:center;margin-bottom:6px">'
         + '<span style="width:140px;font-size:13px;font-weight:600;color:#334155">&amp;'+escHtml(name)+'</span>'
         + '<span style="font-size:11px;color:#94a3b8;width:60px">Строка</span>'
         + '<input class="qc-pv" value="'+escHtml(prev)+'" placeholder="значение" style="flex:1;font-size:13px;border:1px solid #e2e8f0;border-radius:4px;padding:4px 8px">'
@@ -614,6 +631,138 @@ function qbApplyToEditor(){
 }
 
 document.getElementById('qb-vt-param-val').oninput = qbGenerate;
+
+// ─── Reference picker helpers ─────────────────────────────────────────────────
+function qcItemLabel(item) {
+  var nm = item.name != null ? String(item.name) : '';
+  var code = item.code != null ? String(item.code) : '';
+  if (code) return '[' + code + '] ' + nm;
+  return nm || String(item.id || '');
+}
+
+function qcFillRef(row, id, label) {
+  var pv = row.querySelector('.qc-pv');
+  var pn = row.querySelector('.qc-pn');
+  if (pv) pv.value = id;
+  if (pn) pn.value = label;
+}
+
+// ─── Inline autocomplete ──────────────────────────────────────────────────────
+document.addEventListener('input', function(e) {
+  if (!e.target.classList.contains('qc-pn')) return;
+  var row = e.target.closest('.qc-param-row');
+  if (!row) return;
+  var t = row.dataset.type || '';
+  if (t.indexOf('reference:') !== 0) return;
+  var entityType = t.replace('reference:', '');
+  var q = e.target.value;
+  var list = row.querySelector('.qc-suggest-list');
+  if (!list) return;
+  fetch('/ui/dev/entity-search?type=' + encodeURIComponent(entityType) + '&q=' + encodeURIComponent(q))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var items = data.items || [];
+      if (!items.length) { list.style.display = 'none'; return; }
+      var html = '';
+      items.forEach(function(item) {
+        var id = String(item.id || '');
+        var label = escHtml(qcItemLabel(item));
+        html += '<div class="qc-suggest-item" data-id="' + escHtml(id) + '" data-label="' + label + '"'
+          + ' style="padding:6px 10px;cursor:pointer;font-size:13px;border-bottom:1px solid #f1f5f9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
+          + label + '</div>';
+      });
+      list.innerHTML = html;
+      list.style.display = 'block';
+    }).catch(function() { list.style.display = 'none'; });
+});
+
+document.addEventListener('click', function(e) {
+  if (e.target.classList.contains('qc-suggest-item')) {
+    var row = e.target.closest('.qc-param-row');
+    if (!row) return;
+    qcFillRef(row, e.target.dataset.id || '', e.target.dataset.label || e.target.textContent || '');
+    var list = row.querySelector('.qc-suggest-list');
+    if (list) list.style.display = 'none';
+    return;
+  }
+  if (!e.target.closest('.qc-param-row') && !e.target.closest('#qc-picker-modal')) {
+    document.querySelectorAll('.qc-suggest-list').forEach(function(l) { l.style.display = 'none'; });
+  }
+});
+
+// ─── Modal picker ("...") ─────────────────────────────────────────────────────
+var _qcPickerRow = null;
+
+function qcOpenPicker(btn, entityType) {
+  _qcPickerRow = btn.closest('.qc-param-row');
+  var modal = document.getElementById('qc-picker-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'qc-picker-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1000;display:flex;align-items:center;justify-content:center';
+    modal.innerHTML = '<div style="background:#fff;border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,.2);width:480px;max-width:95vw;max-height:80vh;display:flex;flex-direction:column">'
+      + '<div style="padding:12px 16px;border-bottom:1px solid #e2e8f0;display:flex;gap:8px;align-items:center">'
+      + '<input id="qc-picker-q" placeholder="Поиск..." autocomplete="off" style="flex:1;font-size:14px;border:1px solid #e2e8f0;border-radius:4px;padding:6px 10px">'
+      + '<button onclick="document.getElementById(\'qc-picker-modal\').style.display=\'none\'" style="background:none;border:none;font-size:18px;cursor:pointer;color:#94a3b8;padding:0 4px">&times;</button>'
+      + '</div>'
+      + '<div id="qc-picker-list" style="overflow-y:auto;flex:1;min-height:80px"></div>'
+      + '</div>';
+    document.body.appendChild(modal);
+    document.getElementById('qc-picker-q').addEventListener('input', function() {
+      qcPickerSearch(entityType, this.value);
+    });
+    modal.addEventListener('click', function(e) {
+      if (e.target === modal) modal.style.display = 'none';
+    });
+  } else {
+    modal.style.display = 'flex';
+    document.getElementById('qc-picker-q').value = '';
+    document.getElementById('qc-picker-q').oninput = function() { qcPickerSearch(entityType, this.value); };
+  }
+  document.getElementById('qc-picker-list').innerHTML = '<div style="padding:16px;text-align:center;color:#94a3b8;font-size:13px">Загрузка...</div>';
+  qcPickerSearch(entityType, '');
+}
+
+function qcPickerSearch(entityType, q) {
+  var list = document.getElementById('qc-picker-list');
+  if (!list) return;
+  fetch('/ui/dev/entity-search?type=' + encodeURIComponent(entityType) + '&q=' + encodeURIComponent(q))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var items = data.items || [];
+      if (!items.length) {
+        list.innerHTML = '<div style="padding:16px;text-align:center;color:#94a3b8;font-size:13px">Ничего не найдено</div>';
+        return;
+      }
+      var html = '';
+      items.forEach(function(item) {
+        var id = String(item.id || '');
+        var label = qcItemLabel(item);
+        html += '<div class="qc-picker-item" data-id="' + escHtml(id) + '" data-label="' + escHtml(label) + '"'
+          + ' style="padding:10px 16px;cursor:pointer;font-size:13px;border-bottom:1px solid #f8fafc;display:flex;gap:12px;align-items:center">';
+        if (item.code != null) {
+          html += '<span style="color:#94a3b8;font-size:11px;min-width:60px">' + escHtml(String(item.code)) + '</span>';
+          html += '<span>' + escHtml(String(item.name || '')) + '</span>';
+        } else {
+          html += '<span>' + escHtml(String(item.name || id)) + '</span>';
+        }
+        html += '</div>';
+      });
+      list.innerHTML = html;
+    }).catch(function() {
+      list.innerHTML = '<div style="padding:16px;text-align:center;color:#ef4444;font-size:13px">Ошибка загрузки</div>';
+    });
+}
+
+document.addEventListener('click', function(e) {
+  var item = e.target.closest('.qc-picker-item');
+  if (!item) return;
+  if (_qcPickerRow) {
+    qcFillRef(_qcPickerRow, item.dataset.id || '', item.dataset.label || '');
+  }
+  var modal = document.getElementById('qc-picker-modal');
+  if (modal) modal.style.display = 'none';
+});
 </script>
 </div></body></html>
 {{end}}
@@ -659,7 +808,7 @@ require(['vs/editor/editor.main'], function() {
         [/"[^"]*"/, 'string'],
         [/'[^']*'/, 'string'],
         [/\d+(\.\d+)?/, 'number'],
-        [/&[А-Яа-яёЁA-Za-z_]\w*/, 'variable.predefined'],
+        [/&[А-Яа-яёЁA-Za-z_][А-Яа-яёЁA-Za-z_0-9]*/, 'variable.predefined'],
         [/[A-Za-zА-Яа-яёЁ_]\w*/, { cases: { '@keywords': 'keyword', '@builtin': 'type', '@default': 'identifier' } }],
       ]
     }

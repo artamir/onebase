@@ -39,13 +39,14 @@ func (s *Server) queryConsoleExec(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Query  string                 `json:"query"`
-		Params map[string]any         `json:"params"`
+		Query  string         `json:"query"`
+		Params map[string]any `json:"params"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonResp(w, 400, map[string]any{"error": "Некорректный запрос"})
 		return
 	}
+	req.Query = stripQueryQuotes(req.Query)
 
 	res, err := query.Compile(req.Query, query.CompileOpts{
 		Params:      req.Params,
@@ -105,8 +106,9 @@ func (s *Server) queryConsoleAnalyze(w http.ResponseWriter, r *http.Request) {
 		jsonResp(w, 400, map[string]any{"error": "Некорректный запрос"})
 		return
 	}
+	req.Query = stripQueryQuotes(req.Query)
 
-	paramRe := regexp.MustCompile(`&([A-Za-zА-Яа-яёЁ_]\w*)`)
+	paramRe := regexp.MustCompile(`&([A-Za-zА-Яа-яёЁ_][A-Za-zА-Яа-яёЁ_0-9]*)`)
 	matches := paramRe.FindAllStringSubmatch(req.Query, -1)
 	paramSet := map[string]bool{}
 	for _, m := range matches {
@@ -152,9 +154,28 @@ func (s *Server) queryConsoleAnalyze(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// For each param, try compile with a sentinel to find its placeholder index
-	phToName := map[int]string{}
+	// Build entity name index for reference detection
+	entityRefMap := map[string]string{} // lowercase name → Entity.Name
+	for _, e := range s.reg.Entities() {
+		entityRefMap[strings.ToLower(e.Name)] = e.Name
+	}
+
+	// For each param: compile with sentinel value, find its $N placeholder,
+	// then analyse what column precedes $N in that same SQL to infer the type.
+	// We use the sentinel SQL (not a separate null-params compile) because nil
+	// params emit "NULL" instead of "$N", making split-based analysis impossible.
+	type paramDebug struct {
+		CompileErr string `json:"compileErr,omitempty"`
+		PhIdx      int    `json:"phIdx"`
+		SQL        string `json:"sql,omitempty"`
+		Col        string `json:"col,omitempty"`
+		Type       string `json:"type"`
+	}
+	debugInfo := map[string]paramDebug{}
+
+	paramTypes := map[string]string{}
 	for name := range paramSet {
+		dbg := paramDebug{}
 		singleParam := map[string]any{}
 		for n := range paramSet {
 			singleParam[n] = nil
@@ -167,69 +188,158 @@ func (s *Server) queryConsoleAnalyze(w http.ResponseWriter, r *http.Request) {
 			AccountRegs: s.reg.AccountRegisters(),
 			Dialect:     s.store.Dialect(),
 		})
-		if err2 == nil {
-			for i, a := range sr.Args {
-				if fmt.Sprintf("%v", a) == "__DETECT__" {
-					phToName[i+1] = name
-				}
+		if err2 != nil {
+			dbg.CompileErr = err2.Error()
+			dbg.Type = "compile_error→fallback"
+			debugInfo[name] = dbg
+			continue // will be handled by name-based fallback below
+		}
+		dbg.SQL = sr.SQL
+		phIdx := -1
+		for i, a := range sr.Args {
+			if fmt.Sprintf("%v", a) == "__DETECT__" {
+				phIdx = i + 1
+				break
 			}
 		}
-	}
-
-	// Compile with NULL to get SQL structure
-	nullParams := map[string]any{}
-	for name := range paramSet {
-		nullParams[name] = nil
-	}
-	res, err3 := query.Compile(req.Query, query.CompileOpts{
-		Params:      nullParams,
-		Registers:   s.reg.Registers(),
-		InfoRegs:    s.reg.InfoRegisters(),
-		AccountRegs: s.reg.AccountRegisters(),
-		Dialect:     s.store.Dialect(),
-	})
-
-	paramTypes := map[string]string{}
-	if err3 == nil {
-		sqlLower := strings.ToLower(res.SQL)
-		for phIdx, pName := range phToName {
-			ph := "$" + fmt.Sprintf("%d", phIdx)
-			// For SQLite: ph would be "?"
-			phSQLite := "?"
-			_ = phSQLite
-
-			parts := strings.Split(sqlLower, ph)
-			if len(parts) < 2 {
-				paramTypes[pName] = "string"
-				continue
-			}
-			before := strings.TrimSpace(parts[0])
-			tokens := strings.Fields(before)
-			if len(tokens) < 2 {
-				paramTypes[pName] = "string"
-				continue
-			}
-			col := strings.TrimRight(tokens[len(tokens)-2], "=><!")
-			if dotIdx := strings.LastIndex(col, "."); dotIdx >= 0 {
-				col = col[dotIdx+1:]
-			}
-			if strings.HasSuffix(col, "_id") || colTypeMap[col] == "uuid" {
-				paramTypes[pName] = "uuid"
-			} else if colTypeMap[col] == "number" {
-				paramTypes[pName] = "number"
-			} else if col == "period" {
-				paramTypes[pName] = "date"
+		dbg.PhIdx = phIdx
+		if phIdx < 0 {
+			dbg.Type = "no_placeholder→fallback"
+			debugInfo[name] = dbg
+			continue
+		}
+		sqlLower := strings.ToLower(sr.SQL)
+		ph := "$" + fmt.Sprintf("%d", phIdx)
+		parts := strings.Split(sqlLower, ph)
+		if len(parts) < 2 {
+			dbg.Type = "ph_not_in_sql→fallback"
+			debugInfo[name] = dbg
+			continue
+		}
+		before := strings.TrimSpace(parts[0])
+		tokens := strings.Fields(before)
+		if len(tokens) < 2 {
+			dbg.Type = "too_few_tokens→fallback"
+			debugInfo[name] = dbg
+			continue
+		}
+		col := strings.TrimRight(tokens[len(tokens)-2], "=><!")
+		if dotIdx := strings.LastIndex(col, "."); dotIdx >= 0 {
+			col = col[dotIdx+1:]
+		}
+		dbg.Col = col
+		colNoID := strings.TrimSuffix(col, "_id")
+		switch {
+		case strings.HasSuffix(col, "_id") || colTypeMap[col] == "uuid":
+			if eName, ok := entityRefMap[colNoID]; ok {
+				paramTypes[name] = "reference:" + eName
 			} else {
-				paramTypes[pName] = "string"
+				paramTypes[name] = "uuid"
 			}
+		case colTypeMap[col] == "number":
+			paramTypes[name] = "number"
+		case col == "period":
+			paramTypes[name] = "date"
+		default:
+			if eName, ok := entityRefMap[col]; ok {
+				paramTypes[name] = "reference:" + eName
+			}
+			// leave unset → name-based fallback below
 		}
+		dbg.Type = paramTypes[name]
+		debugInfo[name] = dbg
 	}
+	// Name-based fallback: if param name matches an entity, treat as reference
 	for name := range paramSet {
 		if _, ok := paramTypes[name]; !ok {
-			paramTypes[name] = "string"
+			if eName, ok := entityRefMap[strings.ToLower(name)]; ok {
+				paramTypes[name] = "reference:" + eName
+			} else {
+				paramTypes[name] = "string"
+			}
+			// Update type in existing debug entry (preserve compile/sql info)
+			if d, ok := debugInfo[name]; ok {
+				d.Type += " → name_fallback→" + paramTypes[name]
+				debugInfo[name] = d
+			} else {
+				debugInfo[name] = paramDebug{Type: "name_fallback→" + paramTypes[name]}
+			}
 		}
 	}
-	jsonResp(w, 200, map[string]any{"paramTypes": paramTypes})
+	jsonResp(w, 200, map[string]any{"paramTypes": paramTypes, "_debug": debugInfo})
+}
+
+// ─── Entity Search (reference param picker) ─────────────────────────────────
+
+func (s *Server) devEntitySearch(w http.ResponseWriter, r *http.Request) {
+	if !s.isAdmin(r) {
+		http.Error(w, "Доступ запрещён", http.StatusForbidden)
+		return
+	}
+	entityType := r.URL.Query().Get("type")
+	q := r.URL.Query().Get("q")
+
+	var found *metadata.Entity
+	for _, e := range s.reg.Entities() {
+		if strings.EqualFold(e.Name, entityType) {
+			found = e
+			break
+		}
+	}
+	if found == nil {
+		jsonResp(w, 404, map[string]any{"error": "Сущность не найдена: " + entityType})
+		return
+	}
+
+	nameCol := ""
+	codeCol := ""
+	for _, f := range found.Fields {
+		if f.Type == metadata.FieldTypeString {
+			if nameCol == "" {
+				nameCol = strings.ToLower(f.Name)
+			}
+		}
+		if strings.EqualFold(f.Name, "код") || strings.EqualFold(f.Name, "code") {
+			codeCol = strings.ToLower(f.Name)
+		}
+	}
+	if nameCol == "" {
+		jsonResp(w, 200, map[string]any{"items": []any{}})
+		return
+	}
+
+	tableName := metadata.TableName(found.Name)
+
+	selectCols := fmt.Sprintf("id, %s AS name", nameCol)
+	if codeCol != "" {
+		selectCols = fmt.Sprintf("id, %s AS name, %s AS code", nameCol, codeCol)
+	}
+
+	var rows []map[string]any
+	var err error
+	if strings.TrimSpace(q) == "" {
+		rows, err = s.store.QueryAll(r.Context(),
+			fmt.Sprintf("SELECT %s FROM %s ORDER BY %s LIMIT 50", selectCols, tableName, nameCol))
+	} else {
+		rows, err = s.store.QueryAll(r.Context(),
+			fmt.Sprintf("SELECT %s FROM %s WHERE LOWER(%s) LIKE LOWER($1) ORDER BY %s LIMIT 50",
+				selectCols, tableName, nameCol, nameCol),
+			"%"+q+"%")
+	}
+	if err != nil {
+		jsonResp(w, 200, map[string]any{"error": err.Error()})
+		return
+	}
+
+	items := make([]map[string]any, len(rows))
+	for i, row := range rows {
+		item := map[string]any{"id": row["id"], "name": row["name"]}
+		if codeCol != "" {
+			item["code"] = row["code"]
+		}
+		items[i] = item
+	}
+	jsonResp(w, 200, map[string]any{"items": items})
 }
 
 // ─── Code Console ───────────────────────────────────────────────────────────
@@ -305,6 +415,19 @@ func (s *Server) codeConsoleExec(w http.ResponseWriter, r *http.Request) {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+// stripQueryQuotes removes surrounding single or double quotes if the entire
+// query is wrapped in them (e.g. user pastes 'ВЫБРАТЬ...' into the editor).
+func stripQueryQuotes(q string) string {
+	q = strings.TrimSpace(q)
+	if len(q) >= 2 {
+		if (q[0] == '\'' && q[len(q)-1] == '\'') ||
+			(q[0] == '"' && q[len(q)-1] == '"') {
+			return strings.TrimSpace(q[1 : len(q)-1])
+		}
+	}
+	return q
+}
 
 func jsonResp(w http.ResponseWriter, status int, data map[string]any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
