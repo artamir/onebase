@@ -2985,6 +2985,9 @@ const cfgTabTree = `{{define "tab-tree"}}
 <div class="module-save-row" style="margin-bottom:14px">
   <button class="btn-save" type="submit">Сохранить типы полей</button>
   {{if and $fSaved (eq $fSavedEnt $e.Name)}}<span class="save-ok">✓ Сохранено</span>{{end}}
+  <button type="submit" formaction="/bases/{{$baseID}}/configurator/entity-delete" formmethod="POST"
+    onclick="return confirm('Удалить «{{$e.Name}}»? Это действие необратимо!')"
+    style="margin-left:auto;background:#fee2e2;color:#dc2626;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:13px">Удалить</button>
 </div>
 </form>
 

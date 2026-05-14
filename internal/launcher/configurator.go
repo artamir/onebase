@@ -1304,6 +1304,81 @@ func (h *handler) configuratorSaveFields(w http.ResponseWriter, r *http.Request)
 	renderCfg(w, data)
 }
 
+func (h *handler) configuratorDeleteEntity(w http.ResponseWriter, r *http.Request) {
+	b, err := h.store.Get(chi.URLParam(r, "id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	entityName := r.FormValue("entity")
+	if entityName == "" {
+		http.Error(w, "entity name required", 400)
+		return
+	}
+
+	var delErr error
+	if b.ConfigSource == "database" {
+		delErr = h.deleteEntityFromDB(r.Context(), b, entityName)
+	} else {
+		delErr = deleteEntityFromFile(b.Path, entityName)
+	}
+
+	data := h.loadCfgData(r.Context(), b, "tree")
+	if delErr != nil {
+		data.Error = "Ошибка удаления: " + delErr.Error()
+	} else {
+		data.Error = "Сущность «" + entityName + "» удалена"
+	}
+	renderCfg(w, data)
+}
+
+func deleteEntityFromFile(dir, entityName string) error {
+	path, err := findEntityFilePath(dir, entityName)
+	if err != nil {
+		return err
+	}
+	return os.Remove(path)
+}
+
+func (h *handler) deleteEntityFromDB(ctx context.Context, b *Base, entityName string) error {
+	db, err := OpenDB(ctx, b)
+	if err != nil {
+		return fmt.Errorf("connect: %w", err)
+	}
+	defer db.Close()
+	repo := configdb.New(db)
+
+	// Find and delete the entity YAML file by scanning all catalog/document paths
+	rows, err := db.Query(ctx,
+		`SELECT path FROM _onebase_config WHERE path LIKE 'catalogs/%.yaml' OR path LIKE 'documents/%.yaml'`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			continue
+		}
+		// Read content to check name
+		var content []byte
+		if err := db.QueryRow(ctx, `SELECT content FROM _onebase_config WHERE path = `+db.Dialect().Placeholder(1), p).Scan(&content); err != nil {
+			continue
+		}
+		var hdr struct {
+			Name string `yaml:"name"`
+		}
+		if yaml.Unmarshal(content, &hdr) == nil && hdr.Name == entityName {
+			return repo.DeleteFile(ctx, p)
+		}
+	}
+	return fmt.Errorf("сущность %q не найдена", entityName)
+}
+
 func renderCfg(w http.ResponseWriter, data *configuratorData) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := cfgTmpl.ExecuteTemplate(w, "cfg-main", data); err != nil {
