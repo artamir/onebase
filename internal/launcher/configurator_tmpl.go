@@ -3593,7 +3593,14 @@ const cfgTabBackup = `{{define "tab-backup"}}
   <details style="margin-top:20px"><summary style="font-size:13px;font-weight:600;color:#374151;cursor:pointer;margin-bottom:8px">Полная выгрузка (база + конфигурация)</summary>
   <p style="font-size:12px;color:#64748b;margin:0 0 12px">Выгрузка базы данных и конфигурации в один файл (.obz). Позволяет полностью перенести базу на другой сервер.</p>
   <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
-    <a href="/bases/{{.Base.ID}}/configurator/backup/full-export" class="btn-save" style="text-decoration:none;display:inline-block">Выгрузить всё в .obz</a>
+    <form method="GET" action="/bases/{{.Base.ID}}/configurator/backup/full-export" style="display:flex;flex-direction:column;gap:6px">
+      <label style="display:flex;gap:6px;align-items:center;font-size:12px;color:#374151">
+        <input type="checkbox" name="compatible" value="true" checked>
+        <span>Совместимый формат (PostgreSQL ↔ SQLite)</span>
+      </label>
+      <div style="font-size:11px;color:#64748b;margin-left:22px">Без галки — быстрый бинарный дамп, только для той же СУБД</div>
+      <button class="btn-save" type="submit" style="width:fit-content">Выгрузить всё в .obz</button>
+    </form>
     <form method="POST" action="/bases/{{.Base.ID}}/configurator/backup/full-import" enctype="multipart/form-data" style="display:flex;align-items:center;gap:8px" onsubmit="return confirm('Восстановить из .obz файла? Все текущие данные будут заменены!')">
       <input type="file" name="obz_file" accept=".obz" required style="font-size:12px">
       <button class="btn-save" type="submit" style="background:#dc2626">Загрузить из .obz</button>

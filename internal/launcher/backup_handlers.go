@@ -273,7 +273,7 @@ func (h *handler) backupRestore(w http.ResponseWriter, r *http.Request) {
 		data.FieldsSavedEntity = "panel-backup"
 		msg := "Р‘Р°Р·Р° РґР°РЅРЅС‹С… РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅР° РёР·: " + file
 		if wasRunning {
-			msg += ". Р‘Р°Р·Р° РѕСЃС‚Р°РЅРѕРІР»РµРЅР° вЂ” Р·Р°РїСѓСЃС‚РёС‚Рµ РµС‘ Р·Р°РЅРѕРІРѕ РґР»СЏ РїСЂРёРјРµРЅРµРЅРёСЏ РёР·РјРµРЅРµРЅРёР№."
+			msg += ". База остановлена — запустите её заново для применения изменений."
 		}
 		data.BackupMessage = msg
 	}
@@ -281,6 +281,7 @@ func (h *handler) backupRestore(w http.ResponseWriter, r *http.Request) {
 }
 
 // backupFullExport creates a single .obz file containing both database dump and configuration.
+// If the form field "compatible" is not "false", a universal (cross-engine) archive is created.
 func (h *handler) backupFullExport(w http.ResponseWriter, r *http.Request) {
 	b, err := h.store.Get(chi.URLParam(r, "id"))
 	if err != nil {
@@ -288,10 +289,43 @@ func (h *handler) backupFullExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// compatible=true means universal cross-engine format; absent/other = binary.
+	compatible := r.FormValue("compatible") == "true"
+
+	name := b.Name + "_" + time.Now().Format("2006-01-02_15-04") + ".obz"
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", "attachment; filename="+name)
+
+	if compatible {
+		db, cerr := OpenDB(r.Context(), b)
+		if cerr != nil {
+			http.Error(w, "DB connect error: "+cerr.Error(), 500)
+			return
+		}
+		defer db.Close()
+
+		configSource := b.ConfigSource
+		if configSource == "" {
+			configSource = "database"
+		}
+
+		if err := backup.ExportUniversal(
+			r.Context(), db,
+			configSource, b.Path,
+			db.FilesDir(),
+			b.Name,
+			w,
+		); err != nil {
+			// Headers already sent — log only; cannot change status.
+			fmt.Fprintf(os.Stderr, "backupFullExport universal error: %v\n", err)
+		}
+		return
+	}
+
+	// Binary export (fast, same-engine only).
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 
-	// Database dump
 	tmpDir, err := os.MkdirTemp("", "onebase-obz-dump-*")
 	if err != nil {
 		http.Error(w, "Temp dir error: "+err.Error(), 500)
@@ -357,21 +391,16 @@ func (h *handler) backupFullExport(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// Metadata
 	exportDBType := b.DBType
 	if exportDBType == "" {
 		exportDBType = "postgres"
 	}
-	meta := fmt.Sprintf("onebase_full_export\nversion=1.0\ndate=%s\nbase=%s\nsource=%s\ndb_type=%s\n",
+	meta := fmt.Sprintf("onebase_full_export\nversion=1.0\nformat=binary\ndate=%s\nbase=%s\nsource=%s\ndb_type=%s\n",
 		time.Now().Format("2006-01-02T15:04:05"), b.Name, b.ConfigSource, exportDBType)
 	mf, _ := zw.Create("META.txt")
 	mf.Write([]byte(meta))
 
 	zw.Close()
-
-	name := b.Name + "_" + time.Now().Format("2006-01-02_15-04") + ".obz"
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", "attachment; filename="+name)
 	w.Write(buf.Bytes())
 }
 
@@ -417,7 +446,8 @@ func (h *handler) backupFullImport(w http.ResponseWriter, r *http.Request) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Pre-scan META.txt to detect archive db_type.
+	// Pre-scan META.txt for format and db_type.
+	archiveFormat := ""
 	archiveDBType := ""
 	for _, af := range reader.File {
 		if af.Name == "META.txt" {
@@ -429,10 +459,64 @@ func (h *handler) backupFullImport(w http.ResponseWriter, r *http.Request) {
 					if strings.HasPrefix(line, "db_type=") {
 						archiveDBType = strings.TrimSpace(strings.TrimPrefix(line, "db_type="))
 					}
+					if strings.HasPrefix(line, "format=") {
+						archiveFormat = strings.TrimSpace(strings.TrimPrefix(line, "format="))
+					}
 				}
 			}
 			break
 		}
+	}
+
+	// Universal format: cross-engine restore.
+	if archiveFormat == "universal" {
+		db, cerr := OpenDB(r.Context(), b)
+		if cerr != nil {
+			data := h.loadCfgData(r.Context(), b, "backup")
+			data.Error = "Ошибка подключения к БД: " + cerr.Error()
+			renderCfg(w, data)
+			return
+		}
+		defer db.Close()
+
+		wasRunning := h.runner.IsRunning(b.ID)
+		if wasRunning {
+			h.runner.Stop(b.ID)
+			waitPortFree(b.Port, 3*time.Second)
+		}
+
+		configDest := b.ConfigSource
+		if configDest == "" {
+			configDest = "database"
+		}
+		cfgFileDir := b.Path
+
+		report, importErr := backup.ImportUniversal(
+			r.Context(), db,
+			configDest, cfgFileDir,
+			db.FilesDir(),
+			bytes.NewReader(dtData), int64(len(dtData)),
+		)
+
+		if importErr == nil {
+			h.runner.MigrateBase(r.Context(), b)
+		}
+
+		data := h.loadCfgData(r.Context(), b, "backup")
+		if importErr != nil {
+			data.Error = "Ошибка восстановления: " + importErr.Error()
+		} else {
+			data.FieldsSaved = true
+			data.FieldsSavedEntity = "panel-backup"
+			msg := fmt.Sprintf("Полное восстановление выполнено: %d таблиц, %d файлов вложений",
+				len(report.Tables), report.Files)
+			if wasRunning {
+				msg += ". База остановлена — запустите её заново."
+			}
+			data.BackupMessage = msg
+		}
+		renderCfg(w, data)
+		return
 	}
 
 	var dumpFile string
@@ -475,7 +559,7 @@ func (h *handler) backupFullImport(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Reject cross-engine restores.
+	// Reject cross-engine restores for binary format.
 	targetDBType := b.DBType
 	if targetDBType == "" {
 		targetDBType = "postgres"
@@ -483,15 +567,13 @@ func (h *handler) backupFullImport(w http.ResponseWriter, r *http.Request) {
 	if archiveDBType != "" && archiveDBType != targetDBType {
 		data := h.loadCfgData(r.Context(), b, "backup")
 		data.Error = fmt.Sprintf(
-			"archive db_type=%s does not match target db_type=%s: cannot restore across database engines",
-			archiveDBType, targetDBType,
+			"Нельзя восстановить %s-бэкап в %s-базу (%s). Создайте новую базу с типом БД %s или используйте совместимый формат (.obz с галочкой).",
+			archiveDBType, targetDBType, filepath.Base(r.FormValue("obz_file")), archiveDBType,
 		)
 		renderCfg(w, data)
 		return
 	}
 
-	// Р—Р°РїСѓС‰РµРЅРЅС‹Р№ РїСЂРѕС†РµСЃСЃ РґРµСЂР¶РёС‚ СЃС‚Р°СЂСѓСЋ РєРѕРЅС„РёРіСѓСЂР°С†РёСЋ РІ РїР°РјСЏС‚Рё Рё СЃРµСЃСЃРёСЋ Рє Р‘Р” вЂ”
-	// РёРЅР°С‡Рµ РїРѕСЃР»Рµ restore РјРёРіСЂР°С†РёСЏ Рё РЅРѕРІС‹Рµ .os-С„Р°Р№Р»С‹ РЅРµ Р±СѓРґСѓС‚ РІРёРґРЅС‹ РґРѕ РїРµСЂРµР·Р°РїСѓСЃРєР°.
 	wasRunning := h.runner.IsRunning(b.ID)
 	if wasRunning {
 		h.runner.Stop(b.ID)
@@ -542,15 +624,15 @@ func (h *handler) backupFullImport(w http.ResponseWriter, r *http.Request) {
 
 	data := h.loadCfgData(r.Context(), b, "backup")
 	if restoreErr != nil {
-		data.Error = "РћС€РёР±РєР° РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРёСЏ Р‘Р”: " + restoreErr.Error()
+		data.Error = "Ошибка восстановления БД: " + restoreErr.Error()
 	} else if configErr != nil {
-		data.Error = "РћС€РёР±РєР° РёРјРїРѕСЂС‚Р° РєРѕРЅС„РёРіСѓСЂР°С†РёРё: " + configErr.Error()
+		data.Error = "Ошибка импорта конфигурации: " + configErr.Error()
 	} else {
 		data.FieldsSaved = true
 		data.FieldsSavedEntity = "panel-backup"
-		msg := "РџРѕР»РЅРѕРµ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРёРµ РІС‹РїРѕР»РЅРµРЅРѕ: Р±Р°Р·Р° РґР°РЅРЅС‹С… + РєРѕРЅС„РёРіСѓСЂР°С†РёСЏ"
+		msg := "Полное восстановление выполнено: база данных + конфигурация"
 		if wasRunning {
-			msg += ". Р‘Р°Р·Р° РѕСЃС‚Р°РЅРѕРІР»РµРЅР° вЂ” Р·Р°РїСѓСЃС‚РёС‚Рµ РµС‘ Р·Р°РЅРѕРІРѕ РґР»СЏ РїСЂРёРјРµРЅРµРЅРёСЏ РёР·РјРµРЅРµРЅРёР№."
+			msg += ". База остановлена — запустите её заново для применения изменений."
 		}
 		data.BackupMessage = msg
 	}
