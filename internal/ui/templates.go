@@ -1077,15 +1077,22 @@ const tplAbout = `
 <main>
 <h2>О программе</h2>
 <div class="card" style="max-width:560px">
+  {{if .Cfg.Logo}}<div style="text-align:center;margin-bottom:20px"><img src="/ui/logo" alt="Logo" style="max-height:100px;max-width:280px"></div>{{end}}
   <table style="width:100%;border-collapse:collapse">
     <tr>
-      <td style="padding:14px 0;border-bottom:1px solid #f1f5f9;color:#64748b;width:180px;font-size:14px">Платформа</td>
+      <td style="padding:14px 0;border-bottom:1px solid #f1f5f9;color:#64748b;width:180px;font-size:14px">Версия платформы</td>
       <td style="padding:14px 0;border-bottom:1px solid #f1f5f9;font-weight:600;font-size:14px">onebase {{if .Cfg.PlatVersion}}{{.Cfg.PlatVersion}}{{else}}dev{{end}}</td>
     </tr>
     {{if .Cfg.AppName}}
     <tr>
       <td style="padding:14px 0;border-bottom:1px solid #f1f5f9;color:#64748b;font-size:14px">Конфигурация</td>
-      <td style="padding:14px 0;border-bottom:1px solid #f1f5f9;font-size:14px">{{.Cfg.AppName}}{{if .Cfg.AppVersion}} <span style="color:#94a3b8">v{{.Cfg.AppVersion}}</span>{{end}}</td>
+      <td style="padding:14px 0;border-bottom:1px solid #f1f5f9;font-size:14px;font-weight:600">{{.Cfg.AppName}}</td>
+    </tr>
+    {{end}}
+    {{if .Cfg.AppVersion}}
+    <tr>
+      <td style="padding:14px 0;border-bottom:1px solid #f1f5f9;color:#64748b;font-size:14px">Версия конфигурации</td>
+      <td style="padding:14px 0;border-bottom:1px solid #f1f5f9;font-size:14px">{{.Cfg.AppVersion}}</td>
     </tr>
     {{end}}
     <tr>

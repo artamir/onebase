@@ -1,6 +1,9 @@
 name: trade
 version: "1.0"
 
+# Путь к логотипу относительно папки конфигурации (PNG, SVG, JPG)
+# logo: config/logo.png
+
 # Настройки email (раскомментируйте и заполните для отправки писем)
 # email:
 #   smtp_host: smtp.gmail.com

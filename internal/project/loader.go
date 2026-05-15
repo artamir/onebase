@@ -69,6 +69,7 @@ type AttachmentsConfig struct {
 type AppConfig struct {
 	Name        string             `yaml:"name"`
 	Version     string             `yaml:"version"`
+	Logo        string             `yaml:"logo,omitempty"`
 	Email       *EmailConfig       `yaml:"email,omitempty"`
 	Attachments *AttachmentsConfig `yaml:"attachments,omitempty"`
 }

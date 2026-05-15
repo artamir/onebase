@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -45,6 +47,35 @@ func (s *Server) about(w http.ResponseWriter, r *http.Request) {
 		"Registers":  len(s.reg.Registers()),
 		"Reports":    len(s.reg.Reports()),
 	})
+}
+
+func (s *Server) logo(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.Logo == "" {
+		http.NotFound(w, r)
+		return
+	}
+	data, err := os.ReadFile(s.cfg.Logo)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	ext := strings.ToLower(filepath.Ext(s.cfg.Logo))
+	switch ext {
+	case ".svg":
+		w.Header().Set("Content-Type", "image/svg+xml")
+	case ".png":
+		w.Header().Set("Content-Type", "image/png")
+	case ".jpg", ".jpeg":
+		w.Header().Set("Content-Type", "image/jpeg")
+	case ".gif":
+		w.Header().Set("Content-Type", "image/gif")
+	case ".webp":
+		w.Header().Set("Content-Type", "image/webp")
+	default:
+		w.Header().Set("Content-Type", "application/octet-stream")
+	}
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Write(data)
 }
 
 func (s *Server) index(w http.ResponseWriter, r *http.Request) {

@@ -21,6 +21,7 @@ type Config struct {
 	AppVersion    string
 	DSN           string
 	PlatVersion   string
+	Logo          string // path to logo file (png/svg/jpg)
 	Mailer        *mailer.Mailer
 	MaxFileSizeMB int // 0 = use default 50
 }
@@ -159,6 +160,7 @@ func (s *Server) Mount(r chi.Router) {
 
 	// About
 	r.Get("/ui/about", s.about)
+	r.Get("/ui/logo", s.logo)
 
 	// Messages panel
 	r.Get("/ui/messages", s.messagesList)

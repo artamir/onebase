@@ -140,8 +140,11 @@ const tplIndex = `
 
 {{if .Selected}}
 <div class="info-panel">
+  {{if .Selected.LogoBase64}}<div style="text-align:center;margin-bottom:8px"><img src="{{.Selected.LogoBase64}}" alt="Logo" style="max-height:48px;max-width:140px"></div>{{end}}
   <div style="font-weight:600;margin-bottom:8px;font-size:12px">{{.Selected.Name}}</div>
   <table style="width:100%;border-collapse:collapse">
+  {{if .Selected.AppName}}<tr><td style="color:#888;padding:2px 0;width:90px">Конфигурация</td><td>{{.Selected.AppName}}</td></tr>{{end}}
+  {{if .Selected.AppVersion}}<tr><td style="color:#888;padding:2px 0">Версия</td><td>{{.Selected.AppVersion}}</td></tr>{{end}}
   <tr><td style="color:#888;padding:2px 0;width:90px">Режим</td><td>{{if eq .Selected.ConfigSource "database"}}База данных{{else}}Файлы{{end}}</td></tr>
   {{if eq .Selected.ConfigSource "file"}}
   <tr><td style="color:#888;padding:2px 0">Путь</td><td style="word-break:break-all">{{.Selected.Path}}</td></tr>

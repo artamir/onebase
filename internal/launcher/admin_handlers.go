@@ -1,15 +1,19 @@
 package launcher
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/ivantit66/onebase/internal/auth"
 	"github.com/ivantit66/onebase/internal/version"
+	"gopkg.in/yaml.v3"
 )
 
 // ── Admin panel handlers for configurator ────────────────────────────────────
@@ -266,19 +270,66 @@ func (h *handler) cfgAdminAbout(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", 404)
 		return
 	}
+
+	// Load app config for configuration name/version/logo
+	type appCfg struct {
+		Name    string `yaml:"name"`
+		Version string `yaml:"version"`
+		Logo    string `yaml:"logo"`
+	}
+	var cfg appCfg
+	if b.ConfigSource == "file" && b.Path != "" {
+		data, err := os.ReadFile(filepath.Join(b.Path, "config", "app.yaml"))
+		if err == nil {
+			yaml.Unmarshal(data, &cfg)
+		}
+	}
+
+	logoHTML := `<div style="font-size:32px;margin-bottom:8px">&#9889;</div>`
+	if cfg.Logo != "" && b.Path != "" {
+		logoPath := filepath.Join(b.Path, cfg.Logo)
+		if logoData, err := os.ReadFile(logoPath); err == nil {
+			ext := strings.ToLower(filepath.Ext(logoPath))
+			mime := "image/png"
+			switch ext {
+			case ".svg":
+				mime = "image/svg+xml"
+			case ".jpg", ".jpeg":
+				mime = "image/jpeg"
+			case ".gif":
+				mime = "image/gif"
+			case ".webp":
+				mime = "image/webp"
+			}
+			logoHTML = fmt.Sprintf(`<img src="data:%s;base64,%s" alt="Logo" style="max-height:80px;max-width:200px">`,
+				mime, base64.StdEncoding.EncodeToString(logoData))
+		}
+	}
+
+	cfgRows := ""
+	if cfg.Name != "" {
+		cfgRows += fmt.Sprintf(`<tr><td style="padding:6px 0;color:#888;width:140px">Конфигурация</td><td style="padding:6px 0;font-weight:600">%s</td></tr>`, escHTML(cfg.Name))
+	}
+	if cfg.Version != "" {
+		cfgRows += fmt.Sprintf(`<tr><td style="padding:6px 0;color:#888">Версия конфигурации</td><td style="padding:6px 0">%s</td></tr>`, escHTML(cfg.Version))
+	}
+
 	html := fmt.Sprintf(`<div style="padding:24px;max-width:400px">
 	<div style="text-align:center;margin-bottom:20px">
-	  <div style="font-size:32px;margin-bottom:8px">&#9889;</div>
+	  %s
 	  <div style="font-size:18px;font-weight:600;color:#1a5fa8">OneBase</div>
 	</div>
 	<table style="width:100%%;border-collapse:collapse;font-size:13px">
 	<tr><td style="padding:6px 0;color:#888;width:140px">Версия платформы</td><td style="padding:6px 0">%s</td></tr>
+	%s
 	<tr><td style="padding:6px 0;color:#888">Режим конфигурации</td><td style="padding:6px 0">%s</td></tr>
 	<tr><td style="padding:6px 0;color:#888">База данных</td><td style="padding:6px 0">%s</td></tr>
 	<tr><td style="padding:6px 0;color:#888">Порт</td><td style="padding:6px 0">:%d</td></tr>
 	</table>
 	</div>`,
+		logoHTML,
 		escHTML(version.String()),
+		cfgRows,
 		escHTML(b.ConfigSource),
 		maskDSN(escHTML(b.DB)),
 		b.Port)

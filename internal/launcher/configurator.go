@@ -165,6 +165,7 @@ type configuratorData struct {
 	Base       *Base
 	AppName    string
 	AppVersion string
+	AppLogo    string
 	DSNMasked  string
 	Tab        string // "tree" | "convert" | "files"
 	Entities  []cfgEntity
@@ -395,6 +396,7 @@ func (h *handler) loadCfgData(ctx context.Context, b *Base, tab string) *configu
 	if appCfg, _ := project.LoadConfig(proj.Dir); appCfg != nil {
 		data.AppName = appCfg.Name
 		data.AppVersion = appCfg.Version
+		data.AppLogo = appCfg.Logo
 	}
 
 	sources, postingSources := readOSSources(proj.Dir)
@@ -2396,6 +2398,7 @@ func (h *handler) configuratorSaveApp(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	newName := strings.TrimSpace(r.FormValue("app_name"))
 	newVersion := strings.TrimSpace(r.FormValue("app_version"))
+	newLogo := strings.TrimSpace(r.FormValue("app_logo"))
 	if newName == "" {
 		data := h.loadCfgData(r.Context(), b, "tree")
 		data.Error = "Имя конфигурации не может быть пустым"
@@ -2406,8 +2409,9 @@ func (h *handler) configuratorSaveApp(w http.ResponseWriter, r *http.Request) {
 	type saveAppConfig struct {
 		Name    string `yaml:"name"`
 		Version string `yaml:"version,omitempty"`
+		Logo    string `yaml:"logo,omitempty"`
 	}
-	out, _ := yaml.Marshal(saveAppConfig{Name: newName, Version: newVersion})
+	out, _ := yaml.Marshal(saveAppConfig{Name: newName, Version: newVersion, Logo: newLogo})
 
 	var saveErr error
 	if b.ConfigSource == "database" {

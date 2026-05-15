@@ -2,10 +2,12 @@ package launcher
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/ivantit66/onebase/internal/configdb"
 	"github.com/ivantit66/onebase/internal/project"
 	"github.com/ivantit66/onebase/internal/storage"
+	"gopkg.in/yaml.v3"
 )
 
 type handler struct {
@@ -29,8 +32,37 @@ func (h *handler) index(w http.ResponseWriter, r *http.Request) {
 
 	type baseVM struct {
 		*Base
-		Running bool
-		BaseURL string
+		Running    bool
+		BaseURL    string
+		AppName    string
+		AppVersion string
+		LogoBase64 string
+	}
+
+	loadAppInfo := func(b *Base, vm *baseVM) {
+		if b.ConfigSource != "file" || b.Path == "" {
+			return
+		}
+		data, err := os.ReadFile(filepath.Join(b.Path, "config", "app.yaml"))
+		if err != nil {
+			return
+		}
+		var cfg struct {
+			Name    string `yaml:"name"`
+			Version string `yaml:"version"`
+			Logo    string `yaml:"logo"`
+		}
+		if yaml.Unmarshal(data, &cfg) != nil {
+			return
+		}
+		vm.AppName = cfg.Name
+		vm.AppVersion = cfg.Version
+		if cfg.Logo != "" {
+			logoPath := filepath.Join(b.Path, cfg.Logo)
+			if logoData, err := os.ReadFile(logoPath); err == nil {
+				vm.LogoBase64 = "data:image/png;base64," + base64.StdEncoding.EncodeToString(logoData)
+			}
+		}
 	}
 
 	selID := r.URL.Query().Get("sel")
@@ -38,6 +70,7 @@ func (h *handler) index(w http.ResponseWriter, r *http.Request) {
 	vms := make([]*baseVM, 0, len(bases))
 	for _, b := range bases {
 		vm := &baseVM{Base: b, Running: h.runner.IsRunning(b.ID), BaseURL: h.runner.BaseURL(b)}
+		loadAppInfo(b, vm)
 		vms = append(vms, vm)
 		if b.ID == selID {
 			selected = vm
