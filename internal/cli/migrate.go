@@ -20,16 +20,25 @@ var migrateCmd = &cobra.Command{
 func init() {
 	migrateCmd.Flags().String("project", ".", "path to project directory")
 	migrateCmd.Flags().String("db", "", "database URL (overrides DATABASE_URL env)")
+	migrateCmd.Flags().String("sqlite", "", "path to SQLite database file (alternative to --db)")
 	migrateCmd.Flags().String("config-source", "file", "configuration source: file or database")
 }
 
 func runMigrate(cmd *cobra.Command, _ []string) error {
 	dir, _ := cmd.Flags().GetString("project")
-	dsn := dsnFromFlags(cmd)
+	sqlitePath, _ := cmd.Flags().GetString("sqlite")
 	configSource, _ := cmd.Flags().GetString("config-source")
 
 	ctx := context.Background()
-	db, err := storage.Connect(ctx, dsn)
+	var (
+		db  *storage.DB
+		err error
+	)
+	if sqlitePath != "" {
+		db, err = storage.ConnectSQLite(ctx, sqlitePath)
+	} else {
+		db, err = storage.Connect(ctx, dsnFromFlags(cmd))
+	}
 	if err != nil {
 		return err
 	}
