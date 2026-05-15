@@ -692,13 +692,20 @@ function runCheck(kind, key, name) {
   if (typeof monacoEditors !== 'undefined' && monacoEditors[key]) {
     ta.value = monacoEditors[key].getValue();
   }
-  var fd = new FormData();
-  fd.append('kind', kind);
-  fd.append('source', ta.value);
-  if (name) fd.append('name', name);
+  // URLSearchParams sets Content-Type to application/x-www-form-urlencoded,
+  // which Go's r.ParseForm() can decode. FormData would force multipart and
+  // require r.ParseMultipartForm() on the server.
+  var body = new URLSearchParams();
+  body.set('kind', kind);
+  body.set('source', ta.value);
+  if (name) body.set('name', name);
   result.className = 'check-result check-pending';
   result.textContent = '⏳ Проверка...';
-  fetch('/bases/' + _dbgBase + '/configurator/check', {method:'POST', body: fd})
+  fetch('/bases/' + _dbgBase + '/configurator/check', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'},
+    body: body.toString()
+  })
     .then(function(r){ return r.json(); })
     .then(function(d){
       if (d.error) {
