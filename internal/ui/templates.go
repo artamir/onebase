@@ -133,6 +133,7 @@ var tmpl = template.Must(template.New("root").Funcs(template.FuncMap{
 	},
 	"wcell":        widgetCell,
 	"echartsJSON":  echartsJSON,
+	"splitCamel":   splitCamel,
 }).Parse(tplHead + tplNav + tplIndex + tplList + tplForm + tplRegister + tplReport + tplProcessor + tplAbout + tplDeleteMarked + tplInfoReg + tplConstants + tplHistory + tplJournal + tplScheduled + tplAccountReg + tplQueryBuilder + tplAllFunctions + tplQueryConsole + tplCodeConsole))
 
 const tplHead = `
@@ -434,8 +435,9 @@ window.__obWidgetCharts = window.__obWidgetCharts || {};
 {{define "widget-recent-body"}}
 {{if .Rows}}
   {{range .Rows}}
+  {{$label := splitCamel (str (index . "entity_name"))}}
   <div class="w-recent-row">
-    <span class="e">{{index . "entity_name"}}</span>
+    <span class="e" title="{{$label}}">{{$label}}</span>
     <a href="{{index . "_url"}}">{{index . "_title"}}</a>
     <span class="ts">{{fmtDate (index . "_ts")}}</span>
   </div>

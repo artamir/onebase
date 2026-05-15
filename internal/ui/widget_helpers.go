@@ -6,9 +6,34 @@ import (
 	"html/template"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/ivantit66/onebase/internal/widget"
 )
+
+// splitCamel turns "ПоступлениеТоваров" into "Поступление товаров" — a
+// recent-widget pill should be readable, not a wall of mixed-case text. The
+// first word keeps its capital; subsequent words become lowercase. Latin and
+// Cyrillic both work because we look at Unicode properties, not byte ranges.
+func splitCamel(s string) string {
+	if s == "" {
+		return ""
+	}
+	var b strings.Builder
+	runes := []rune(s)
+	for i, r := range runes {
+		if i > 0 && unicode.IsUpper(r) {
+			prev := runes[i-1]
+			if unicode.IsLower(prev) || unicode.IsDigit(prev) {
+				b.WriteByte(' ')
+				b.WriteRune(unicode.ToLower(r))
+				continue
+			}
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
 
 // widgetCell formats a single cell in a list-widget table according to the
 // declared format (money/number/percent/date). It is wired into the template
@@ -111,23 +136,23 @@ func toFloatForCell(v any) float64 {
 	return 0
 }
 
+// formatMoneyForCell renders monetary values for table cells in list widgets.
+// Cells are tight on horizontal space, so we drop kopecks and the currency
+// glyph — the column header already conveys "Выручка"/"Прибыль", and one
+// rouble precision is enough for a dashboard summary. KPI cards keep the full
+// "x,xx ₽" form (see runner.formatMoney).
 func formatMoneyForCell(v any) string {
 	f := toFloatForCell(v)
 	neg := f < 0
 	if neg {
 		f = -f
 	}
-	whole := int64(f)
-	frac := int64((f - float64(whole)) * 100)
-	if frac < 0 {
-		frac = -frac
-	}
+	whole := int64(f + 0.5)
 	s := groupThousands(whole)
-	out := fmt.Sprintf("%s,%02d ₽", s, frac)
 	if neg {
-		out = "-" + out
+		s = "-" + s
 	}
-	return out
+	return s + " ₽"
 }
 
 func formatIntForCell(v any) string {
