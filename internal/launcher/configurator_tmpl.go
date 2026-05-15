@@ -740,6 +740,35 @@ function initLayoutEditor(n){
   _led[n]={data:d,sel:null,init:true};
   if(Object.keys(d.areas||{}).length>0){renderLayoutEditor(n);}
 }
+function _ldCellStyle(c,extra){
+  var st='padding:4px 8px;min-width:40px;';
+  // border
+  var bc=c.borderColor||'#999';
+  var b=c.border||'';
+  if(b==='none')st+='border:none;';
+  else if(b==='thick')st+='border:2px solid '+bc+';';
+  else st+='border:1px solid '+bc+';';
+  if(c.bold)st+='font-weight:bold;';
+  if(c.italic)st+='font-style:italic;';
+  if(c.fontSize)st+='font-size:'+c.fontSize+'pt;';
+  if(c.fontFamily)st+='font-family:'+c.fontFamily+';';
+  if(c.backColor)st+='background-color:'+c.backColor+';';
+  if(c.textColor)st+='color:'+c.textColor+';';
+  if(c.align)st+='text-align:'+c.align+';';
+  if(c.valign==='middle')st+='vertical-align:middle;';
+  else if(c.valign==='top')st+='vertical-align:top;';
+  else if(c.valign==='bottom')st+='vertical-align:bottom;';
+  return st+(extra||'');
+}
+function _ldColgroup(d){
+  var cols=d.columns||[];
+  if(!cols.length)return '';
+  var h='<colgroup>';
+  for(var i=0;i<cols.length;i++){
+    h+=cols[i]&&cols[i].width?'<col style="width:'+esc(cols[i].width)+'">':'<col>';
+  }
+  return h+'</colgroup>';
+}
 function renderLayoutEditor(n){
   var s=_led[n];if(!s)return;
   // sync to YAML textarea (skip on first init to preserve original content)
@@ -752,6 +781,7 @@ function renderLayoutEditor(n){
   if(s.init)s.init=false;
   var d=s.data,areas=d.areas||{},h='<div style="font-family:Arial,sans-serif;font-size:12px">';
   var aNames=Object.keys(areas);
+  var cg=_ldColgroup(d);
   for(var ai=0;ai<aNames.length;ai++){
     var an=aNames[ai],ar=areas[an];
     h+='<div style="margin-bottom:16px">';
@@ -760,58 +790,101 @@ function renderLayoutEditor(n){
     h+='<button type="button" style="font-size:10px;padding:1px 6px;border:1px solid #ccc;border-radius:3px;cursor:pointer" onclick="addLayoutRow(\''+n+"','"+esc(an)+"')\">+ строка</button>";
     h+='<button type="button" style="font-size:10px;padding:1px 6px;border:1px solid #fcc;border-radius:3px;cursor:pointer;color:#c33" onclick="delLayoutArea(\''+n+"','"+esc(an)+"')\">✕</button>";
     h+='</div>';
-    h+='<table style="border-collapse:collapse;border:1px solid #999">';
+    h+='<table style="border-collapse:collapse">'+cg;
     var rows=ar.rows||[];
     for(var ri=0;ri<rows.length;ri++){
-      h+='<tr>';
+      var rowStyle=rows[ri].height?' style="height:'+esc(rows[ri].height)+'"':'';
+      h+='<tr'+rowStyle+'>';
       var cells=rows[ri].cells||[];
       for(var ci=0;ci<cells.length;ci++){
         var c=cells[ci];
-        var st='border:1px solid #999;padding:4px 8px;min-width:40px;cursor:pointer;';
-        if(c.bold)st+='font-weight:bold;';
-        if(c.italic)st+='font-style:italic;';
-        if(c.backColor)st+='background-color:'+c.backColor+';';
-        if(c.textColor)st+='color:'+c.textColor+';';
-        if(c.align)st+='text-align:'+c.align+';';
+        var isSel=s.sel&&s.sel.area===an&&s.sel.row===ri&&s.sel.col===ci;
+        var extra='cursor:pointer;';
+        if(isSel)extra+='outline:2px solid #1a73e8;outline-offset:-2px;';
+        var st=_ldCellStyle(c,extra);
         var at='';
         if(c.colspan&&c.colspan>1)at+=' colspan="'+c.colspan+'"';
-        var isSel=s.sel&&s.sel.area===an&&s.sel.row===ri&&s.sel.col===ci;
-        if(isSel)st+='outline:2px solid #1a73e8;';
-        var txt=c.text||'';
+        if(c.rowspan&&c.rowspan>1)at+=' rowspan="'+c.rowspan+'"';
+        var txt=c.text?esc(c.text):'';
         if(c.parameter)txt='<span style="color:#888">['+esc(c.parameter)+']</span>';
         if(!txt)txt='&nbsp;';
         h+='<td style="'+st+'"'+at+' onclick="selectCell(\''+n+"','"+esc(an)+"',"+ri+','+ci+')">'+txt+'</td>';
       }
-      h+='<td style="border:none;padding:2px"><button type="button" style="font-size:10px;color:#c33;border:none;cursor:pointer" onclick="delLayoutRow(\''+n+"','"+esc(an)+"',"+ri+')\">✕</button></td>';
+      h+='<td style="border:none;padding:2px"><button type="button" style="font-size:10px;color:#c33;border:none;cursor:pointer;background:transparent" onclick="delLayoutRow(\''+n+"','"+esc(an)+"',"+ri+')\">✕</button></td>';
       h+='</tr>';
     }
     h+='</table></div>';
   }
   h+='</div>';
-  document.getElementById('veditor-'+n).innerHTML=h;
+  var ved=document.getElementById('veditor-'+n);
+  if(ved)ved.innerHTML=h;
+  renderPreviewOnly(n);
   syncProps(n);
+}
+function renderPreviewOnly(n){
+  var pv=document.getElementById('vpreview-'+n);
+  if(!pv)return;
+  var s=_led[n];if(!s){pv.innerHTML='';return;}
+  var d=s.data,areas=d.areas||{},h='<div style="font-family:Arial,sans-serif;font-size:12px">';
+  var cg=_ldColgroup(d);
+  var aNames=Object.keys(areas);
+  for(var ai=0;ai<aNames.length;ai++){
+    var an=aNames[ai],ar=areas[an];
+    h+='<div style="margin-bottom:16px"><div style="font-weight:bold;color:#4a9;margin-bottom:4px">'+esc(an)+'</div>';
+    h+='<table style="border-collapse:collapse">'+cg;
+    var rows=ar.rows||[];
+    for(var ri=0;ri<rows.length;ri++){
+      var rowStyle=rows[ri].height?' style="height:'+esc(rows[ri].height)+'"':'';
+      h+='<tr'+rowStyle+'>';
+      var cells=rows[ri].cells||[];
+      for(var ci=0;ci<cells.length;ci++){
+        var c=cells[ci];
+        var st=_ldCellStyle(c,'');
+        var at='';
+        if(c.colspan&&c.colspan>1)at+=' colspan="'+c.colspan+'"';
+        if(c.rowspan&&c.rowspan>1)at+=' rowspan="'+c.rowspan+'"';
+        var txt=c.text?esc(c.text):'';
+        if(c.parameter)txt='<span style="color:#888">['+esc(c.parameter)+']</span>';
+        if(!txt)txt='&nbsp;';
+        h+='<td style="'+st+'"'+at+'>'+txt+'</td>';
+      }
+      h+='</tr>';
+    }
+    h+='</table></div>';
+  }
+  h+='</div>';
+  pv.innerHTML=h;
 }
 function selectCell(n,a,r,c){
   var s=_led[n];if(!s)return;
   s.sel={area:a,row:r,col:c};
   renderLayoutEditor(n);
 }
+function _setVal(id,v){var el=document.getElementById(id);if(el)el.value=v;}
+function _setChk(id,v){var el=document.getElementById(id);if(el)el.checked=v;}
 function syncProps(n){
   var s=_led[n];if(!s)return;
   var pp=document.getElementById('vprops-'+n);
+  if(!pp)return;
   if(!s.sel){pp.style.display='none';return;}
-  pp.style.display='block';
   var d=s.data,ar=(d.areas||{})[s.sel.area];
   if(!ar||!ar.rows||!ar.rows[s.sel.row]){pp.style.display='none';return;}
   var c=ar.rows[s.sel.row].cells[s.sel.col]||{};
-  document.getElementById('vp-text-'+n).value=c.text||'';
-  document.getElementById('vp-param-'+n).value=c.parameter||'';
-  document.getElementById('vp-bold-'+n).checked=!!c.bold;
-  document.getElementById('vp-italic-'+n).checked=!!c.italic;
-  document.getElementById('vp-align-'+n).value=c.align||'';
-  document.getElementById('vp-bg-'+n).value=c.backColor||'#ffffff';
-  document.getElementById('vp-colspan-'+n).value=c.colspan||1;
-  document.getElementById('vp-fg-'+n).value=c.textColor||'#000000';
+  pp.style.display='block';
+  _setVal('vp-text-'+n,c.text||'');
+  _setVal('vp-param-'+n,c.parameter||'');
+  _setChk('vp-bold-'+n,!!c.bold);
+  _setChk('vp-italic-'+n,!!c.italic);
+  _setVal('vp-align-'+n,c.align||'');
+  _setVal('vp-valign-'+n,c.valign||'');
+  _setVal('vp-bg-'+n,c.backColor||'#ffffff');
+  _setVal('vp-fg-'+n,c.textColor||'#000000');
+  _setVal('vp-ff-'+n,c.fontFamily||'');
+  _setVal('vp-fs-'+n,c.fontSize||'');
+  _setVal('vp-border-'+n,c.border||'');
+  _setVal('vp-bc-'+n,c.borderColor||'#cccccc');
+  _setVal('vp-colspan-'+n,c.colspan||1);
+  _setVal('vp-rowspan-'+n,c.rowspan||1);
 }
 function updateCellProp(n,prop,val){
   var s=_led[n];if(!s||!s.sel)return;
@@ -820,8 +893,12 @@ function updateCellProp(n,prop,val){
   var ci=s.sel.col;
   if(!ar.rows[s.sel.row].cells[ci])ar.rows[s.sel.row].cells[ci]={};
   var c=ar.rows[s.sel.row].cells[ci];
-  if(val===''||val===0||(typeof val==='number'&&isNaN(val))){delete c[prop];}
-  else{c[prop]=val;}
+  var isSpan=(prop==='colspan'||prop==='rowspan');
+  if(val===''||val===0||val===false||(typeof val==='number'&&isNaN(val))||(isSpan&&val<=1)){
+    delete c[prop];
+  }else{
+    c[prop]=val;
+  }
   renderLayoutEditor(n);
 }
 function applyYaml(n){
@@ -883,6 +960,106 @@ function delLayoutRow(n,a,ri){
   var ar=(s.data.areas||{})[a];if(!ar||!ar.rows)return;
   ar.rows.splice(ri,1);
   s.sel=null;
+  renderLayoutEditor(n);
+}
+// ── Tabs & toolbar operations ─────────────────────────────────────
+function ldSelectTab(n,tab,el){
+  ['designer','yaml','preview'].forEach(function(t){
+    var pane=document.getElementById('lpane-'+t+'-'+n);
+    if(pane)pane.style.display=(t===tab)?'block':'none';
+  });
+  var tabs=document.querySelectorAll('#ltabs-'+n+' .ltab');
+  for(var i=0;i<tabs.length;i++){
+    var active=tabs[i].getAttribute('data-tab')===tab;
+    tabs[i].style.background=active?'#fff':'#f1f5f9';
+    tabs[i].style.color=active?'#1a4a80':'#64748b';
+    tabs[i].style.fontWeight=active?'600':'400';
+  }
+  if(tab==='preview'){
+    // Refresh preview from current state (in case YAML was edited last).
+    var ta=document.getElementById('ta-mkt-'+n);
+    if(ta){try{var d=jsyaml.parse(ta.value);if(d&&_led[n])_led[n].data=d;}catch(e){}}
+    renderPreviewOnly(n);
+  }else if(tab==='yaml'){
+    // Sync YAML textarea from current data.
+    var s=_led[n];
+    if(s&&window.jsyaml){
+      var y=jsyaml.dump(s.data,{lineWidth:-1,quotingType:'"'});
+      var ta2=document.getElementById('ta-mkt-'+n);if(ta2)ta2.value=y;
+    }
+  }
+}
+function _ldSel(n){
+  var s=_led[n];if(!s||!s.sel)return null;
+  var ar=(s.data.areas||{})[s.sel.area];
+  if(!ar||!ar.rows||!ar.rows[s.sel.row])return null;
+  return {s:s,ar:ar,row:ar.rows[s.sel.row],ri:s.sel.row,ci:s.sel.col,area:s.sel.area};
+}
+function _ldFirstArea(n){
+  var s=_led[n];if(!s)return null;
+  var keys=Object.keys(s.data.areas||{});
+  return keys.length?keys[0]:null;
+}
+function ldAddRow(n){
+  var s=_led[n];if(!s)return;
+  var area=s.sel?s.sel.area:_ldFirstArea(n);
+  if(!area){alert('Сначала добавьте область');return;}
+  addLayoutRow(n,area);
+}
+function ldDelRow(n){
+  var sel=_ldSel(n);
+  if(!sel){alert('Выделите ячейку в строке, которую нужно удалить');return;}
+  if(!confirm('Удалить строку?'))return;
+  delLayoutRow(n,sel.area,sel.ri);
+}
+function ldAddColumn(n){
+  var s=_led[n];if(!s)return;
+  var area=s.sel?s.sel.area:_ldFirstArea(n);
+  if(!area){alert('Сначала добавьте область');return;}
+  var ar=s.data.areas[area];if(!ar||!ar.rows)return;
+  for(var i=0;i<ar.rows.length;i++){
+    if(!ar.rows[i].cells)ar.rows[i].cells=[];
+    ar.rows[i].cells.push({});
+  }
+  // also extend columns array (column-level widths) if defined
+  if(s.data.columns){s.data.columns.push({});}
+  renderLayoutEditor(n);
+}
+function ldDelColumn(n){
+  var sel=_ldSel(n);
+  if(!sel){alert('Выделите ячейку в колонке, которую нужно удалить');return;}
+  if(!confirm('Удалить колонку?'))return;
+  var s=sel.s,ar=sel.ar,ci=sel.ci;
+  for(var i=0;i<ar.rows.length;i++){
+    var cs=ar.rows[i].cells||[];
+    if(ci<cs.length)cs.splice(ci,1);
+  }
+  if(s.data.columns&&ci<s.data.columns.length){s.data.columns.splice(ci,1);}
+  s.sel=null;
+  renderLayoutEditor(n);
+}
+function ldMerge(n){
+  var sel=_ldSel(n);
+  if(!sel){alert('Выделите ячейку, которую нужно объединить с правой соседкой');return;}
+  var row=sel.row,ci=sel.ci;
+  if(ci+1>=row.cells.length){alert('Нет ячейки справа для объединения');return;}
+  var c=row.cells[ci];
+  var span=(c.colspan&&c.colspan>1)?c.colspan:1;
+  c.colspan=span+1;
+  row.cells.splice(ci+1,1);
+  renderLayoutEditor(n);
+}
+function ldSplit(n){
+  var sel=_ldSel(n);
+  if(!sel){alert('Выделите объединённую ячейку');return;}
+  var c=sel.row.cells[sel.ci];
+  if(!c.colspan||c.colspan<=1){alert('Ячейка не объединена');return;}
+  var span=c.colspan;
+  delete c.colspan;
+  // insert (span-1) empty cells to the right
+  for(var i=0;i<span-1;i++){
+    sel.row.cells.splice(sel.ci+1+i,0,{});
+  }
   renderLayoutEditor(n);
 }
 // Init layout editors on load
@@ -2469,6 +2646,11 @@ const cfgTabTree = `{{define "tab-tree"}}
         <label>Версия</label>
         <input type="text" name="app_version" value="{{.AppVersion}}" placeholder="1.0">
       </div>
+      <div class="fg" style="margin-top:10px">
+        <label>Логотип</label>
+        <input type="text" name="app_logo" value="{{.AppLogo}}" placeholder="config/logo.png">
+        <div class="hint">Путь к файлу (PNG, SVG, JPG) относительно папки конфигурации</div>
+      </div>
       <div class="module-save-row" style="margin-top:12px">
         <button class="btn-save" type="submit">Сохранить</button>
         {{if and .FieldsSaved (eq .FieldsSavedEntity "__app__")}}<span class="save-ok">✓ Сохранено — перезапустите базу</span>{{end}}
@@ -2780,33 +2962,81 @@ const cfgTabTree = `{{define "tab-tree"}}
     <form method="POST" action="/bases/{{$.Base.ID}}/configurator/layout" onsubmit="return saveLayoutEditor('{{.Name}}')">
       <input type="hidden" name="layout_name" value="{{.Name}}">
       <textarea id="yaml-src-{{.Name}}" name="source" style="display:none">{{.LayoutYAML}}</textarea>
-      <div style="display:flex;gap:8px;margin:4px 0 8px;flex-wrap:wrap">
+
+      {{/* Toolbar: structural operations */}}
+      <div style="display:flex;gap:6px;margin:4px 0 8px;flex-wrap:wrap;align-items:center">
         <button type="button" class="btn-save" onclick="addLayoutArea('{{.Name}}')" style="font-size:12px;padding:4px 10px">+ Область</button>
+        <span style="width:1px;background:#d1d5db;align-self:stretch"></span>
+        <button type="button" onclick="ldAddRow('{{.Name}}')"     style="font-size:12px;padding:4px 10px;background:#fff;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer">+ Строка</button>
+        <button type="button" onclick="ldAddColumn('{{.Name}}')"  style="font-size:12px;padding:4px 10px;background:#fff;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer">+ Колонка</button>
+        <button type="button" onclick="ldDelRow('{{.Name}}')"     style="font-size:12px;padding:4px 10px;background:#fff;border:1px solid #fcc;border-radius:4px;cursor:pointer;color:#c33">Удалить строку</button>
+        <button type="button" onclick="ldDelColumn('{{.Name}}')"  style="font-size:12px;padding:4px 10px;background:#fff;border:1px solid #fcc;border-radius:4px;cursor:pointer;color:#c33">Удалить колонку</button>
+        <span style="width:1px;background:#d1d5db;align-self:stretch"></span>
+        <button type="button" onclick="ldMerge('{{.Name}}')"      style="font-size:12px;padding:4px 10px;background:#fff;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer">Объединить →</button>
+        <button type="button" onclick="ldSplit('{{.Name}}')"      style="font-size:12px;padding:4px 10px;background:#fff;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer">Разъединить</button>
       </div>
-      <div style="display:flex;gap:0;border:1px solid #d1d5db;border-radius:6px;overflow:hidden">
-        <div style="flex:1;min-width:0;border-right:1px solid #d1d5db;display:flex;flex-direction:column">
-          <div style="background:#f1f5f9;padding:4px 10px;font-size:11px;font-weight:600;color:#64748b;border-bottom:1px solid #d1d5db">YAML</div>
-          <textarea id="ta-mkt-{{.Name}}" style="width:100%;min-height:300px;padding:8px;border:none;outline:none;font-family:monospace;font-size:12px;resize:vertical;tab-size:2"
+
+      {{/* Tabs */}}
+      <div id="ltabs-{{.Name}}" style="display:flex;gap:0;border-bottom:1px solid #d1d5db;margin-bottom:0">
+        <div class="ltab ltab-active" data-tab="designer" onclick="ldSelectTab('{{.Name}}','designer',this)" style="padding:6px 14px;cursor:pointer;border:1px solid #d1d5db;border-bottom:none;background:#fff;font-size:12px;font-weight:600;color:#1a4a80">Конструктор</div>
+        <div class="ltab"             data-tab="yaml"     onclick="ldSelectTab('{{.Name}}','yaml',this)"     style="padding:6px 14px;cursor:pointer;border:1px solid #d1d5db;border-bottom:none;background:#f1f5f9;font-size:12px;color:#64748b;margin-left:-1px">YAML</div>
+        <div class="ltab"             data-tab="preview"  onclick="ldSelectTab('{{.Name}}','preview',this)"  style="padding:6px 14px;cursor:pointer;border:1px solid #d1d5db;border-bottom:none;background:#f1f5f9;font-size:12px;color:#64748b;margin-left:-1px">Предпросмотр</div>
+      </div>
+
+      {{/* Tab panes */}}
+      <div style="border:1px solid #d1d5db;border-top:none;border-radius:0 0 6px 6px;overflow:hidden">
+        <div id="lpane-designer-{{.Name}}" class="lpane" style="display:block">
+          <div id="veditor-{{.Name}}" style="padding:8px;min-height:300px;overflow:auto;background:#fff">{{if .LayoutPreview}}{{.LayoutPreview}}{{else}}<p style="color:#999;font-size:12px">Нет данных. Нажмите «+ Область» или перейдите на вкладку YAML.</p>{{end}}</div>
+        </div>
+        <div id="lpane-yaml-{{.Name}}" class="lpane" style="display:none">
+          <textarea id="ta-mkt-{{.Name}}" style="width:100%;min-height:300px;padding:8px;border:none;outline:none;font-family:monospace;font-size:12px;resize:vertical;tab-size:2;background:#fff"
                     onblur="applyYaml('{{.Name}}')">{{.LayoutYAML}}</textarea>
         </div>
-        <div style="flex:1;min-width:0;display:flex;flex-direction:column">
-          <div style="background:#f1f5f9;padding:4px 10px;font-size:11px;font-weight:600;color:#64748b;border-bottom:1px solid #d1d5db">Макет <span style="color:#22c55e">v5</span></div>
-          <div id="veditor-{{.Name}}" style="padding:8px;min-height:300px;overflow:auto">{{if .LayoutPreview}}{{.LayoutPreview}}{{else}}<p style="color:#999;font-size:12px">Нет данных. Начните редактировать YAML слева.</p>{{end}}</div>
+        <div id="lpane-preview-{{.Name}}" class="lpane" style="display:none">
+          <div id="vpreview-{{.Name}}" style="padding:8px;min-height:300px;overflow:auto;background:#fff"></div>
         </div>
       </div>
+
+      {{/* Cell properties panel */}}
       <div id="vprops-{{.Name}}" style="display:none;background:#f0f8ff;border:1px solid #b0d0f0;border-radius:4px;padding:10px;margin-top:8px">
         <div style="font-weight:bold;margin-bottom:6px;font-size:12px">Свойства ячейки</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;font-size:12px">
           <div><label>Текст</label><br><input id="vp-text-{{.Name}}" style="width:100%;padding:3px" oninput="updateCellProp('{{.Name}}','text',this.value)"></div>
           <div><label>Параметр</label><br><input id="vp-param-{{.Name}}" style="width:100%;padding:3px" oninput="updateCellProp('{{.Name}}','parameter',this.value)"></div>
-          <div><label><input type="checkbox" id="vp-bold-{{.Name}}" onchange="updateCellProp('{{.Name}}','bold',this.checked)"> Жирный</label></div>
-          <div><label><input type="checkbox" id="vp-italic-{{.Name}}" onchange="updateCellProp('{{.Name}}','italic',this.checked)"> Курсив</label></div>
-          <div><label>Выравнивание</label><br><select id="vp-align-{{.Name}}" style="width:100%;padding:3px" onchange="updateCellProp('{{.Name}}','align',this.value)">
-            <option value="">По умолчанию</option><option value="left">Лево</option><option value="center">Центр</option><option value="right">Право</option>
-          </select></div>
+          <div><label>Шрифт</label><br>
+            <select id="vp-ff-{{.Name}}" style="width:100%;padding:3px" onchange="updateCellProp('{{.Name}}','fontFamily',this.value)">
+              <option value="">По умолчанию</option>
+              <option>Arial</option><option>Times New Roman</option><option>Courier New</option><option>Verdana</option><option>Tahoma</option>
+            </select>
+          </div>
+          <div><label>Размер (pt)</label><br><input type="number" id="vp-fs-{{.Name}}" min="6" max="72" style="width:100%;padding:3px" oninput="updateCellProp('{{.Name}}','fontSize',parseInt(this.value)||0)"></div>
+          <div><label><input type="checkbox" id="vp-bold-{{.Name}}" onchange="updateCellProp('{{.Name}}','bold',this.checked)"> Жирный</label>
+               &nbsp;<label><input type="checkbox" id="vp-italic-{{.Name}}" onchange="updateCellProp('{{.Name}}','italic',this.checked)"> Курсив</label></div>
+          <div></div>
+          <div><label>Гор. выравнивание</label><br>
+            <select id="vp-align-{{.Name}}" style="width:100%;padding:3px" onchange="updateCellProp('{{.Name}}','align',this.value)">
+              <option value="">—</option><option value="left">Лево</option><option value="center">Центр</option><option value="right">Право</option>
+            </select>
+          </div>
+          <div><label>Верт. выравнивание</label><br>
+            <select id="vp-valign-{{.Name}}" style="width:100%;padding:3px" onchange="updateCellProp('{{.Name}}','valign',this.value)">
+              <option value="">—</option><option value="top">Верх</option><option value="middle">Середина</option><option value="bottom">Низ</option>
+            </select>
+          </div>
+          <div></div>
           <div><label>Фон</label><br><input type="color" id="vp-bg-{{.Name}}" style="width:100%;height:28px" oninput="updateCellProp('{{.Name}}','backColor',this.value)"></div>
-          <div><label>Объединить (colspan)</label><br><input type="number" id="vp-colspan-{{.Name}}" min="1" max="10" style="width:60px;padding:3px" oninput="updateCellProp('{{.Name}}','colspan',parseInt(this.value)||0)"></div>
           <div><label>Цвет текста</label><br><input type="color" id="vp-fg-{{.Name}}" style="width:100%;height:28px" oninput="updateCellProp('{{.Name}}','textColor',this.value)"></div>
+          <div></div>
+          <div><label>Границы</label><br>
+            <select id="vp-border-{{.Name}}" style="width:100%;padding:3px" onchange="updateCellProp('{{.Name}}','border',this.value)">
+              <option value="">По умолчанию</option><option value="none">Нет</option><option value="thin">Тонкая</option><option value="all">Все</option><option value="thick">Толстая</option>
+            </select>
+          </div>
+          <div><label>Цвет границы</label><br><input type="color" id="vp-bc-{{.Name}}" style="width:100%;height:28px" oninput="updateCellProp('{{.Name}}','borderColor',this.value)"></div>
+          <div></div>
+          <div><label>Объединить (colspan)</label><br><input type="number" id="vp-colspan-{{.Name}}" min="1" max="20" style="width:100%;padding:3px" oninput="updateCellProp('{{.Name}}','colspan',parseInt(this.value)||0)"></div>
+          <div><label>Объединить (rowspan)</label><br><input type="number" id="vp-rowspan-{{.Name}}" min="1" max="20" style="width:100%;padding:3px" oninput="updateCellProp('{{.Name}}','rowspan',parseInt(this.value)||0)"></div>
+          <div></div>
         </div>
       </div>
       <div class="module-save-row">

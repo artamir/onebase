@@ -94,8 +94,14 @@ func (m *Макет) getArea(name string) *SpreadsheetDocumentArea {
 			if cellDef.Align != "" {
 				cell.align = strings.ToLower(cellDef.Align)
 			}
+			if cellDef.VAlign != "" {
+				cell.vertical = strings.ToLower(cellDef.VAlign)
+			}
 			if cellDef.FontSize > 0 {
 				cell.fontSize = cellDef.FontSize
+			}
+			if cellDef.FontFamily != "" {
+				cell.fontFamily = cellDef.FontFamily
 			}
 			if cellDef.BackColor != "" {
 				cell.backColor = cellDef.BackColor
@@ -103,8 +109,14 @@ func (m *Макет) getArea(name string) *SpreadsheetDocumentArea {
 			if cellDef.TextColor != "" {
 				cell.textColor = cellDef.TextColor
 			}
+			if cellDef.Border != "" {
+				cell.border = strings.ToLower(cellDef.Border)
+			}
 			if cellDef.ColSpan > 1 {
 				cell.colSpan = cellDef.ColSpan
+			}
+			if cellDef.RowSpan > 1 {
+				cell.rowSpan = cellDef.RowSpan
 			}
 			// Store parameter name for named parameter access
 			if cellDef.Parameter != "" {
