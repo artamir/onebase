@@ -148,6 +148,20 @@ pre.os-code{
 .btn-save{background:#1a4a80;color:#fff;border:none;padding:7px 16px;border-radius:4px;cursor:pointer;font-size:12px}
 .btn-save:hover{background:#15396a}
 .save-ok{color:#059669;font-size:12px}
+.btn-check{background:#fff;border:1px solid #1a4a80;color:#1a4a80;padding:4px 12px;border-radius:3px;cursor:pointer;font-size:12px;margin-left:6px}
+.btn-check:hover{background:#eaf2fa}
+.check-result{display:inline-block;margin-left:10px;font-size:11px;padding:3px 8px;border-radius:3px;vertical-align:middle;max-width:480px;line-height:1.4}
+.check-result:empty{display:none}
+.check-pending{background:#fef7ed;color:#9a3412}
+.check-ok{background:#ecfdf5;color:#047857}
+.check-err{background:#fef2f2;color:#b91c1c;display:block;margin:6px 0 0 0;padding:8px 10px}
+#check-all-panel{display:none;position:fixed;right:20px;bottom:20px;width:520px;max-height:60vh;background:#fff;border:1px solid #c8cdd8;border-radius:6px;box-shadow:0 6px 24px rgba(0,0,0,.18);flex-direction:column;z-index:1000}
+#check-all-panel header{padding:8px 12px;background:#1a4a80;color:#fff;border-radius:6px 6px 0 0;font-size:12px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+#check-all-panel header button{background:none;border:none;color:#fff;cursor:pointer;font-size:14px;padding:0 4px}
+#check-all-body{padding:6px;overflow-y:auto;flex:1}
+#check-all-body .check-row{padding:8px 10px;border-bottom:1px solid #eef1f6;font-size:12px}
+#check-all-body .check-row:last-child{border-bottom:none}
+#check-all-body .check-ok{background:#ecfdf5;color:#047857;border-radius:4px;margin:4px 0}
 .module-empty{color:#888;font-size:12px;padding:10px 0;font-style:italic}
 
 /* ── Syntax colours ─────────────────────────────────── */
@@ -665,6 +679,105 @@ function endEdit(name) {
     ta.style.display = 'none';
   }
 }
+// ── Syntax check ──────────────────────────────────────────────────
+// runCheck reads code from a textarea (id "ta-<key>") and posts it to the
+// configurator check endpoint, then renders the result in the sibling
+// .check-result element with id "check-<key>". The kind argument selects the
+// validator: dsl | widget | home_page | entity.
+function runCheck(kind, key, name) {
+  var ta = document.getElementById('ta-' + key);
+  var result = document.getElementById('check-' + key);
+  if (!ta || !result) return;
+  // Sync Monaco editor content back to textarea if present
+  if (typeof monacoEditors !== 'undefined' && monacoEditors[key]) {
+    ta.value = monacoEditors[key].getValue();
+  }
+  var fd = new FormData();
+  fd.append('kind', kind);
+  fd.append('source', ta.value);
+  if (name) fd.append('name', name);
+  result.className = 'check-result check-pending';
+  result.textContent = '⏳ Проверка...';
+  fetch('/bases/' + _dbgBase + '/configurator/check', {method:'POST', body: fd})
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if (d.error) {
+        result.className = 'check-result check-err';
+        result.textContent = '⚠ ' + d.error;
+        return;
+      }
+      if (d.ok) {
+        result.className = 'check-result check-ok';
+        result.textContent = '✓ Синтаксис ОК';
+      } else {
+        result.className = 'check-result check-err';
+        var lines = (d.issues || []).map(function(i){
+          var pos = (i.line ? ' (стр. ' + i.line + ')' : '');
+          return '• ' + i.message + pos;
+        });
+        result.innerHTML = '<b>Найдено ошибок: ' + d.total + '</b><br>' + lines.join('<br>');
+      }
+    })
+    .catch(function(e){
+      result.className = 'check-result check-err';
+      result.textContent = '⚠ ' + e.message;
+    });
+}
+
+function runCheckAll() {
+  var btn = document.getElementById('btn-check-all');
+  var panel = document.getElementById('check-all-panel');
+  var body = document.getElementById('check-all-body');
+  btn.disabled = true;
+  btn.textContent = 'Проверка...';
+  body.innerHTML = '<div style="padding:10px;color:#888">⏳ Идёт проверка конфигурации...</div>';
+  panel.style.display = 'flex';
+  fetch('/bases/' + _dbgBase + '/configurator/check-all', {method:'POST'})
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      btn.disabled = false;
+      btn.textContent = 'Проверить конфигурацию';
+      if (d.error) {
+        body.innerHTML = '<div class="check-row check-err">⚠ ' + d.error + '</div>';
+        return;
+      }
+      if (d.ok) {
+        body.innerHTML = '<div class="check-row check-ok"><b>✓ Конфигурация корректна</b><br>Ошибок не найдено.</div>';
+        return;
+      }
+      var html = '<div class="check-row check-err" style="font-weight:600">Найдено ошибок: ' + d.total + '</div>';
+      (d.issues || []).forEach(function(i){
+        html += '<div class="check-row">';
+        if (i.kind || i.object) {
+          html += '<div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.04em">' +
+                  (i.kind || '') + (i.object ? ' · ' + i.object : '') + '</div>';
+        }
+        html += '<div style="color:#c00">' + escapeHtml(i.message) + '</div>';
+        if (i.file) {
+          html += '<div style="font-size:10px;color:#aaa;font-family:Consolas,monospace">' + i.file +
+                  (i.line ? ':' + i.line : '') + '</div>';
+        }
+        html += '</div>';
+      });
+      body.innerHTML = html;
+    })
+    .catch(function(e){
+      btn.disabled = false;
+      btn.textContent = 'Проверить конфигурацию';
+      body.innerHTML = '<div class="check-row check-err">⚠ ' + e.message + '</div>';
+    });
+}
+
+function closeCheckAll() {
+  document.getElementById('check-all-panel').style.display = 'none';
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+
 // ── Form field reorder ──────────────────────────────────────────
 function moveUp(btn){var row=btn.closest('.form-field-row'),prev=row.previousElementSibling;if(prev&&prev.classList.contains('form-field-row'))row.parentNode.insertBefore(row,prev);}
 function moveDown(btn){var row=btn.closest('.form-field-row'),next=row.nextElementSibling;if(next&&next.classList.contains('form-field-row'))row.parentNode.insertBefore(next,row);}
@@ -2632,9 +2745,18 @@ const cfgTabTree = `{{define "tab-tree"}}
     </form>
   </div>
   <div style="margin-top:12px;padding:8px 12px;border-top:1px solid #d8dde8">
+    <button onclick="runCheckAll()" id="btn-check-all" style="width:100%;padding:7px 10px;background:#fff;border:1px solid #1a4a80;color:#1a4a80;border-radius:4px;cursor:pointer;font-size:12px;margin-bottom:6px">Проверить конфигурацию</button>
     <button onclick="runMigrate()" id="btn-migrate" style="width:100%;padding:7px 10px;background:#1a4a80;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px">Обновить БД</button>
     <div id="migrate-result" style="display:none;margin-top:6px;font-size:11px;padding:6px;border-radius:3px;max-height:120px;overflow-y:auto"></div>
   </div>
+</div>
+
+<div id="check-all-panel">
+  <header>
+    <span>Проверка конфигурации</span>
+    <button type="button" onclick="closeCheckAll()" title="Закрыть">✕</button>
+  </header>
+  <div id="check-all-body"></div>
 </div>
 
 {{/* ── Right panel ── */}}
@@ -2851,6 +2973,8 @@ const cfgTabTree = `{{define "tab-tree"}}
       </div>
       <div class="module-save-row">
         <button class="btn-save" type="submit">Сохранить</button>
+        <button type="button" class="btn-check" onclick="runCheck('dsl','repchart-{{.Name}}','{{.Name}}')">Проверить</button>
+        <span class="check-result" id="check-repchart-{{.Name}}"></span>
         {{if and $.FieldsSaved (eq $.FieldsSavedEntity .Name)}}<span class="save-ok">✓ Сохранено</span>{{end}}
       </div>
     </form>
@@ -2876,6 +3000,8 @@ const cfgTabTree = `{{define "tab-tree"}}
       </div>
       <div class="module-save-row">
         <button class="btn-save" type="submit">Сохранить</button>
+        <button type="button" class="btn-check" onclick="runCheck('dsl','mod-{{$mn}}','{{$mn}}')">Проверить</button>
+        <span class="check-result" id="check-mod-{{$mn}}"></span>
         {{if and $.ModuleSaved (eq $.ModuleSavedEntity .Name)}}<span class="save-ok">✓ Сохранено</span>{{end}}
       </div>
     </form>
@@ -2924,6 +3050,8 @@ const cfgTabTree = `{{define "tab-tree"}}
       </div>
       <div class="module-save-row">
         <button class="btn-save" type="submit">Сохранить</button>
+        <button type="button" class="btn-check" onclick="runCheck('dsl','proc-{{$pn}}','{{$pn}}')">Проверить</button>
+        <span class="check-result" id="check-proc-{{$pn}}"></span>
         {{if and $.FieldsSaved (eq $.FieldsSavedEntity .Name)}}<span class="save-ok">✓ Сохранено</span>{{end}}
       </div>
     </form>
@@ -2970,6 +3098,8 @@ const cfgTabTree = `{{define "tab-tree"}}
       </div>
       <div class="module-save-row">
         <button class="btn-save" type="submit">Сохранить</button>
+        <button type="button" class="btn-check" onclick="runCheck('dsl','dpf-{{.Name}}','{{.Name}}')">Проверить</button>
+        <span class="check-result" id="check-dpf-{{.Name}}"></span>
         {{if and $.FieldsSaved (eq $.FieldsSavedEntity .Name)}}<span class="save-ok">✓ Сохранено</span>{{end}}
       </div>
     </form>
@@ -3160,10 +3290,12 @@ const cfgTabTree = `{{define "tab-tree"}}
         Шаблоны параметров записывайте как <code>&#123;&#123;today|start_of_month&#125;&#125;</code> или <code>&#123;&#123;today|minus_days:30&#125;&#125;</code>.
       </div>
       <div class="code-wrap">
-        <textarea name="yaml" style="width:100%;min-height:380px;font-family:Consolas,monospace;font-size:12px;border:1px solid #ccd0d8;border-radius:4px;padding:8px;tab-size:2">{{.YAML}}</textarea>
+        <textarea name="yaml" id="ta-wdg-{{.Name}}" style="width:100%;min-height:380px;font-family:Consolas,monospace;font-size:12px;border:1px solid #ccd0d8;border-radius:4px;padding:8px;tab-size:2">{{.YAML}}</textarea>
       </div>
       <div class="module-save-row">
         <button class="btn-save" type="submit">Сохранить</button>
+        <button type="button" class="btn-check" onclick="runCheck('widget','wdg-{{.Name}}','{{.Name}}')">Проверить</button>
+        <span class="check-result" id="check-wdg-{{.Name}}"></span>
         {{if and $.FieldsSaved (eq $.FieldsSavedEntity .Name)}}<span class="save-ok">✓ Сохранено</span>{{end}}
       </div>
     </form>
@@ -3184,7 +3316,7 @@ const cfgTabTree = `{{define "tab-tree"}}
         Если файл пуст, на главной показываются все зарегистрированные виджеты в порядке загрузки.
       </div>
       <div class="code-wrap">
-        <textarea name="yaml" style="width:100%;min-height:300px;font-family:Consolas,monospace;font-size:12px;border:1px solid #ccd0d8;border-radius:4px;padding:8px;tab-size:2">{{.HomePageYAML}}</textarea>
+        <textarea name="yaml" id="ta-home-page" style="width:100%;min-height:300px;font-family:Consolas,monospace;font-size:12px;border:1px solid #ccd0d8;border-radius:4px;padding:8px;tab-size:2">{{.HomePageYAML}}</textarea>
       </div>
       <div style="font-size:11px;color:#94a3b8;margin-top:6px">
         Доступные виджеты:
@@ -3193,6 +3325,8 @@ const cfgTabTree = `{{define "tab-tree"}}
       </div>
       <div class="module-save-row">
         <button class="btn-save" type="submit">Сохранить</button>
+        <button type="button" class="btn-check" onclick="runCheck('home_page','home-page','home_page')">Проверить</button>
+        <span class="check-result" id="check-home-page"></span>
         {{if and .FieldsSaved (eq .FieldsSavedEntity "home-page")}}<span class="save-ok">✓ Сохранено</span>{{end}}
       </div>
     </form>
@@ -3236,6 +3370,8 @@ const cfgTabTree = `{{define "tab-tree"}}
       </div>
       <div class="module-save-row">
         <button class="btn-save" type="submit">Сохранить</button>
+        <button type="button" class="btn-check" onclick="runCheck('dsl','{{$e.Name}}','{{$e.Name}}')">Проверить</button>
+        <span class="check-result" id="check-{{$e.Name}}"></span>
         <span class="edit-hint">✎ кликните на код для редактирования</span>
         {{if and $.ModuleSaved (eq $.ModuleSavedEntity $e.Name)}}<span class="save-ok">✓ Сохранено</span>{{end}}
       </div>
@@ -3257,6 +3393,8 @@ const cfgTabTree = `{{define "tab-tree"}}
       </div>
       <div class="module-save-row">
         <button class="btn-save" type="submit">Сохранить</button>
+        <button type="button" class="btn-check" onclick="runCheck('dsl','post-{{$e.Name}}','{{$e.Name}}-ОбработкаПроведения')">Проверить</button>
+        <span class="check-result" id="check-post-{{$e.Name}}"></span>
         <span class="edit-hint">✎ кликните на код для редактирования</span>
         {{if and $.ModuleSaved (eq $.ModuleSavedEntity $e.Name)}}<span class="save-ok">✓ Сохранено</span>{{end}}
       </div>

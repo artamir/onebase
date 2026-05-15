@@ -113,6 +113,8 @@ func (s *Server) ListenAndServe() error {
 		r.Post("/bases/{id}/configurator/widget", s.h.configuratorSaveWidget)
 		r.Post("/bases/{id}/configurator/widget-delete", s.h.configuratorDeleteWidget)
 		r.Post("/bases/{id}/configurator/home-page", s.h.configuratorSaveHomePage)
+		r.Post("/bases/{id}/configurator/check", s.h.configuratorCheck)
+		r.Post("/bases/{id}/configurator/check-all", s.h.configuratorCheckAll)
 		r.Post("/bases/{id}/configurator/migrate", s.h.configuratorMigrate)
 			r.Get("/bases/{id}/configurator/config/export-zip", s.h.configExportZip)
 			r.Post("/bases/{id}/configurator/config/import-zip", s.h.configImportZip)
