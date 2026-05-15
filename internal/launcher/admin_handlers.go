@@ -1,7 +1,6 @@
 package launcher
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -278,32 +277,26 @@ func (h *handler) cfgAdminAbout(w http.ResponseWriter, r *http.Request) {
 		Logo    string `yaml:"logo"`
 	}
 	var cfg appCfg
-	if b.ConfigSource == "file" && b.Path != "" {
+	if b.ConfigSource == "database" {
+		db, dbErr := OpenDB(r.Context(), b)
+		if dbErr == nil {
+			defer db.Close()
+			var content []byte
+			if qrErr := db.QueryRow(r.Context(), `SELECT content FROM _onebase_config WHERE path = $1`, "config/app.yaml").Scan(&content); qrErr == nil {
+				yaml.Unmarshal(content, &cfg)
+			}
+		}
+	} else if b.Path != "" {
 		data, err := os.ReadFile(filepath.Join(b.Path, "config", "app.yaml"))
 		if err == nil {
 			yaml.Unmarshal(data, &cfg)
 		}
 	}
 
-	logoHTML := `<div style="font-size:32px;margin-bottom:8px">&#9889;</div>`
-	if cfg.Logo != "" && b.Path != "" {
-		logoPath := filepath.Join(b.Path, cfg.Logo)
-		if logoData, err := os.ReadFile(logoPath); err == nil {
-			ext := strings.ToLower(filepath.Ext(logoPath))
-			mime := "image/png"
-			switch ext {
-			case ".svg":
-				mime = "image/svg+xml"
-			case ".jpg", ".jpeg":
-				mime = "image/jpeg"
-			case ".gif":
-				mime = "image/gif"
-			case ".webp":
-				mime = "image/webp"
-			}
-			logoHTML = fmt.Sprintf(`<img src="data:%s;base64,%s" alt="Logo" style="max-height:80px;max-width:200px">`,
-				mime, base64.StdEncoding.EncodeToString(logoData))
-		}
+	// Load logo — use endpoint URL so it works for both file and database sources
+	logoHTML := `<div style="font-size:48px;margin-bottom:8px">&#9889;</div>`
+	if cfg.Logo != "" {
+		logoHTML = fmt.Sprintf(`<img src="/bases/%s/configurator/logo" alt="Logo" style="max-height:140px;max-width:300px">`, b.ID)
 	}
 
 	cfgRows := ""
@@ -335,6 +328,84 @@ func (h *handler) cfgAdminAbout(w http.ResponseWriter, r *http.Request) {
 		b.Port)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(html))
+}
+
+func (h *handler) configuratorLogo(w http.ResponseWriter, r *http.Request) {
+	b, err := h.store.Get(chi.URLParam(r, "id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Load app config to find logo path
+	type appCfg struct {
+		Logo string `yaml:"logo"`
+	}
+	var cfg appCfg
+	var logoData []byte
+
+	if b.ConfigSource == "database" {
+		db, cerr := OpenDB(r.Context(), b)
+		if cerr != nil {
+			http.NotFound(w, r)
+			return
+		}
+		defer db.Close()
+		// Get app.yaml
+		var content []byte
+		if err := db.QueryRow(r.Context(), `SELECT content FROM _onebase_config WHERE path = $1`, "config/app.yaml").Scan(&content); err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		yaml.Unmarshal(content, &cfg)
+		if cfg.Logo == "" {
+			http.NotFound(w, r)
+			return
+		}
+		// Get logo file
+		if err := db.QueryRow(r.Context(), `SELECT content FROM _onebase_config WHERE path = $1`, cfg.Logo).Scan(&logoData); err != nil {
+			http.NotFound(w, r)
+			return
+		}
+	} else {
+		if b.Path == "" {
+			http.NotFound(w, r)
+			return
+		}
+		data, err := os.ReadFile(filepath.Join(b.Path, "config", "app.yaml"))
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		yaml.Unmarshal(data, &cfg)
+		if cfg.Logo == "" {
+			http.NotFound(w, r)
+			return
+		}
+		logoData, err = os.ReadFile(filepath.Join(b.Path, cfg.Logo))
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+	}
+
+	ext := strings.ToLower(filepath.Ext(cfg.Logo))
+	switch ext {
+	case ".svg":
+		w.Header().Set("Content-Type", "image/svg+xml")
+	case ".png":
+		w.Header().Set("Content-Type", "image/png")
+	case ".jpg", ".jpeg":
+		w.Header().Set("Content-Type", "image/jpeg")
+	case ".gif":
+		w.Header().Set("Content-Type", "image/gif")
+	case ".webp":
+		w.Header().Set("Content-Type", "image/webp")
+	default:
+		w.Header().Set("Content-Type", "application/octet-stream")
+	}
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Write(logoData)
 }
 
 func escHTML(s string) string {

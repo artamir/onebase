@@ -2395,10 +2395,13 @@ func (h *handler) configuratorSaveApp(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	r.ParseForm()
+	// Parse multipart form (up to 2MB for logo)
+	r.ParseMultipartForm(2 << 20)
 	newName := strings.TrimSpace(r.FormValue("app_name"))
 	newVersion := strings.TrimSpace(r.FormValue("app_version"))
-	newLogo := strings.TrimSpace(r.FormValue("app_logo"))
+	existingLogo := strings.TrimSpace(r.FormValue("app_logo_existing"))
+	removeLogo := r.FormValue("app_logo_remove") == "1"
+
 	if newName == "" {
 		data := h.loadCfgData(r.Context(), b, "tree")
 		data.Error = "Имя конфигурации не может быть пустым"
@@ -2406,12 +2409,73 @@ func (h *handler) configuratorSaveApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Determine logo path
+	logoPath := existingLogo
+	if removeLogo {
+		logoPath = ""
+	}
+
+	// Handle uploaded logo file
+	file, header, ferr := r.FormFile("app_logo_file")
+	if ferr == nil {
+		defer file.Close()
+		// Read file content
+		logoData, rerr := io.ReadAll(file)
+		if rerr != nil {
+			data := h.loadCfgData(r.Context(), b, "tree")
+			data.Error = "Ошибка чтения логотипа: " + rerr.Error()
+			renderCfg(w, data)
+			return
+		}
+		if len(logoData) > 2<<20 {
+			data := h.loadCfgData(r.Context(), b, "tree")
+			data.Error = "Логотип слишком большой (максимум 2 МБ)"
+			renderCfg(w, data)
+			return
+		}
+		// Determine storage path
+		ext := strings.ToLower(filepath.Ext(header.Filename))
+		if ext == "" {
+			ext = ".png"
+		}
+		logoPath = "config/logo" + ext
+
+		// Save logo file
+		if b.ConfigSource == "database" {
+			db, cerr := OpenDB(r.Context(), b)
+			if cerr == nil {
+				defer db.Close()
+				db.Exec(r.Context(), `
+					INSERT INTO _onebase_config (path, content, updated_at)
+					VALUES ($1, $2, now())
+					ON CONFLICT (path) DO UPDATE SET content=EXCLUDED.content, updated_at=now()
+				`, logoPath, logoData)
+			}
+		} else {
+			os.MkdirAll(filepath.Join(b.Path, "config"), 0o755)
+			os.WriteFile(filepath.Join(b.Path, logoPath), logoData, 0o644)
+		}
+	}
+
+	// Remove old logo file if changed
+	if removeLogo && existingLogo != "" {
+		if b.ConfigSource == "database" {
+			db, cerr := OpenDB(r.Context(), b)
+			if cerr == nil {
+				defer db.Close()
+				db.Exec(r.Context(), `DELETE FROM _onebase_config WHERE path = $1`, existingLogo)
+			}
+		} else {
+			os.Remove(filepath.Join(b.Path, existingLogo))
+		}
+	}
+
 	type saveAppConfig struct {
 		Name    string `yaml:"name"`
 		Version string `yaml:"version,omitempty"`
 		Logo    string `yaml:"logo,omitempty"`
 	}
-	out, _ := yaml.Marshal(saveAppConfig{Name: newName, Version: newVersion, Logo: newLogo})
+	out, _ := yaml.Marshal(saveAppConfig{Name: newName, Version: newVersion, Logo: logoPath})
 
 	var saveErr error
 	if b.ConfigSource == "database" {

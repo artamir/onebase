@@ -516,6 +516,26 @@ function cfgNewPrintFormShow() {
   document.getElementById('cfg-new-pf-name').focus();
 }
 
+// ── Logo upload helpers ──────────────────────────────────────────
+function previewLogo(input) {
+  if (input.files && input.files[0]) {
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var img = document.getElementById('logo-preview');
+      img.src = e.target.result;
+      img.style.display = '';
+    };
+    reader.readAsDataURL(input.files[0]);
+  }
+}
+function removeLogo() {
+  var img = document.getElementById('logo-preview');
+  if (img) { img.src = ''; img.style.display = 'none'; }
+  document.getElementById('logo-remove').value = '1';
+  var fileInput = document.querySelector('input[name="app_logo_file"]');
+  if (fileInput) fileInput.value = '';
+}
+
 // ── Reference picker toggle ────────────────────────────────────
 function cfgToggleRef(sel, refId) {
   var r = document.getElementById(refId);
@@ -2636,7 +2656,7 @@ const cfgTabTree = `{{define "tab-tree"}}
   <div class="cfg-panel" id="panel-app">
     <div class="panel-title">⚙ Конфигурация</div>
     <div class="panel-kind">Общие параметры приложения</div>
-    <form method="POST" action="/bases/{{.Base.ID}}/configurator/app" style="margin-top:12px">
+    <form method="POST" action="/bases/{{.Base.ID}}/configurator/app" enctype="multipart/form-data" style="margin-top:12px">
       <div class="fg">
         <label>Название конфигурации</label>
         <input type="text" name="app_name" value="{{.AppName}}" placeholder="Моя конфигурация" autofocus>
@@ -2648,8 +2668,19 @@ const cfgTabTree = `{{define "tab-tree"}}
       </div>
       <div class="fg" style="margin-top:10px">
         <label>Логотип</label>
-        <input type="text" name="app_logo" value="{{.AppLogo}}" placeholder="config/logo.png">
-        <div class="hint">Путь к файлу (PNG, SVG, JPG) относительно папки конфигурации</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
+          <img id="logo-preview" src="{{if .AppLogo}}/bases/{{.Base.ID}}/configurator/logo{{end}}" style="max-height:48px;max-width:120px;border:1px solid #e2e8f0;border-radius:4px;padding:2px;{{if not .AppLogo}}display:none{{end}}">
+          <div>
+            <label class="btn-save" style="cursor:pointer;display:inline-block;padding:4px 12px;font-size:12px">
+              Загрузить
+              <input type="file" name="app_logo_file" accept="image/*" style="display:none" onchange="previewLogo(this)">
+            </label>
+            {{if .AppLogo}}<button type="button" onclick="removeLogo()" style="margin-left:6px;padding:4px 8px;font-size:12px;background:none;border:1px solid #e2e8f0;border-radius:4px;cursor:pointer;color:#ef4444">Удалить</button>{{end}}
+          </div>
+        </div>
+        <input type="hidden" name="app_logo_existing" value="{{.AppLogo}}">
+        <input type="hidden" name="app_logo_remove" id="logo-remove" value="0">
+        <div class="hint">PNG, SVG, JPG — не более 2 МБ</div>
       </div>
       <div class="module-save-row" style="margin-top:12px">
         <button class="btn-save" type="submit">Сохранить</button>

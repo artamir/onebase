@@ -4,7 +4,11 @@ import (
 	"context"
 	"html/template"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/go-chi/chi/v5"
 
@@ -61,6 +65,7 @@ input:focus{border-color:#3070D8;box-shadow:0 0 0 2px rgba(48,112,216,.15)}
 </style></head>
 <body>
 <div class="box">
+  {{if .LogoURL}}<div style="text-align:center;margin-bottom:16px"><img src="{{.LogoURL}}" alt="" style="max-height:80px;max-width:200px"></div>{{end}}
   <h2>Конфигуратор — Вход</h2>
   <div class="sub">Только для администраторов</div>
   {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
@@ -77,7 +82,31 @@ input:focus{border-color:#3070D8;box-shadow:0 0 0 2px rgba(48,112,216,.15)}
 
 func (h *handler) cfgLoginPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	cfgLoginTmpl.Execute(w, map[string]any{"Error": ""})
+	data := map[string]any{"Error": "", "LogoURL": ""}
+	id := chi.URLParam(r, "id")
+	if b, err := h.store.Get(id); err == nil {
+		type appCfg struct {
+			Logo string `yaml:"logo"`
+		}
+		var cfg appCfg
+		if b.ConfigSource == "database" {
+			if db, dbErr := OpenDB(r.Context(), b); dbErr == nil {
+				defer db.Close()
+				var content []byte
+				if qErr := db.QueryRow(r.Context(), "SELECT content FROM _onebase_config WHERE path = $1", "config/app.yaml").Scan(&content); qErr == nil {
+					yaml.Unmarshal(content, &cfg)
+				}
+			}
+		} else if b.Path != "" {
+			if raw, rErr := os.ReadFile(filepath.Join(b.Path, "config", "app.yaml")); rErr == nil {
+				yaml.Unmarshal(raw, &cfg)
+			}
+		}
+		if cfg.Logo != "" {
+			data["LogoURL"] = "/bases/" + b.ID + "/configurator/logo"
+		}
+	}
+	cfgLoginTmpl.Execute(w, data)
 }
 
 func (h *handler) cfgLoginSubmit(w http.ResponseWriter, r *http.Request) {
