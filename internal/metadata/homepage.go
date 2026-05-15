@@ -1,0 +1,70 @@
+package metadata
+
+import (
+	"fmt"
+	"os"
+
+	"gopkg.in/yaml.v3"
+)
+
+// HomePageWidget is a single widget reference inside the home page layout.
+type HomePageWidget struct {
+	Name string `yaml:"name"`
+	Span int    `yaml:"span"` // for layout=grid, default 1; chart-row widgets often span 3
+}
+
+// HomePageRow groups widgets that should render side-by-side.
+type HomePageRow struct {
+	Widgets []string `yaml:"widgets"`
+}
+
+// HomePage describes the dashboard layout for /ui/.
+type HomePage struct {
+	Title   string           `yaml:"title"`
+	Layout  string           `yaml:"layout"` // grid | rows (default rows)
+	Rows    []HomePageRow    `yaml:"rows"`
+	Widgets []HomePageWidget `yaml:"widgets"` // flat list, used when layout=grid
+}
+
+// LoadHomePage reads config/home_page.yaml. Returns nil, nil when file does not exist —
+// caller is expected to fall back to a default page in that case.
+func LoadHomePage(path string) (*HomePage, error) {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var hp HomePage
+	if err := yaml.Unmarshal(data, &hp); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if hp.Title == "" {
+		hp.Title = "Главная"
+	}
+	if hp.Layout == "" {
+		if len(hp.Widgets) > 0 {
+			hp.Layout = "grid"
+		} else {
+			hp.Layout = "rows"
+		}
+	}
+	return &hp, nil
+}
+
+// WidgetNames returns every widget name referenced by the page in the order it
+// would be rendered.
+func (h *HomePage) WidgetNames() []string {
+	if h == nil {
+		return nil
+	}
+	var out []string
+	for _, r := range h.Rows {
+		out = append(out, r.Widgets...)
+	}
+	for _, w := range h.Widgets {
+		out = append(out, w.Name)
+	}
+	return out
+}

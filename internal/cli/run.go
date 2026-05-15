@@ -154,6 +154,8 @@ func runServer(cmd *cobra.Command, _ []string) error {
 	reg.LoadSubsystems(proj.Subsystems)
 	reg.LoadJournals(proj.Journals)
 	reg.LoadAccountRegisters(proj.AccountRegisters, proj.ChartsOfAccounts)
+	reg.LoadWidgets(proj.Widgets)
+	reg.LoadHomePage(proj.HomePage)
 
 	appCfg, _ := project.LoadConfig(proj.Dir)
 	uiCfg := ui.Config{

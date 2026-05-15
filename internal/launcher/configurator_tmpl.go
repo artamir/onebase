@@ -494,7 +494,7 @@ const cfgFoot = `{{define "cfg-foot"}}
 </div>
 <script>
 // ── New object form ────────────────────────────────────────────
-var _cfgNewTitles = {catalog:'Новый справочник', document:'Новый документ', register:'Новый регистр', inforeg:'Новый регистр сведений', enum:'Новое перечисление', subsystem:'Новая подсистема'};
+var _cfgNewTitles = {catalog:'Новый справочник', document:'Новый документ', register:'Новый регистр', inforeg:'Новый регистр сведений', enum:'Новое перечисление', subsystem:'Новая подсистема', widget:'Новый виджет'};
 function cfgNewObj(kind) {
   if (kind === 'printform') { cfgNewPrintFormShow(); return; }
   var f = document.getElementById('cfg-new-form');
@@ -2496,6 +2496,9 @@ const cfgTabTree = `{{define "tab-tree"}}
   <div class="cfg-item" data-id="panel-app" onclick="selItem(this)">
     <span class="ic">⚙</span>{{if .AppName}}{{.AppName}}{{else}}Без названия{{end}}{{if .ConfigDirty}}<span class="cfg-dirty" title="Конфигурация на диске изменилась с момента запуска базы. Перезапустите базу, чтобы изменения применились.">*</span>{{end}}
   </div>
+  <div class="cfg-item" data-id="home-page" onclick="selItem(this)">
+    <span class="ic">🏠</span>Главная страница
+  </div>
 
   <details open class="cfg-tree"><summary class="cfg-group cfg-group-hd"><span>Справочники</span><span class="cfg-add-btn" onclick="event.stopPropagation();cfgNewObj('catalog')" title="Добавить справочник">+</span></summary>
   {{range .Catalogs}}
@@ -2591,6 +2594,14 @@ const cfgTabTree = `{{define "tab-tree"}}
   {{range .Subsystems}}
   <div class="cfg-item" data-id="sub-{{.Name}}" onclick="selItem(this)">
     <span class="ic">🗂</span>{{.Title}}
+  </div>
+  {{end}}
+  </details>
+
+  <details open class="cfg-tree"><summary class="cfg-group cfg-group-hd"><span>Виджеты</span><span class="cfg-add-btn" onclick="event.stopPropagation();cfgNewObj('widget')" title="Добавить виджет">+</span></summary>
+  {{range .Widgets}}
+  <div class="cfg-item" data-id="wdg-{{.Name}}" onclick="selItem(this)">
+    <span class="ic">📊</span>{{if .Title}}{{.Title}}{{else}}{{.Name}}{{end}}<span style="color:#aaa;font-size:10px;margin-left:4px">[{{.Type}}]</span>
   </div>
   {{end}}
   </details>
@@ -3136,6 +3147,56 @@ const cfgTabTree = `{{define "tab-tree"}}
     </form>
   </div>
   {{end}}
+
+  {{/* Widgets */}}
+  {{range .Widgets}}
+  <div class="cfg-panel" id="wdg-{{.Name}}">
+    <div class="panel-title">📊 {{if .Title}}{{.Title}}{{else}}{{.Name}}{{end}}</div>
+    <div class="panel-kind">Виджет дашборда · тип <b>{{.Type}}</b></div>
+    <form method="POST" action="/bases/{{$.Base.ID}}/configurator/widget">
+      <input type="hidden" name="widget_name" value="{{.Name}}">
+      <div style="font-size:12px;color:#64748b;margin:6px 0">
+        Поля виджета: <code>name</code>, <code>type</code> (kpi/list/chart/actions/recent), <code>title</code>, <code>query</code>, <code>params</code>.
+        Шаблоны параметров записывайте как <code>&#123;&#123;today|start_of_month&#125;&#125;</code> или <code>&#123;&#123;today|minus_days:30&#125;&#125;</code>.
+      </div>
+      <div class="code-wrap">
+        <textarea name="yaml" style="width:100%;min-height:380px;font-family:Consolas,monospace;font-size:12px;border:1px solid #ccd0d8;border-radius:4px;padding:8px;tab-size:2">{{.YAML}}</textarea>
+      </div>
+      <div class="module-save-row">
+        <button class="btn-save" type="submit">Сохранить</button>
+        {{if and $.FieldsSaved (eq $.FieldsSavedEntity .Name)}}<span class="save-ok">✓ Сохранено</span>{{end}}
+      </div>
+    </form>
+    <form method="POST" action="/bases/{{$.Base.ID}}/configurator/widget-delete" style="margin-top:8px" onsubmit="return confirm('Удалить виджет {{.Name}}?')">
+      <input type="hidden" name="widget_name" value="{{.Name}}">
+      <button type="submit" style="background:none;border:1px solid #d8dde8;color:#c00;padding:4px 10px;font-size:11px;border-radius:3px;cursor:pointer">Удалить виджет</button>
+    </form>
+  </div>
+  {{end}}
+
+  {{/* Home page */}}
+  <div class="cfg-panel" id="home-page">
+    <div class="panel-title">🏠 Главная страница</div>
+    <div class="panel-kind">Раскладка стартового дашборда (<code>config/home_page.yaml</code>)</div>
+    <form method="POST" action="/bases/{{.Base.ID}}/configurator/home-page">
+      <div style="font-size:12px;color:#64748b;margin:6px 0">
+        Опишите порядок и группировку виджетов. Поля: <code>title</code>, <code>layout</code> (<code>rows</code> или <code>grid</code>), <code>rows[].widgets</code>.
+        Если файл пуст, на главной показываются все зарегистрированные виджеты в порядке загрузки.
+      </div>
+      <div class="code-wrap">
+        <textarea name="yaml" style="width:100%;min-height:300px;font-family:Consolas,monospace;font-size:12px;border:1px solid #ccd0d8;border-radius:4px;padding:8px;tab-size:2">{{.HomePageYAML}}</textarea>
+      </div>
+      <div style="font-size:11px;color:#94a3b8;margin-top:6px">
+        Доступные виджеты:
+        {{range $i, $w := .Widgets}}{{if $i}}, {{end}}<code>{{$w.Name}}</code>{{end}}
+        {{if not .Widgets}}<i>пока ни одного — создайте через «+» в дереве «Виджеты»</i>{{end}}
+      </div>
+      <div class="module-save-row">
+        <button class="btn-save" type="submit">Сохранить</button>
+        {{if and .FieldsSaved (eq .FieldsSavedEntity "home-page")}}<span class="save-ok">✓ Сохранено</span>{{end}}
+      </div>
+    </form>
+  </div>
 
 </div>{{/* cfg-right */}}
 </div>{{/* cfg-split */}}

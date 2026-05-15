@@ -227,6 +227,13 @@ func resolveParamTemplates(params map[string]any) map[string]any {
 	return resolveParamTemplatesAt(params, time.Now())
 }
 
+// ResolveParamTemplates is the exported entry point used by other subsystems
+// (widgets, ad-hoc query callers) that need the same {{today|...}} grammar
+// as scheduled jobs.
+func ResolveParamTemplates(params map[string]any) map[string]any {
+	return resolveParamTemplatesAt(params, time.Now())
+}
+
 func resolveParamTemplatesAt(params map[string]any, now time.Time) map[string]any {
 	if len(params) == 0 {
 		return params

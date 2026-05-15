@@ -39,6 +39,8 @@ type Project struct {
 	ScheduledJobs    []*metadata.ScheduledJob
 	ChartsOfAccounts []*metadata.ChartOfAccounts
 	AccountRegisters []*metadata.AccountRegister
+	Widgets          []*metadata.Widget
+	HomePage         *metadata.HomePage
 	cleanup          func()
 }
 
@@ -149,7 +151,31 @@ func Load(dir string) (*Project, error) {
 	if err := p.loadAccountRegs(); err != nil {
 		return nil, err
 	}
+	if err := p.loadWidgets(); err != nil {
+		return nil, err
+	}
+	if err := p.loadHomePage(); err != nil {
+		return nil, err
+	}
 	return p, nil
+}
+
+func (p *Project) loadWidgets() error {
+	widgets, err := metadata.LoadWidgetDir(filepath.Join(p.Dir, "widgets"))
+	if err != nil {
+		return fmt.Errorf("project: load widgets: %w", err)
+	}
+	p.Widgets = widgets
+	return nil
+}
+
+func (p *Project) loadHomePage() error {
+	hp, err := metadata.LoadHomePage(filepath.Join(p.Dir, "config", "home_page.yaml"))
+	if err != nil {
+		return fmt.Errorf("project: load home_page: %w", err)
+	}
+	p.HomePage = hp
+	return nil
 }
 
 func (p *Project) loadProcessors() error {

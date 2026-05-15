@@ -117,6 +117,16 @@ type cfgReport struct {
 	Params      []cfgParam
 }
 
+// cfgWidget is the configurator-side projection of a dashboard widget. We keep
+// the raw YAML alongside parsed fields so the editor can show "источник YAML"
+// straight away without re-marshalling.
+type cfgWidget struct {
+	Name    string
+	Type    string
+	Title   string
+	YAML    string
+}
+
 type cfgModule struct {
 	Name   string
 	Source string
@@ -181,6 +191,8 @@ type configuratorData struct {
 	PrintForms    []cfgPrintForm
 	DSLPrintForms []cfgDSLPrintForm
 	Subsystems []cfgSubsystem
+	Widgets    []cfgWidget
+	HomePageYAML string
 	Error     string
 	// all entity names for reference picker
 	AllEntityNames []string
@@ -582,6 +594,26 @@ func (h *handler) loadCfgData(ctx context.Context, b *Base, tab string) *configu
 		})
 	}
 
+	// Widgets + home page
+	widgetSources := readWidgetSources(proj.Dir)
+	for _, wMeta := range proj.Widgets {
+		yamlText, ok := widgetSources[wMeta.Name]
+		if !ok {
+			// Fallback: re-marshal from parsed metadata so the editor still
+			// shows something even when the source file was lost.
+			b, _ := yaml.Marshal(wMeta)
+			yamlText = string(b)
+		}
+		data.Widgets = append(data.Widgets, cfgWidget{
+			Name:  wMeta.Name,
+			Type:  string(wMeta.Type),
+			Title: wMeta.Title,
+			YAML:  yamlText,
+		})
+	}
+	sort.Slice(data.Widgets, func(i, j int) bool { return data.Widgets[i].Name < data.Widgets[j].Name })
+	data.HomePageYAML = readHomePageYAML(proj.Dir)
+
 	// Generate query builder schema
 	data.QBSchema = buildQBSchema(data)
 
@@ -808,6 +840,47 @@ func readReportSources(dir string) map[string]string {
 		result[base] = string(raw)
 	}
 	return result
+}
+
+// readWidgetSources reads widgets/*.yaml from the exported project dir and maps
+// raw YAML content by widget name (extracted from the "name:" key, falling back
+// to the file's basename). This lets the configurator show the source text in
+// the editor without re-marshalling parsed metadata.
+func readWidgetSources(dir string) map[string]string {
+	result := make(map[string]string)
+	entries, err := os.ReadDir(filepath.Join(dir, "widgets"))
+	if err != nil {
+		return result
+	}
+	type nameOnly struct {
+		Name string `yaml:"name"`
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".yaml") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, "widgets", e.Name()))
+		if err != nil {
+			continue
+		}
+		var no nameOnly
+		key := strings.TrimSuffix(e.Name(), ".yaml")
+		if yaml.Unmarshal(raw, &no) == nil && no.Name != "" {
+			key = no.Name
+		}
+		result[key] = string(raw)
+	}
+	return result
+}
+
+// readHomePageYAML reads config/home_page.yaml verbatim. Empty string when the
+// file is missing — caller decides whether to show a placeholder.
+func readHomePageYAML(dir string) string {
+	raw, err := os.ReadFile(filepath.Join(dir, "config", "home_page.yaml"))
+	if err != nil {
+		return ""
+	}
+	return string(raw)
 }
 
 func readModuleAndProcSources(dir string) (moduleSources, procSources map[string]string) {
@@ -1638,6 +1711,8 @@ func newObjectContent(kind, name string) (subdir, content string) {
 		return "enums", "name: " + name + "\nvalues:\n  - Значение1\n  - Значение2\n"
 	case "subsystem":
 		return "subsystems", "name: " + name + "\ntitle: " + name + "\norder: 10\ncontents:\n  catalogs: []\n  documents: []\n  registers: []\n"
+	case "widget":
+		return "widgets", "name: " + name + "\ntype: kpi\ntitle: " + name + "\nformat: number\nquery: |\n  ВЫБРАТЬ КОЛИЧЕСТВО(*) КАК Значение ИЗ Документ.ИмяДокумента\n"
 	}
 	return "", ""
 }

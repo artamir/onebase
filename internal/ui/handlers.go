@@ -28,6 +28,7 @@ import (
 	reportpkg "github.com/ivantit66/onebase/internal/report"
 	"github.com/ivantit66/onebase/internal/runtime"
 	"github.com/ivantit66/onebase/internal/storage"
+	"github.com/ivantit66/onebase/internal/widget"
 )
 
 func (s *Server) about(w http.ResponseWriter, r *http.Request) {
@@ -79,7 +80,86 @@ func (s *Server) logo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) index(w http.ResponseWriter, r *http.Request) {
-	s.render(w, r, "page-index", map[string]any{})
+	hp := s.reg.HomePage()
+	widgets, defaulted := homePageWidgets(hp, s.reg)
+
+	login := ""
+	if u := auth.UserFromContext(r.Context()); u != nil {
+		login = u.Login
+	}
+	runner := widget.New(s.reg, s.store)
+	runner.CurrentUser = login
+	runner.Cache = s.widgetCache
+
+	results := make([]widget.Result, 0, len(widgets))
+	for _, wMeta := range widgets {
+		if wMeta.Type == "missing" {
+			results = append(results, widget.Result{
+				Name:  wMeta.Name,
+				Title: wMeta.Title,
+				Error: "виджет не найден: " + wMeta.Name,
+			})
+			continue
+		}
+		results = append(results, runner.Run(r.Context(), wMeta))
+	}
+
+	title := "Главная"
+	layout := "rows"
+	if hp != nil {
+		if hp.Title != "" {
+			title = hp.Title
+		}
+		if hp.Layout != "" {
+			layout = hp.Layout
+		}
+	}
+
+	s.render(w, r, "page-index", map[string]any{
+		"HomeTitle":     title,
+		"HomeLayout":    layout,
+		"WidgetResults": results,
+		"DefaultedHome": defaulted,
+	})
+}
+
+// homePageWidgets resolves the dashboard layout into a flat ordered list of
+// widget metadata. Behaviour:
+//   - With a configured HomePage: use its rows/widgets order. Unknown names
+//     become a synthetic "widget not found" entry so the dashboard still
+//     renders and the user can spot the typo.
+//   - Without a HomePage but with registered widgets: show them in load order.
+//   - Otherwise: synthesize a transient "recent" widget so a fresh install
+//     never lands on a blank page.
+func homePageWidgets(hp *metadata.HomePage, reg *runtime.Registry) ([]*metadata.Widget, bool) {
+	if hp != nil {
+		names := hp.WidgetNames()
+		if len(names) > 0 {
+			out := make([]*metadata.Widget, 0, len(names))
+			for _, n := range names {
+				if w := reg.GetWidget(n); w != nil {
+					out = append(out, w)
+				} else {
+					out = append(out, &metadata.Widget{
+						Name:  n,
+						Type:  "missing",
+						Title: n,
+					})
+				}
+			}
+			return out, false
+		}
+	}
+	if registered := reg.Widgets(); len(registered) > 0 {
+		return registered, true
+	}
+	return []*metadata.Widget{{
+		Name:  "_default_recent",
+		Type:  metadata.WidgetTypeRecent,
+		Title: "Последние документы",
+		Limit: 10,
+		Scope: "all",
+	}}, true
 }
 
 func (s *Server) list(w http.ResponseWriter, r *http.Request) {

@@ -131,6 +131,8 @@ var tmpl = template.Must(template.New("root").Funcs(template.FuncMap{
 		}
 		return template.JS(b)
 	},
+	"wcell":        widgetCell,
+	"echartsJSON":  echartsJSON,
 }).Parse(tplHead + tplNav + tplIndex + tplList + tplForm + tplRegister + tplReport + tplProcessor + tplAbout + tplDeleteMarked + tplInfoReg + tplConstants + tplHistory + tplJournal + tplScheduled + tplAccountReg + tplQueryBuilder + tplAllFunctions + tplQueryConsole + tplCodeConsole))
 
 const tplHead = `
@@ -312,9 +314,133 @@ const tplNav = `
 const tplIndex = `
 {{define "page-index"}}
 {{template "head" .}}{{template "nav" .}}
-<main><h2>Добро пожаловать</h2>
-<div class="card"><p style="color:#64748b;font-size:15px">Выберите объект в меню слева для просмотра и создания записей.</p></div>
-</main></div></body></html>
+<style>
+.dash{display:flex;flex-direction:column;gap:14px;max-width:1280px}
+.dash-row{display:flex;gap:14px;flex-wrap:wrap}
+.dash-row > *{flex:1 1 220px;min-width:0}
+.dash-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:14px}
+.w-card{background:#fff;border-radius:10px;padding:18px 20px;box-shadow:0 1px 3px rgba(0,0,0,.08);display:flex;flex-direction:column;min-height:120px}
+.w-title{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;font-weight:600;margin-bottom:8px}
+.w-kpi-value{font-size:32px;font-weight:700;color:#0f172a;line-height:1.1}
+.w-kpi-sub{font-size:12px;color:#94a3b8;margin-top:6px}
+.w-list table{margin-top:4px;font-size:13px}
+.w-list th{padding:6px 8px;font-size:11px;color:#64748b;border-bottom:1px solid #e2e8f0;text-align:left;background:transparent}
+.w-list td{padding:6px 8px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#334155}
+.w-list td.right{text-align:right;font-variant-numeric:tabular-nums}
+.w-list tr:last-child td{border-bottom:none}
+.w-chart{min-height:240px}
+.w-chart-canvas{width:100%;height:240px}
+.w-actions-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.w-actions-row a{display:inline-block;padding:7px 14px;border-radius:7px;background:#3b82f6;color:#fff;text-decoration:none;font-size:13px;font-weight:500}
+.w-actions-row a:hover{background:#2563eb}
+.w-recent-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px}
+.w-recent-row:last-child{border-bottom:none}
+.w-recent-row .e{color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.04em;flex-shrink:0;width:120px;overflow:hidden;text-overflow:ellipsis}
+.w-recent-row a{color:#3b82f6;text-decoration:none;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.w-recent-row a:hover{text-decoration:underline}
+.w-recent-row .ts{color:#94a3b8;font-size:11px;flex-shrink:0;font-variant-numeric:tabular-nums}
+.w-error{background:#fef2f2;color:#dc2626;font-size:12px;padding:6px 10px;border-radius:6px;margin-top:6px;font-family:Consolas,monospace}
+.w-empty{color:#94a3b8;font-size:13px;padding:6px 0;font-style:italic}
+.w-default-hint{color:#64748b;font-size:13px;margin:6px 0 14px}
+</style>
+<main>
+  <h2 style="margin-bottom:14px">{{.HomeTitle}}</h2>
+  {{if .DefaultedHome}}<div class="w-default-hint">Стартовая страница не настроена — показаны последние документы из аудита. Создайте <code>config/home_page.yaml</code> и виджеты в <code>widgets/</code>, чтобы оформить дашборд.</div>{{end}}
+  <div class="dash">
+    <div class="dash-row">
+      {{range .WidgetResults}}{{template "widget-card" .}}{{end}}
+    </div>
+  </div>
+</main></div>
+<script>
+window.__obWidgetCharts = window.__obWidgetCharts || {};
+{{range .WidgetResults}}{{if and (eq .Type "chart") .Chart}}window.__obWidgetCharts["{{.Name}}"] = {{echartsJSON .Chart}};
+{{end}}{{end}}
+</script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<script>
+(function(){
+  function initCharts(){
+    if(!window.echarts)return;
+    var nodes=document.querySelectorAll('.w-chart-canvas[data-widget]');
+    for(var i=0;i<nodes.length;i++){
+      var node=nodes[i];
+      var name=node.getAttribute('data-widget');
+      var opt=window.__obWidgetCharts[name];
+      if(!opt)continue;
+      try{
+        var c=echarts.init(node);
+        c.setOption(opt);
+        (function(c){window.addEventListener('resize',function(){c.resize();});})(c);
+      }catch(e){console.error('chart init failed',e);}
+    }
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initCharts);else initCharts();
+})();
+</script>
+</body></html>
+{{end}}
+
+{{define "widget-card"}}
+<div class="w-card">
+  {{if .Title}}<div class="w-title">{{.Title}}</div>{{end}}
+  {{if .Error}}<div class="w-error">{{.Error}}</div>
+  {{else if eq .Type "kpi"}}{{template "widget-kpi-body" .}}
+  {{else if eq .Type "list"}}{{template "widget-list-body" .}}
+  {{else if eq .Type "chart"}}{{template "widget-chart-body" .}}
+  {{else if eq .Type "actions"}}{{template "widget-actions-body" .}}
+  {{else if eq .Type "recent"}}{{template "widget-recent-body" .}}
+  {{end}}
+</div>
+{{end}}
+
+{{define "widget-kpi-body"}}
+  {{if .KPI}}<div class="w-kpi-value">{{.KPI.Display}}</div>{{else}}<div class="w-empty">нет данных</div>{{end}}
+{{end}}
+
+{{define "widget-list-body"}}
+<div class="w-list">
+  {{if .Rows}}
+  <table>
+    <thead><tr>{{range .Columns}}<th{{if eq .Align "right"}} style="text-align:right"{{end}}>{{.Label}}</th>{{end}}</tr></thead>
+    <tbody>
+    {{range .Rows}}
+      {{$row := .}}
+      <tr>
+        {{range $.Columns}}
+        <td{{if eq .Align "right"}} class="right"{{end}}>{{wcell $row .Field .Format}}</td>
+        {{end}}
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}<div class="w-empty">нет данных</div>{{end}}
+</div>
+{{end}}
+
+{{define "widget-chart-body"}}
+<div class="w-chart">
+  {{if .Chart}}<div class="w-chart-canvas" data-widget="{{.Name}}"></div>
+  {{else}}<div class="w-empty">нет данных</div>{{end}}
+</div>
+{{end}}
+
+{{define "widget-actions-body"}}
+<div class="w-actions-row">
+  {{range .Actions}}<a href="{{.URL}}">{{.Label}}</a>{{else}}<div class="w-empty">нет действий</div>{{end}}
+</div>
+{{end}}
+
+{{define "widget-recent-body"}}
+{{if .Rows}}
+  {{range .Rows}}
+  <div class="w-recent-row">
+    <span class="e">{{index . "entity_name"}}</span>
+    <a href="{{index . "_url"}}">{{index . "record_id"}}</a>
+    <span class="ts">{{fmtDate (index . "_ts")}}</span>
+  </div>
+  {{end}}
+{{else}}<div class="w-empty">нет записей</div>{{end}}
 {{end}}
 `
 

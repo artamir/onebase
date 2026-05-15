@@ -13,6 +13,8 @@ import (
 	"github.com/ivantit66/onebase/internal/runtime"
 	"github.com/ivantit66/onebase/internal/scheduler"
 	"github.com/ivantit66/onebase/internal/storage"
+	"github.com/ivantit66/onebase/internal/widget"
+	"time"
 )
 
 // Config holds static info shown in «О программе».
@@ -37,6 +39,7 @@ type Server struct {
 	maxFileSizeBytes int64
 	globalDebug      *debugger.GlobalDebugController
 	messages         *MessageStore
+	widgetCache      *widget.Cache
 }
 
 func New(reg *runtime.Registry, store *storage.DB, interp *interpreter.Interpreter, authRepo *auth.Repo, cfg Config, sched *scheduler.Scheduler) *Server {
@@ -44,7 +47,7 @@ func New(reg *runtime.Registry, store *storage.DB, interp *interpreter.Interpret
 	if maxBytes <= 0 {
 		maxBytes = 50 * 1024 * 1024
 	}
-	s := &Server{reg: reg, store: store, interp: interp, authRepo: authRepo, cfg: cfg, sched: sched, mailer: cfg.Mailer, maxFileSizeBytes: maxBytes, globalDebug: debugger.NewGlobalDebugController(), messages: NewMessageStore()}
+	s := &Server{reg: reg, store: store, interp: interp, authRepo: authRepo, cfg: cfg, sched: sched, mailer: cfg.Mailer, maxFileSizeBytes: maxBytes, globalDebug: debugger.NewGlobalDebugController(), messages: NewMessageStore(), widgetCache: widget.NewCache(60 * time.Second)}
 	if sched != nil {
 		sched.SetMessageSink(func(userID, text string) { s.messages.Push(userID, text) })
 	}
@@ -53,6 +56,10 @@ func New(reg *runtime.Registry, store *storage.DB, interp *interpreter.Interpret
 
 // Messages returns the per-user message store (used to inject Сообщить sink).
 func (s *Server) Messages() *MessageStore { return s.messages }
+
+// InvalidateWidgetCache drops every cached widget result. The dev/reload path
+// calls this so users see fresh data after metadata changes.
+func (s *Server) InvalidateWidgetCache() { s.widgetCache.Invalidate() }
 
 // GlobalDebug returns the global debug controller for the server.
 func (s *Server) GlobalDebug() *debugger.GlobalDebugController { return s.globalDebug }

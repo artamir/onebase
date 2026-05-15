@@ -29,6 +29,9 @@ type Registry struct {
 	journals        map[string]*metadata.Journal
 	accountRegs     map[string]*metadata.AccountRegister
 	chartsOfAccount map[string]*metadata.ChartOfAccounts
+	widgets         map[string]*metadata.Widget // lowercase name → widget
+	widgetOrder     []string                    // preserves load order
+	homePage        *metadata.HomePage
 }
 
 func NewRegistry() *Registry {
@@ -48,7 +51,57 @@ func NewRegistry() *Registry {
 		journals:        make(map[string]*metadata.Journal),
 		accountRegs:     make(map[string]*metadata.AccountRegister),
 		chartsOfAccount: make(map[string]*metadata.ChartOfAccounts),
+		widgets:         make(map[string]*metadata.Widget),
 	}
+}
+
+// LoadWidgets registers dashboard widgets by name (case-insensitive).
+func (r *Registry) LoadWidgets(widgets []*metadata.Widget) {
+	m := make(map[string]*metadata.Widget, len(widgets))
+	order := make([]string, 0, len(widgets))
+	for _, w := range widgets {
+		key := strings.ToLower(w.Name)
+		m[key] = w
+		order = append(order, w.Name)
+	}
+	r.mu.Lock()
+	r.widgets = m
+	r.widgetOrder = order
+	r.mu.Unlock()
+}
+
+// GetWidget returns a widget by name (case-insensitive). nil if not found.
+func (r *Registry) GetWidget(name string) *metadata.Widget {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.widgets[strings.ToLower(name)]
+}
+
+// Widgets returns all registered widgets in load order.
+func (r *Registry) Widgets() []*metadata.Widget {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]*metadata.Widget, 0, len(r.widgetOrder))
+	for _, name := range r.widgetOrder {
+		if w, ok := r.widgets[strings.ToLower(name)]; ok {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+// LoadHomePage stores the dashboard layout. Pass nil to reset.
+func (r *Registry) LoadHomePage(hp *metadata.HomePage) {
+	r.mu.Lock()
+	r.homePage = hp
+	r.mu.Unlock()
+}
+
+// HomePage returns the registered dashboard layout. nil = none configured.
+func (r *Registry) HomePage() *metadata.HomePage {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.homePage
 }
 
 func (r *Registry) Load(entities []*metadata.Entity, programs map[string]*ast.Program, registers []*metadata.Register, inforegs []*metadata.InfoRegister, enums []*metadata.Enum, constants []*metadata.Constant, reports []*report.Report, forms ...[]*printform.PrintForm) {
