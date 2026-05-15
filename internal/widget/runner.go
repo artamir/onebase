@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/ivantit66/onebase/internal/metadata"
 	"github.com/ivantit66/onebase/internal/query"
 	"github.com/ivantit66/onebase/internal/runtime"
@@ -263,6 +264,7 @@ func (r *Runner) runRecent(ctx context.Context, w *metadata.Widget, res *Result)
 		id := fmt.Sprintf("%v", row["record_id"])
 		row["_url"] = "/ui/" + kind + "/" + entName + "/" + id
 		row["_label"] = entName
+		row["_title"] = recordPresentation(ctx, r, entName, id)
 	}
 	res.Rows = rows
 	res.Columns = []ColumnSpec{
@@ -412,3 +414,65 @@ func isInteger(f float64) bool {
 	return f == float64(int64(f))
 }
 
+// recordPresentation returns a human-readable title for a record referenced
+// by the recent-widget. For documents we prefer "Номер · Дата"; for catalogs
+// we fall back to the first string-typed field (usually Наименование). On any
+// lookup failure we return a shortened UUID so the row still renders.
+func recordPresentation(ctx context.Context, r *Runner, entityName, idStr string) string {
+	ent := r.Reg.GetEntity(entityName)
+	if ent == nil {
+		return shortID(idStr)
+	}
+	id, err := parseUUID(idStr)
+	if err != nil {
+		return shortID(idStr)
+	}
+	row, err := r.Store.GetByID(ctx, ent.Name, id, ent)
+	if err != nil || row == nil {
+		return shortID(idStr)
+	}
+	if ent.Kind == metadata.KindDocument {
+		num := fmt.Sprintf("%v", firstNonEmpty(row, "Номер", "Number"))
+		dateRaw := firstNonEmpty(row, "Дата", "Date")
+		if dateRaw != nil {
+			if t, ok := dateRaw.(time.Time); ok {
+				return strings.TrimSpace(num) + " от " + t.Format("02.01.2006")
+			}
+		}
+		if num != "<nil>" && num != "" {
+			return num
+		}
+	}
+	// catalogs and fallbacks: first non-empty string field
+	for _, f := range ent.Fields {
+		if v, ok := row[f.Name]; ok && v != nil {
+			if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+				return s
+			}
+		}
+	}
+	return shortID(idStr)
+}
+
+func firstNonEmpty(row map[string]any, keys ...string) any {
+	for _, k := range keys {
+		if v, ok := row[k]; ok && v != nil {
+			if s, ok := v.(string); ok && strings.TrimSpace(s) == "" {
+				continue
+			}
+			return v
+		}
+	}
+	return nil
+}
+
+func shortID(idStr string) string {
+	if len(idStr) > 8 {
+		return idStr[:8]
+	}
+	return idStr
+}
+
+// parseUUID isolates the google/uuid import to a single helper so the rest of
+// the runner stays driver-agnostic.
+func parseUUID(s string) (uuid.UUID, error) { return uuid.Parse(s) }

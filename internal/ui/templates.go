@@ -333,9 +333,9 @@ const tplIndex = `
 .w-actions-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
 .w-actions-row a{display:inline-block;padding:7px 14px;border-radius:7px;background:#3b82f6;color:#fff;text-decoration:none;font-size:13px;font-weight:500}
 .w-actions-row a:hover{background:#2563eb}
-.w-recent-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px}
+.w-recent-row{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px}
 .w-recent-row:last-child{border-bottom:none}
-.w-recent-row .e{color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.04em;flex-shrink:0;width:120px;overflow:hidden;text-overflow:ellipsis}
+.w-recent-row .e{color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.04em;flex-shrink:0;min-width:140px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .w-recent-row a{color:#3b82f6;text-decoration:none;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .w-recent-row a:hover{text-decoration:underline}
 .w-recent-row .ts{color:#94a3b8;font-size:11px;flex-shrink:0;font-variant-numeric:tabular-nums}
@@ -436,7 +436,7 @@ window.__obWidgetCharts = window.__obWidgetCharts || {};
   {{range .Rows}}
   <div class="w-recent-row">
     <span class="e">{{index . "entity_name"}}</span>
-    <a href="{{index . "_url"}}">{{index . "record_id"}}</a>
+    <a href="{{index . "_url"}}">{{index . "_title"}}</a>
     <span class="ts">{{fmtDate (index . "_ts")}}</span>
   </div>
   {{end}}
