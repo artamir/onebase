@@ -21,20 +21,42 @@ import (
 // filesDir defaults to <home>/.onebase/files/<basename-without-ext>.
 func ConnectSQLite(ctx context.Context, dbPath string) (*DB, error) {
 	if dbPath == "" {
-		return nil, fmt.Errorf("storage: sqlite: empty database path")
+		return nil, fmt.Errorf("storage: sqlite: пустой путь к файлу базы данных")
 	}
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-		return nil, fmt.Errorf("storage: sqlite: mkdir: %w", err)
+
+	// Ensure absolute path — relative paths fail on Windows when the working
+	// directory is restricted (e.g. Program Files).
+	absPath, err := filepath.Abs(dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("storage: sqlite: не удалось получить абсолютный путь %q: %w", dbPath, err)
+	}
+	dbPath = absPath
+
+	dir := filepath.Dir(dbPath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("storage: sqlite: не удалось создать папку %q: %w", dir, err)
+	}
+
+	// Quick write-permission check before handing path to SQLite.
+	probe := filepath.Join(dir, ".onebase_probe")
+	if f, ferr := os.OpenFile(probe, os.O_CREATE|os.O_WRONLY, 0o600); ferr != nil {
+		return nil, fmt.Errorf("storage: sqlite: нет прав на запись в папку %q: %w", dir, ferr)
+	} else {
+		f.Close()
+		os.Remove(probe)
 	}
 
 	// modernc.org/sqlite uses "sqlite" driver name (not "sqlite3").
-	conn, err := sql.Open("sqlite", dbPath)
+	// On Windows use forward slashes — the transpiled SQLite C code handles
+	// them better than backslashes in some path formats.
+	dsnPath := filepath.ToSlash(dbPath)
+	conn, err := sql.Open("sqlite", dsnPath)
 	if err != nil {
-		return nil, fmt.Errorf("storage: sqlite: open: %w", err)
+		return nil, fmt.Errorf("storage: sqlite: open %q: %w", dbPath, err)
 	}
 	if err := conn.PingContext(ctx); err != nil {
 		_ = conn.Close()
-		return nil, fmt.Errorf("storage: sqlite: ping: %w", err)
+		return nil, fmt.Errorf("storage: sqlite: ping %q: %w", dbPath, err)
 	}
 
 	pragmas := []string{
