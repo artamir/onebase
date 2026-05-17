@@ -74,6 +74,8 @@ func (s *Server) ListenAndServe() error {
 
 	// Launcher pages (no auth)
 	r.Get("/", s.h.index)
+	r.Get("/browse-dir", s.h.browseDir)
+	r.Get("/browse-file", s.h.browseFile)
 	r.Get("/bases/new", s.h.newForm)
 	r.Post("/bases", s.h.create)
 	r.Get("/bases/{id}/edit", s.h.editForm)

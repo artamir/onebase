@@ -483,6 +483,36 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
+func (h *handler) browseDir(w http.ResponseWriter, r *http.Request) {
+	title := r.URL.Query().Get("title")
+	if title == "" {
+		title = "Выберите папку"
+	}
+	path, err := BrowseDir(title)
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"path": path})
+}
+
+func (h *handler) browseFile(w http.ResponseWriter, r *http.Request) {
+	title := r.URL.Query().Get("title")
+	if title == "" {
+		title = "Выберите файл"
+	}
+	filter := r.URL.Query().Get("filter")
+	if filter == "" {
+		filter = "Все файлы (*.*)|*.*"
+	}
+	path, err := BrowseFile(title, filter)
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"path": path})
+}
+
 func parsePort(s string) int {
 	n, _ := strconv.Atoi(s)
 	if n <= 0 {

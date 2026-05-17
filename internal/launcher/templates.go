@@ -50,6 +50,9 @@ body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;font-size:13px;background:#E
 .fg label{display:block;font-size:12px;font-weight:600;margin-bottom:4px;color:#444}
 .fg input,.fg select{width:100%;padding:6px 8px;border:1px solid #ACA899;border-radius:2px;font-size:13px;outline:none;background:#fff}
 .fg input:focus,.fg select:focus{border-color:#3070D8;box-shadow:0 0 0 2px rgba(48,112,216,.15)}
+.input-browse{display:flex;gap:4px}.input-browse input{flex:1}
+.btn-browse{flex-shrink:0;padding:6px 10px;border:1px solid #ACA899;border-radius:2px;background:linear-gradient(to bottom,#F5F4EE,#E0DDD2);cursor:pointer;font-size:13px;white-space:nowrap}
+.btn-browse:hover{background:linear-gradient(to bottom,#EAF3FF,#C5DCFF);border-color:#7EAFF5}
 .fg .hint{font-size:11px;color:#888;margin-top:3px}
 .form-row{display:flex;gap:12px}
 .form-row .fg{flex:1}
@@ -233,7 +236,10 @@ const tplForm = `
     </div>
     <div class="fg" id="path-row" style="{{if ne .Base.ConfigSource "file"}}display:none{{end}}">
       <label>Путь к папке конфигурации</label>
-      <input name="path" value="{{.Base.Path}}" placeholder="/home/user/my-app">
+      <div class="input-browse">
+        <input id="inp-path" name="path" value="{{.Base.Path}}" placeholder="/home/user/my-app">
+        <button type="button" class="btn-browse" onclick="pickDir('inp-path','Выберите папку конфигурации')">📁</button>
+      </div>
       <div class="hint">Папка должна содержать catalogs/, documents/ и т.д.</div>
     </div>
     <div class="fg">
@@ -251,7 +257,10 @@ const tplForm = `
     </div>
     <div class="fg" id="dbpath-row" style="{{if ne .Base.DBType "sqlite"}}display:none{{end}}">
       <label>Путь к файлу SQLite</label>
-      <input name="db_path" value="{{.Base.DBPath}}" placeholder="C:\onebase\mydb.db">
+      <div class="input-browse">
+        <input id="inp-dbpath" name="db_path" value="{{.Base.DBPath}}" placeholder="C:\onebase\mydb.db">
+        <button type="button" class="btn-browse" onclick="pickFile('inp-dbpath','Выберите файл SQLite','SQLite (*.db)|*.db|Все файлы (*.*)|*.*')">📁</button>
+      </div>
       <div class="hint">Файл будет создан, если не существует. Расширение .db рекомендуется.</div>
     </div>
     <div class="form-row">
@@ -290,6 +299,28 @@ function toggleDB(v) {
   var dbp = document.getElementById('dbpath-row');
   if (v === 'sqlite') { dsn.style.display='none'; dbp.style.display=''; }
   else { dsn.style.display=''; dbp.style.display='none'; }
+}
+function pickDir(inputId, title) {
+  var btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '...';
+  fetch('/browse-dir?title=' + encodeURIComponent(title))
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if (d.path) document.getElementById(inputId).value = d.path;
+    })
+    .finally(function(){ btn.disabled = false; btn.textContent = '📁'; });
+}
+function pickFile(inputId, title, filter) {
+  var btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '...';
+  fetch('/browse-file?title=' + encodeURIComponent(title) + '&filter=' + encodeURIComponent(filter))
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if (d.path) document.getElementById(inputId).value = d.path;
+    })
+    .finally(function(){ btn.disabled = false; btn.textContent = '📁'; });
 }
 </script>
 </body></html>
