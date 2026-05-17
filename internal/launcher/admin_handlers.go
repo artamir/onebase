@@ -59,8 +59,8 @@ func (h *handler) cfgAdminUsers(w http.ResponseWriter, r *http.Request) {
 		if u.IsAdmin {
 			admin = `<span style="color:#16a34a;font-weight:600">Да</span>`
 		}
-		html += fmt.Sprintf(`<tr%s><td style="padding:5px 8px">%s</td><td style="padding:5px 8px">%s</td><td style="padding:5px 8px;text-align:center">%s</td><td style="padding:5px 8px;color:#888">%s</td><td style="padding:5px 8px"><button onclick="cfgUserDel('%s')" style="color:#c00;background:none;border:none;cursor:pointer;font-size:11px" title="Удалить">✕</button></td></tr>`,
-			bg, escHTML(u.Login), escHTML(u.FullName), admin, u.CreatedAt.Format("02.01.2006"), u.ID)
+		html += fmt.Sprintf(`<tr%s><td style="padding:5px 8px">%s</td><td style="padding:5px 8px">%s</td><td style="padding:5px 8px;text-align:center">%s</td><td style="padding:5px 8px;color:#888">%s</td><td style="padding:5px 8px;white-space:nowrap"><button onclick="cfgUserPasswd('%s')" style="background:#f59e0b;color:#fff;border:none;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:11px;margin-right:4px">Пароль</button><button onclick="cfgUserDel('%s')" style="color:#c00;background:none;border:none;cursor:pointer;font-size:11px" title="Удалить">✕</button></td></tr>`,
+			bg, escHTML(u.Login), escHTML(u.FullName), admin, u.CreatedAt.Format("02.01.2006"), u.ID, u.ID)
 	}
 	if len(users) == 0 {
 		html += `<tr><td colspan="5" style="padding:20px;text-align:center;color:#999">Нет пользователей</td></tr>`
@@ -80,6 +80,17 @@ function cfgUserDel(id){
   if(!confirm('Удалить пользователя?'))return;
   fetch('/bases/` + b.ID + `/configurator/admin/users/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})})
     .then(function(){cfgAdmin('users')})
+}
+function cfgUserPasswd(id){
+  var pw=prompt('Введите новый пароль:');
+  if(!pw)return;
+  if(pw.length<4){alert('Пароль должен содержать минимум 4 символа');return}
+  var pw2=prompt('Повторите новый пароль:');
+  if(pw!==pw2){alert('Пароли не совпадают');return}
+  fetch('/bases/` + b.ID + `/configurator/admin/users/passwd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,password:pw})})
+    .then(function(r){return r.json()}).then(function(r){
+      if(r.error){alert('Ошибка: '+r.error)}else{alert('Пароль изменён')}
+    })
 }
 </script>`
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -139,6 +150,37 @@ func (h *handler) cfgAdminUserDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	repo := auth.NewRepo(db)
 	if err := repo.Delete(r.Context(), req.ID); err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true})
+}
+
+func (h *handler) cfgAdminUserPasswd(w http.ResponseWriter, r *http.Request) {
+	b, err := h.store.Get(chi.URLParam(r, "id"))
+	if err != nil {
+		writeJSON(w, 404, map[string]any{"error": "not found"})
+		return
+	}
+	var req struct {
+		ID       string `json:"id"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, 400, map[string]any{"error": err.Error()})
+		return
+	}
+	if req.ID == "" || len(req.Password) < 4 {
+		writeJSON(w, 400, map[string]any{"error": "Пароль должен содержать минимум 4 символа"})
+		return
+	}
+	db, err := getAuthDB(r.Context(), b)
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
+	repo := auth.NewRepo(db)
+	if err := repo.UpdatePassword(r.Context(), req.ID, req.Password); err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}

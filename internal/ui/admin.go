@@ -27,7 +27,7 @@ const tplAdminUsers = `{{define "admin-users"}}` + adminHead + `
 {{if .Users}}
 <table>
 <thead><tr>
-  <th>Логин</th><th>Имя</th><th>Администратор</th><th>Создан</th><th style="width:150px"></th>
+  <th>Логин</th><th>Имя</th><th>Администратор</th><th>Создан</th><th style="min-width:190px"></th>
 </tr></thead>
 <tbody>
 {{range .Users}}<tr>
@@ -35,12 +35,14 @@ const tplAdminUsers = `{{define "admin-users"}}` + adminHead + `
   <td>{{.FullName}}</td>
   <td>{{if .IsAdmin}}✓{{end}}</td>
   <td style="font-size:12px;color:#94a3b8">{{.CreatedAt.Format "02.01.2006"}}</td>
-  <td style="display:flex;gap:6px">
-    <a class="btn btn-sm btn-secondary" href="/ui/admin/users/{{.ID}}/roles">Роли</a>
-    <a class="btn btn-sm" href="/ui/admin/users/{{.ID}}/passwd" style="background:#f59e0b;color:#fff">Пароль</a>
-    <form method="POST" action="/ui/admin/users/{{.ID}}/delete" onsubmit="return confirm('Удалить пользователя {{.Login}}?')">
-      <button class="btn btn-sm btn-danger" type="submit">Удалить</button>
-    </form>
+  <td>
+    <div style="display:flex;flex-wrap:wrap;gap:4px">
+      <a class="btn btn-sm btn-secondary" href="/ui/admin/users/{{.ID}}/roles">Роли</a>
+      <a class="btn btn-sm" href="/ui/admin/users/{{.ID}}/passwd" style="background:#f59e0b;color:#fff">Пароль</a>
+      <form method="POST" action="/ui/admin/users/{{.ID}}/delete" onsubmit="return confirm('Удалить пользователя {{.Login}}?')" style="margin:0">
+        <button class="btn btn-sm btn-danger" type="submit">Удалить</button>
+      </form>
+    </div>
   </td>
 </tr>{{end}}
 </tbody>
