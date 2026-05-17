@@ -115,7 +115,7 @@ Wants=postgresql.service
 [Service]
 Type=simple
 User={{.User}}
-ExecStart={{.Exe}} run --config-source {{.ConfigSource}} --db "{{.DSN}}" --port {{.Port}}{{if .Project}} --project "{{.Project}}"{{end}}
+ExecStart={{.Exe}} run --config-source {{.ConfigSource}} --db "{{.DSN | systemdEscape}}" --port {{.Port}}{{if .Project}} --project "{{.Project}}"{{end}}
 Restart=on-failure
 RestartSec=5s
 StandardOutput=journal
@@ -147,10 +147,7 @@ func installSystemd(exe, svcName, displayName, dsn, configSource, proj string, p
 			user = "onebase"
 		}
 	}
-	home := os.Getenv("HOME")
-	if home == "" {
-		home = "/home/" + user
-	}
+	home := "/home/" + user
 
 	data := systemdData{
 		DisplayName:  displayName,
@@ -164,7 +161,9 @@ func installSystemd(exe, svcName, displayName, dsn, configSource, proj string, p
 		Port:         port,
 	}
 
-	tmpl := template.Must(template.New("unit").Parse(systemdUnitTmpl))
+	tmpl := template.Must(template.New("unit").Funcs(template.FuncMap{
+		"systemdEscape": func(s string) string { return strings.ReplaceAll(s, "%", "%%") },
+	}).Parse(systemdUnitTmpl))
 
 	if printOnly {
 		return tmpl.Execute(os.Stdout, data)
