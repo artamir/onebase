@@ -101,7 +101,7 @@ func (h *handler) newForm(w http.ResponseWriter, r *http.Request) {
 	render(w, "page-form", map[string]any{
 		"Title":  "onebase — Добавить базу",
 		"IsNew":  true,
-		"Base":   &Base{ConfigSource: "database", Port: 8080},
+		"Base":   &Base{ConfigSource: "file", DBType: "sqlite", Port: 8080},
 		"Error":  "",
 	})
 }
