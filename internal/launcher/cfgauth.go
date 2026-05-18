@@ -63,8 +63,8 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#ECE9D8;display:flex;ali
 h2{margin:0 0 6px;color:#1a5fa8;font-size:17px;font-weight:600}
 .sub{font-size:12px;color:#666;margin-bottom:20px}
 label{display:block;font-size:12px;margin-bottom:3px;color:#444;font-weight:600}
-input{width:100%;padding:7px 9px;border:1px solid #ACA899;border-radius:2px;font-size:13px;margin-bottom:14px;outline:none}
-input:focus{border-color:#3070D8;box-shadow:0 0 0 2px rgba(48,112,216,.15)}
+input,select{width:100%;padding:7px 9px;border:1px solid #ACA899;border-radius:2px;font-size:13px;margin-bottom:14px;outline:none;background:#fff}
+input:focus,select:focus{border-color:#3070D8;box-shadow:0 0 0 2px rgba(48,112,216,.15)}
 .btn{width:100%;background:#1a5fa8;color:#fff;border:1px solid #1a5fa8;padding:8px;font-size:13px;border-radius:2px;cursor:pointer;font-weight:500}
 .btn:hover{background:#1550a0}
 .err{color:#c00;font-size:12px;margin-bottom:12px;padding:7px;background:#fff0f0;border-radius:2px;border:1px solid #fcc}
@@ -77,14 +77,28 @@ input:focus{border-color:#3070D8;box-shadow:0 0 0 2px rgba(48,112,216,.15)}
   <div class="sub">Только для администраторов</div>
   {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
   <form method="POST">
+    {{if .Users}}
+    <label>Быстрый выбор</label>
+    <select onchange="pickUser(this)">
+      <option value=""></option>
+      {{range .Users}}<option value="{{.Login}}">{{if .FullName}}{{.FullName}}{{else}}{{.Login}}{{end}}</option>{{end}}
+    </select>
+    {{end}}
     <label>Имя пользователя</label>
-    <input name="login" autofocus autocomplete="username">
+    <input id="loginInput" name="login" autofocus autocomplete="username">
     <label>Пароль</label>
-    <input name="password" type="password" autocomplete="current-password">
+    <input id="pwdInput" name="password" type="password" autocomplete="current-password">
     <button class="btn" type="submit">Войти</button>
   </form>
   <a class="back" href="/">← Назад к списку баз</a>
 </div>
+<script>
+function pickUser(sel){
+  if(!sel.value)return;
+  document.getElementById('loginInput').value=sel.value;
+  document.getElementById('pwdInput').focus();
+}
+</script>
 </body></html>`))
 
 func (h *handler) cfgLoginPage(w http.ResponseWriter, r *http.Request) {
@@ -111,6 +125,20 @@ func (h *handler) cfgLoginPage(w http.ResponseWriter, r *http.Request) {
 		}
 		if cfg.Logo != "" {
 			data["LogoURL"] = "/bases/" + b.ID + "/configurator/logo"
+		}
+		// load admin users with show_in_list for the quick-pick select
+		if db, dbErr := getAuthDB(r.Context(), b); dbErr == nil {
+			repo := auth.NewRepo(db)
+			if users, uErr := repo.ListForSelection(r.Context()); uErr == nil {
+				var admins []*auth.User
+				for _, u := range users {
+					if u.IsAdmin {
+						admins = append(admins, u)
+					}
+				}
+				data["Users"] = admins
+			}
+			db.Close()
 		}
 	}
 	cfgLoginTmpl.Execute(w, data)

@@ -325,11 +325,20 @@ func midStr(args []any) string {
 	return string(s[start:end])
 }
 
-// KnownBuiltinNames returns a set of all builtin function names (lowercase).
+// KnownBuiltinNames returns a set of all known callable names (lowercase):
+// platform builtins + runtime-injected functions (HTTP, Email, etc.).
 // Used by the syntax checker to validate function calls in modules.
 func KnownBuiltinNames() map[string]struct{} {
-	names := make(map[string]struct{}, len(builtins))
+	names := make(map[string]struct{}, len(builtins)+20)
 	for k := range builtins {
+		names[k] = struct{}{}
+	}
+	// runtime-injected via buildDSLVars / buildDSLVarsWithMessages
+	for _, k := range []string{
+		"сообщить", "message",
+		"httpполучить", "httpget", "httpотправить", "httppost",
+		"отправитьписьмо", "sendemail",
+	} {
 		names[k] = struct{}{}
 	}
 	return names
