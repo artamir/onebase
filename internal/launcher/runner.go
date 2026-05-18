@@ -153,23 +153,15 @@ func (r *Runner) StopAll(extraPorts []int) {
 
 // killByPort finds and kills any process listening on the given TCP port.
 func killByPort(port int) {
-	target := fmt.Sprintf(":%d", port)
 	switch runtime.GOOS {
 	case "windows":
-		out, err := exec.Command("netstat", "-ano", "-p", "tcp").Output()
-		if err != nil {
-			return
-		}
-		for _, line := range strings.Split(string(out), "\n") {
-			if !strings.Contains(line, target) || !strings.Contains(line, "LISTENING") {
-				continue
-			}
-			fields := strings.Fields(line)
-			if len(fields) >= 5 {
-				exec.Command("taskkill", "/F", "/T", "/PID", fields[len(fields)-1]).Run()
-			}
-		}
+		// runPowerShell runs with -WindowStyle Hidden — no CMD flash.
+		runPowerShell(fmt.Sprintf(
+			`$c = Get-NetTCPConnection -LocalPort %d -State Listen -ErrorAction SilentlyContinue
+			 if ($c) { Stop-Process -Id $c.OwningProcess -Force -ErrorAction SilentlyContinue }`,
+			port))
 	case "darwin":
+		target := fmt.Sprintf(":%d", port)
 		out, _ := exec.Command("lsof", "-ti", target).Output()
 		if pid := strings.TrimSpace(string(out)); pid != "" {
 			for _, p := range strings.Fields(pid) {
@@ -177,7 +169,7 @@ func killByPort(port int) {
 			}
 		}
 	case "linux":
-		// ss output: State Recv-Q Send-Q Local pid=NNN,fd=M
+		target := fmt.Sprintf(":%d", port)
 		out, _ := exec.Command("sh", "-c", fmt.Sprintf("ss -tlnp 2>/dev/null | grep '%s '", target)).Output()
 		for _, line := range strings.Split(string(out), "\n") {
 			if idx := strings.Index(line, "pid="); idx >= 0 {
@@ -190,13 +182,9 @@ func killByPort(port int) {
 	}
 }
 
-// killProc terminates a process. On Windows uses taskkill /F /T to also kill children.
+// killProc terminates a tracked process directly — no external utilities, no CMD windows.
 func killProc(p *os.Process) {
 	if p == nil {
-		return
-	}
-	if runtime.GOOS == "windows" {
-		exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", p.Pid)).Run()
 		return
 	}
 	p.Kill()
