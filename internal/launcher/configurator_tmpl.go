@@ -700,7 +700,7 @@ function runCheck(kind, key, name) {
   body.set('source', ta.value);
   if (name) body.set('name', name);
   result.className = 'check-result check-pending';
-  result.textContent = '⏳ Проверка...';
+  result.textContent = '⏳ Проверка... (' + ta.value.length + ' симв.)';
   fetch('/bases/' + _dbgBase + '/configurator/check', {
     method: 'POST',
     headers: {'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'},
