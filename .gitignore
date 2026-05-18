@@ -12,6 +12,11 @@ exit
 GIT_WORKFLOW.md
 Plans/
 
+# Internal docs (drafts, plans, specs)
+starterplan.MD
+tz.md
+improvement-roadmap.md
+
 # OS
 .DS_Store
 Thumbs.db
