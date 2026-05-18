@@ -67,10 +67,18 @@ func (h *handler) cfgAdminUsers(w http.ResponseWriter, r *http.Request) {
 			denyTitle = "Снять запрет смены пароля"
 			denyStyle = "background:#dc2626;color:#fff"
 		}
-		html += fmt.Sprintf(`<tr%s><td style="padding:5px 8px">%s</td><td style="padding:5px 8px">%s</td><td style="padding:5px 8px;text-align:center">%s</td><td style="padding:5px 8px;color:#888">%s</td><td style="padding:5px 8px;white-space:nowrap"><button onclick="cfgUserPasswd('%s')" style="background:#f59e0b;color:#fff;border:none;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:11px;margin-right:4px">Пароль</button><button onclick="cfgUserDenyPasswd('%s',%v)" title="%s" style="%s;border:none;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:11px;margin-right:4px">%s</button><button onclick="cfgUserDel('%s')" style="color:#c00;background:none;border:none;cursor:pointer;font-size:11px" title="Удалить">✕</button></td></tr>`,
+		listIcon := "👁"
+		listTitle := "Показывать в списке выбора"
+		listStyle := "background:#e2e8f0;color:#374151"
+		if u.ShowInList {
+			listTitle = "Убрать из списка выбора"
+			listStyle = "background:#2563eb;color:#fff"
+		}
+		html += fmt.Sprintf(`<tr%s><td style="padding:5px 8px">%s</td><td style="padding:5px 8px">%s</td><td style="padding:5px 8px;text-align:center">%s</td><td style="padding:5px 8px;color:#888">%s</td><td style="padding:5px 8px;white-space:nowrap"><button onclick="cfgUserPasswd('%s')" style="background:#f59e0b;color:#fff;border:none;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:11px;margin-right:4px">Пароль</button><button onclick="cfgUserDenyPasswd('%s',%v)" title="%s" style="%s;border:none;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:11px;margin-right:4px">%s</button><button onclick="cfgUserShowInList('%s',%v)" title="%s" style="%s;border:none;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:11px;margin-right:4px">%s</button><button onclick="cfgUserDel('%s')" style="color:#c00;background:none;border:none;cursor:pointer;font-size:11px" title="Удалить">✕</button></td></tr>`,
 			bg, escHTML(u.Login), escHTML(u.FullName), admin, u.CreatedAt.Format("02.01.2006"),
 			u.ID,
 			u.ID, u.DenyPasswdChange, denyTitle, denyStyle, denyIcon,
+			u.ID, u.ShowInList, listTitle, listStyle, listIcon,
 			u.ID)
 	}
 	if len(users) == 0 {
@@ -105,6 +113,12 @@ function cfgUserPasswd(id){
 }
 function cfgUserDenyPasswd(id,current){
   fetch('/bases/` + b.ID + `/configurator/admin/users/deny-passwd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,deny:!current})})
+    .then(function(r){return r.json()}).then(function(r){
+      if(r.error){alert('Ошибка: '+r.error)}else{cfgAdmin('users')}
+    })
+}
+function cfgUserShowInList(id,current){
+  fetch('/bases/` + b.ID + `/configurator/admin/users/show-in-list',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,show:!current})})
     .then(function(r){return r.json()}).then(function(r){
       if(r.error){alert('Ошибка: '+r.error)}else{cfgAdmin('users')}
     })
@@ -225,6 +239,33 @@ func (h *handler) cfgAdminUserDenyPasswd(w http.ResponseWriter, r *http.Request)
 	}
 	repo := auth.NewRepo(db)
 	if err := repo.SetDenyPasswdChange(r.Context(), req.ID, req.Deny); err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true})
+}
+
+func (h *handler) cfgAdminUserShowInList(w http.ResponseWriter, r *http.Request) {
+	b, err := h.store.Get(chi.URLParam(r, "id"))
+	if err != nil {
+		writeJSON(w, 404, map[string]any{"error": "not found"})
+		return
+	}
+	var req struct {
+		ID   string `json:"id"`
+		Show bool   `json:"show"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, 400, map[string]any{"error": err.Error()})
+		return
+	}
+	db, err := getAuthDB(r.Context(), b)
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
+	repo := auth.NewRepo(db)
+	if err := repo.SetShowInList(r.Context(), req.ID, req.Show); err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}

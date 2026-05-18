@@ -1539,10 +1539,34 @@ func (s *Server) loadEnumOptions(entity *metadata.Entity) map[string][]string {
 	return opts
 }
 
+func (s *Server) usersForSelection(ctx context.Context) []map[string]any {
+	if s.authRepo == nil {
+		return nil
+	}
+	users, err := s.authRepo.ListForSelection(ctx)
+	if err != nil {
+		return nil
+	}
+	rows := make([]map[string]any, 0, len(users))
+	for _, u := range users {
+		label := u.Login
+		if u.FullName != "" {
+			label = u.FullName
+		}
+		rows = append(rows, map[string]any{"id": u.ID, "_label": label})
+	}
+	return rows
+}
+
 func (s *Server) loadRefOptions(ctx context.Context, entity *metadata.Entity) (map[string][]map[string]any, error) {
 	opts := make(map[string][]map[string]any)
 	for _, f := range entity.Fields {
 		if f.RefEntity == "" {
+			continue
+		}
+		// Special handling: _users is not a catalog entity, but a system table.
+		if f.RefEntity == "_users" {
+			opts[f.Name] = s.usersForSelection(ctx)
 			continue
 		}
 		refEntity := s.reg.GetEntity(f.RefEntity)

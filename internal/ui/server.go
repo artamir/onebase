@@ -101,6 +101,8 @@ func (s *Server) Mount(r chi.Router) {
 	r.Get("/ui/admin/users", s.adminUsers)
 	r.Get("/ui/admin/users/new", s.adminUserNew)
 	r.Post("/ui/admin/users/new", s.adminUserCreate)
+	r.Get("/ui/admin/users/{id}", s.adminUserCard)
+	r.Post("/ui/admin/users/{id}", s.adminUserCard)
 	r.Post("/ui/admin/users/{id}/delete", s.adminUserDelete)
 	r.Get("/ui/admin/users/{id}/passwd", s.adminUserPasswd)
 	r.Post("/ui/admin/users/{id}/passwd", s.adminUserPasswd)

@@ -19,6 +19,7 @@ type User struct {
 	FullName         string
 	IsAdmin          bool
 	DenyPasswdChange bool
+	ShowInList       bool // appears in reference pickers when true
 	CreatedAt        time.Time
 	Roles            []*Role // loaded by middleware after session lookup
 }
@@ -59,10 +60,9 @@ func (r *Repo) EnsureSchema(ctx context.Context) error {
 	if err := r.EnsureRolesSchema(ctx); err != nil {
 		return err
 	}
-	// idempotent migration: add deny_passwd_change if missing
-	alterQ := fmt.Sprintf(`ALTER TABLE _users ADD COLUMN deny_passwd_change %s NOT NULL DEFAULT %s`,
-		d.TypeBool(), boolFalseFor(d))
-	r.db.Exec(ctx, alterQ) // ignore error: harmless if column already exists
+	// idempotent migrations: add columns if missing
+	r.db.Exec(ctx, fmt.Sprintf(`ALTER TABLE _users ADD COLUMN deny_passwd_change %s NOT NULL DEFAULT %s`, d.TypeBool(), boolFalseFor(d)))
+	r.db.Exec(ctx, fmt.Sprintf(`ALTER TABLE _users ADD COLUMN show_in_list %s NOT NULL DEFAULT %s`, d.TypeBool(), boolFalseFor(d)))
 	return nil
 }
 
@@ -81,7 +81,17 @@ func (r *Repo) HasUsers(ctx context.Context) (bool, error) {
 }
 
 func (r *Repo) List(ctx context.Context) ([]*User, error) {
-	rows, err := r.db.Query(ctx, `SELECT id, login, full_name, is_admin, deny_passwd_change, created_at FROM _users ORDER BY login`)
+	return r.listWhere(ctx, "")
+}
+
+// ListForSelection returns only users with show_in_list=true, for reference pickers.
+func (r *Repo) ListForSelection(ctx context.Context) ([]*User, error) {
+	return r.listWhere(ctx, "WHERE show_in_list")
+}
+
+func (r *Repo) listWhere(ctx context.Context, where string) ([]*User, error) {
+	q := `SELECT id, login, full_name, is_admin, deny_passwd_change, show_in_list, created_at FROM _users ` + where + ` ORDER BY login`
+	rows, err := r.db.Query(ctx, q)
 	if err != nil {
 		return nil, err
 	}
@@ -89,17 +99,50 @@ func (r *Repo) List(ctx context.Context) ([]*User, error) {
 	var users []*User
 	for rows.Next() {
 		u := &User{}
-		// Scan into any to handle SQLite (int64 bools, string timestamps) vs PG (bool, time.Time).
-		var isAdmin, denyPasswd, createdAt any
-		if err := rows.Scan(&u.ID, &u.Login, &u.FullName, &isAdmin, &denyPasswd, &createdAt); err != nil {
+		var isAdmin, denyPasswd, showInList, createdAt any
+		if err := rows.Scan(&u.ID, &u.Login, &u.FullName, &isAdmin, &denyPasswd, &showInList, &createdAt); err != nil {
 			return nil, err
 		}
 		u.IsAdmin = scanBool(isAdmin)
 		u.DenyPasswdChange = scanBool(denyPasswd)
+		u.ShowInList = scanBool(showInList)
 		u.CreatedAt = scanTime(createdAt)
 		users = append(users, u)
 	}
 	return users, nil
+}
+
+// GetByID returns a single user by ID.
+func (r *Repo) GetByID(ctx context.Context, userID string) (*User, error) {
+	d := r.db.Dialect()
+	u := &User{}
+	var isAdmin, denyPasswd, showInList, createdAt any
+	q := fmt.Sprintf(`SELECT id, login, full_name, is_admin, deny_passwd_change, show_in_list, created_at FROM _users WHERE id = %s`, d.Placeholder(1))
+	if err := r.db.QueryRow(ctx, q, userID).Scan(&u.ID, &u.Login, &u.FullName, &isAdmin, &denyPasswd, &showInList, &createdAt); err != nil {
+		return nil, err
+	}
+	u.IsAdmin = scanBool(isAdmin)
+	u.DenyPasswdChange = scanBool(denyPasswd)
+	u.ShowInList = scanBool(showInList)
+	u.CreatedAt = scanTime(createdAt)
+	return u, nil
+}
+
+// Update saves editable fields on a user.
+func (r *Repo) Update(ctx context.Context, userID, fullName string, isAdmin, denyPasswdChange, showInList bool) error {
+	d := r.db.Dialect()
+	q := fmt.Sprintf(`UPDATE _users SET full_name=%s, is_admin=%s, deny_passwd_change=%s, show_in_list=%s WHERE id=%s`,
+		d.Placeholder(1), d.Placeholder(2), d.Placeholder(3), d.Placeholder(4), d.Placeholder(5))
+	_, err := r.db.Exec(ctx, q, fullName, isAdmin, denyPasswdChange, showInList, userID)
+	return err
+}
+
+// SetShowInList toggles the show_in_list flag for a user.
+func (r *Repo) SetShowInList(ctx context.Context, userID string, show bool) error {
+	d := r.db.Dialect()
+	q := fmt.Sprintf(`UPDATE _users SET show_in_list = %s WHERE id = %s`, d.Placeholder(1), d.Placeholder(2))
+	_, err := r.db.Exec(ctx, q, show, userID)
+	return err
 }
 
 func scanBool(v any) bool {

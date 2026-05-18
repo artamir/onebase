@@ -15,33 +15,32 @@ import (
 	"github.com/ivantit66/onebase/internal/storage"
 )
 
-var adminTmpl = template.Must(template.New("admin").Parse(tplAdminUsers + tplAdminUserForm + tplAdminPasswd + tplAdminSessions + tplAdminCleanup + tplAdminRoles + tplAdminUserRoles + tplAdminAudit))
+var adminTmpl = template.Must(template.New("admin").Parse(tplAdminUsers + tplAdminUserCard + tplAdminUserForm + tplAdminPasswd + tplAdminSessions + tplAdminCleanup + tplAdminRoles + tplAdminUserRoles + tplAdminAudit))
 
 const tplAdminUsers = `{{define "admin-users"}}` + adminHead + `
 <main>
-<div class="row-top" style="max-width:700px">
+<div class="row-top" style="max-width:800px">
   <h2>Пользователи</h2>
   <a class="btn btn-primary" href="/ui/admin/users/new">+ Добавить</a>
 </div>
-<div class="card" style="max-width:700px">
+<div class="card" style="max-width:800px">
 {{if .Users}}
 <table>
 <thead><tr>
-  <th>Логин</th><th>Имя</th><th>Администратор</th><th>Создан</th><th style="min-width:190px"></th>
+  <th>Логин</th><th>Имя</th><th title="Администратор">Админ</th><th title="Показывать в списках выбора">В списке</th><th title="Запрет смены пароля">Пароль</th><th>Создан</th><th></th>
 </tr></thead>
 <tbody>
 {{range .Users}}<tr>
-  <td><strong>{{.Login}}</strong></td>
-  <td>{{.FullName}}</td>
-  <td>{{if .IsAdmin}}✓{{end}}</td>
+  <td><a href="/ui/admin/users/{{.ID}}" style="color:#1d4ed8;font-weight:600;text-decoration:none">{{.Login}}</a></td>
+  <td style="color:#475569">{{.FullName}}</td>
+  <td style="text-align:center">{{if .IsAdmin}}<span style="color:#16a34a;font-weight:700">✓</span>{{end}}</td>
+  <td style="text-align:center">{{if .ShowInList}}<span style="color:#2563eb;font-weight:700">✓</span>{{else}}<span style="color:#cbd5e1">—</span>{{end}}</td>
+  <td style="text-align:center">{{if .DenyPasswdChange}}🔒{{else}}<span style="color:#cbd5e1">—</span>{{end}}</td>
   <td style="font-size:12px;color:#94a3b8">{{.CreatedAt.Format "02.01.2006"}}</td>
   <td>
-    <div style="display:flex;flex-wrap:wrap;gap:4px">
+    <div style="display:flex;gap:4px">
+      <a class="btn btn-sm btn-secondary" href="/ui/admin/users/{{.ID}}">Карточка</a>
       <a class="btn btn-sm btn-secondary" href="/ui/admin/users/{{.ID}}/roles">Роли</a>
-      <a class="btn btn-sm" href="/ui/admin/users/{{.ID}}/passwd" style="background:#f59e0b;color:#fff">Пароль</a>
-      <form method="POST" action="/ui/admin/users/{{.ID}}/deny-passwd" style="margin:0" title="{{if .DenyPasswdChange}}Снять запрет смены пароля{{else}}Запретить смену пароля{{end}}">
-        <button class="btn btn-sm" style="background:{{if .DenyPasswdChange}}#dc2626{{else}}#e2e8f0{{end}};color:{{if .DenyPasswdChange}}#fff{{else}}#475569{{end}}">{{if .DenyPasswdChange}}🔒{{else}}🔓{{end}}</button>
-      </form>
       <form method="POST" action="/ui/admin/users/{{.ID}}/delete" onsubmit="return confirm('Удалить пользователя {{.Login}}?')" style="margin:0">
         <button class="btn btn-sm btn-danger" type="submit">Удалить</button>
       </form>
@@ -53,6 +52,63 @@ const tplAdminUsers = `{{define "admin-users"}}` + adminHead + `
 {{else}}
 <p class="empty">Пользователей нет — вход в систему без пароля.<br>Добавьте пользователя, чтобы включить авторизацию.</p>
 {{end}}
+</div>
+</main></body></html>
+{{end}}`
+
+const tplAdminUserCard = `{{define "admin-user-card"}}` + adminHead + `
+<main>
+<div style="margin-bottom:16px"><a href="/ui/admin/users" style="color:#64748b;font-size:13px;text-decoration:none">← Пользователи</a></div>
+<h2>{{.User.Login}}</h2>
+{{if .Success}}<div style="background:#f0fdf4;border:1px solid #86efac;color:#15803d;padding:12px 16px;border-radius:7px;margin-bottom:16px;font-size:14px;max-width:560px">✓ {{.Success}}</div>{{end}}
+{{if .Error}}<div class="error" style="max-width:560px">{{.Error}}</div>{{end}}
+
+<div class="card" style="max-width:560px;margin-bottom:16px">
+<h3 style="margin-bottom:16px">Основные данные</h3>
+<form method="POST">
+  <input type="hidden" name="action" value="update">
+  <div class="form-group">
+    <label>Логин</label>
+    <input type="text" value="{{.User.Login}}" readonly style="background:#f8fafc;color:#64748b;cursor:default">
+  </div>
+  <div class="form-group">
+    <label>Полное имя</label>
+    <input type="text" name="full_name" value="{{.User.FullName}}">
+  </div>
+  <div class="form-group">
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400">
+      <input type="checkbox" name="is_admin" value="1" {{if .User.IsAdmin}}checked{{end}}> Администратор
+    </label>
+  </div>
+  <div class="form-group">
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400">
+      <input type="checkbox" name="deny_passwd_change" value="1" {{if .User.DenyPasswdChange}}checked{{end}}> Запретить смену пароля пользователем
+    </label>
+  </div>
+  <div class="form-group">
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400">
+      <input type="checkbox" name="show_in_list" value="1" {{if .User.ShowInList}}checked{{end}}> Показывать в списках выбора
+    </label>
+    <div style="font-size:12px;color:#94a3b8;margin-top:4px;margin-left:24px">Пользователь будет доступен для выбора в полях типа «Ответственный» и т.п.</div>
+  </div>
+  <button class="btn btn-primary" type="submit">Сохранить</button>
+</form>
+</div>
+
+<div class="card" style="max-width:560px">
+<h3 style="margin-bottom:16px">Изменить пароль</h3>
+<form method="POST">
+  <input type="hidden" name="action" value="passwd">
+  <div class="form-group">
+    <label>Новый пароль</label>
+    <input type="password" name="new_password" autocomplete="new-password">
+  </div>
+  <div class="form-group">
+    <label>Повторите пароль</label>
+    <input type="password" name="confirm_password" autocomplete="new-password">
+  </div>
+  <button class="btn" type="submit" style="background:#f59e0b;color:#fff">Изменить пароль</button>
+</form>
 </div>
 </main></body></html>
 {{end}}`
@@ -83,6 +139,11 @@ const tplAdminUserForm = `{{define "admin-user-form"}}` + adminHead + `
   <div class="form-group">
     <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
       <input type="checkbox" name="deny_passwd_change" value="1"> Запретить смену пароля
+    </label>
+  </div>
+  <div class="form-group">
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+      <input type="checkbox" name="show_in_list" value="1"> Показывать в списках выбора
     </label>
   </div>
   <div style="display:flex;gap:12px;margin-top:8px">
@@ -139,6 +200,55 @@ func (s *Server) adminUsers(w http.ResponseWriter, r *http.Request) {
 	adminTmpl.ExecuteTemplate(w, "admin-users", map[string]any{"Users": users})
 }
 
+func (s *Server) adminUserCard(w http.ResponseWriter, r *http.Request) {
+	if !s.isAdmin(r) {
+		s.renderForbidden(w, r)
+		return
+	}
+	userID := chi.URLParam(r, "id")
+	u, err := s.authRepo.GetByID(r.Context(), userID)
+	if err != nil {
+		http.Error(w, "Пользователь не найден", 404)
+		return
+	}
+	data := map[string]any{"User": u}
+
+	if r.Method == http.MethodPost {
+		r.ParseForm()
+		switch r.FormValue("action") {
+		case "update":
+			fullName := r.FormValue("full_name")
+			isAdmin := r.FormValue("is_admin") == "1"
+			denyPasswd := r.FormValue("deny_passwd_change") == "1"
+			showInList := r.FormValue("show_in_list") == "1"
+			if err := s.authRepo.Update(r.Context(), userID, fullName, isAdmin, denyPasswd, showInList); err != nil {
+				data["Error"] = err.Error()
+			} else {
+				u.FullName = fullName
+				u.IsAdmin = isAdmin
+				u.DenyPasswdChange = denyPasswd
+				u.ShowInList = showInList
+				data["Success"] = "Данные сохранены"
+			}
+		case "passwd":
+			newPwd := r.FormValue("new_password")
+			confirm := r.FormValue("confirm_password")
+			if len(newPwd) < 4 {
+				data["Error"] = "Пароль должен содержать минимум 4 символа"
+			} else if newPwd != confirm {
+				data["Error"] = "Пароли не совпадают"
+			} else if err := s.authRepo.UpdatePassword(r.Context(), userID, newPwd); err != nil {
+				data["Error"] = err.Error()
+			} else {
+				data["Success"] = "Пароль изменён"
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	adminTmpl.ExecuteTemplate(w, "admin-user-card", data)
+}
+
 func (s *Server) adminUserNew(w http.ResponseWriter, r *http.Request) {
 	if !s.isAdmin(r) {
 		s.renderForbidden(w, r)
@@ -159,6 +269,7 @@ func (s *Server) adminUserCreate(w http.ResponseWriter, r *http.Request) {
 	fullName := r.FormValue("full_name")
 	isAdmin := r.FormValue("is_admin") == "1"
 	denyPasswd := r.FormValue("deny_passwd_change") == "1"
+	showInList := r.FormValue("show_in_list") == "1"
 
 	if login == "" || password == "" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -172,8 +283,8 @@ func (s *Server) adminUserCreate(w http.ResponseWriter, r *http.Request) {
 		adminTmpl.ExecuteTemplate(w, "admin-user-form", map[string]any{"Error": err.Error()})
 		return
 	}
-	if denyPasswd {
-		s.authRepo.SetDenyPasswdChange(r.Context(), u.ID, true)
+	if denyPasswd || showInList {
+		s.authRepo.Update(r.Context(), u.ID, fullName, isAdmin, denyPasswd, showInList)
 	}
 	http.Redirect(w, r, "/ui/admin/users", http.StatusFound)
 }
