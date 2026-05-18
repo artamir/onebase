@@ -47,6 +47,14 @@ type Handlers struct {
 	Auditor AuditLogger // optional, set by api.New
 }
 
+func (h *Handlers) loginPageData() map[string]any {
+	return map[string]any{"Error": "", "Users": h.listUsers()}
+}
+
+func (h *Handlers) listUsers() []*User {
+	return nil // populated in LoginPage via request context
+}
+
 func (h *Handlers) LoginPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	var users []*User
@@ -57,15 +65,23 @@ func (h *Handlers) LoginPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) LoginSubmit(w http.ResponseWriter, r *http.Request) {
+	renderErr := func(w http.ResponseWriter, r *http.Request, code int, msg string) {
+		var users []*User
+		if h.Repo != nil {
+			users, _ = h.Repo.ListForSelection(r.Context())
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(code)
+		loginTmpl.Execute(w, map[string]any{"Error": msg, "Users": users})
+	}
+
 	r.ParseForm()
 	login := r.FormValue("login")
 	password := r.FormValue("password")
 
 	user, err := h.Repo.Authenticate(r.Context(), login, password)
 	if err != nil {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusUnauthorized)
-		loginTmpl.Execute(w, map[string]any{"Error": "Неверное имя пользователя или пароль"})
+		renderErr(w, r, http.StatusUnauthorized, "Неверное имя пользователя или пароль")
 		return
 	}
 

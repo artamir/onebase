@@ -326,6 +326,7 @@ const cfgHead = `{{define "cfg-head"}}<!DOCTYPE html>
       <a href="#" onclick="cfgAdmin('users');return false">Пользователи</a>
       <a href="#" onclick="cfgAdmin('sessions');return false">Активные пользователи</a>
       <a href="#" onclick="cfgAdmin('audit');return false">Журнал регистрации</a>
+      <a href="/bases/{{.Base.ID}}/configurator/logout" style="color:#c00;border-top:1px solid #e5e7eb;margin-top:2px">🚪 Выйти</a>
     </div>
   </div>
   <a href="/?sel={{.Base.ID}}">← Лаунчер</a>

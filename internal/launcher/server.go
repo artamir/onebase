@@ -86,9 +86,10 @@ func (s *Server) ListenAndServe() error {
 	r.Post("/bases/{id}/config/export", s.h.configExport)
 	r.Post("/bases/{id}/config/import", s.h.configImport)
 
-	// Configurator login (no auth — this IS the login page)
+	// Configurator login/logout (no auth)
 	r.Get("/bases/{id}/configurator/login", s.h.cfgLoginPage)
 	r.Post("/bases/{id}/configurator/login", s.h.cfgLoginSubmit)
+	r.Get("/bases/{id}/configurator/logout", s.h.cfgLogout)
 	r.Get("/bases/{id}/configurator/logo", s.h.configuratorLogo)
 
 	// Configurator routes (auth required — admin only)

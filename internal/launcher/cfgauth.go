@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -88,47 +89,53 @@ input:focus,select:focus{border-color:#3070D8;box-shadow:0 0 0 2px rgba(48,112,2
 </div>
 </body></html>`))
 
-func (h *handler) cfgLoginPage(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+// cfgLoginData builds the template data map for the configurator login page.
+func (h *handler) cfgLoginData(r *http.Request, b *Base) map[string]any {
 	data := map[string]any{"Error": "", "LogoURL": ""}
-	id := chi.URLParam(r, "id")
-	if b, err := h.store.Get(id); err == nil {
-		type appCfg struct {
-			Logo string `yaml:"logo"`
-		}
-		var cfg appCfg
-		if b.ConfigSource == "database" {
-			if db, dbErr := OpenDB(r.Context(), b); dbErr == nil {
-				defer db.Close()
-				var content []byte
-				if qErr := db.QueryRow(r.Context(), "SELECT content FROM _onebase_config WHERE path = $1", "config/app.yaml").Scan(&content); qErr == nil {
-					yaml.Unmarshal(content, &cfg)
-				}
-			}
-		} else if b.Path != "" {
-			if raw, rErr := os.ReadFile(filepath.Join(b.Path, "config", "app.yaml")); rErr == nil {
-				yaml.Unmarshal(raw, &cfg)
+	type appCfg struct {
+		Logo string `yaml:"logo"`
+	}
+	var cfg appCfg
+	if b.ConfigSource == "database" {
+		if db, dbErr := OpenDB(r.Context(), b); dbErr == nil {
+			defer db.Close()
+			var content []byte
+			if qErr := db.QueryRow(r.Context(), "SELECT content FROM _onebase_config WHERE path = $1", "config/app.yaml").Scan(&content); qErr == nil {
+				yaml.Unmarshal(content, &cfg)
 			}
 		}
-		if cfg.Logo != "" {
-			data["LogoURL"] = "/bases/" + b.ID + "/configurator/logo"
-		}
-		// load admin users with show_in_list for the quick-pick select
-		if db, dbErr := getAuthDB(r.Context(), b); dbErr == nil {
-			repo := auth.NewRepo(db)
-			if users, uErr := repo.ListForSelection(r.Context()); uErr == nil {
-				var admins []*auth.User
-				for _, u := range users {
-					if u.IsAdmin {
-						admins = append(admins, u)
-					}
-				}
-				data["Users"] = admins
-			}
-			// do NOT close — getAuthDB returns a shared cached pool
+	} else if b.Path != "" {
+		if raw, rErr := os.ReadFile(filepath.Join(b.Path, "config", "app.yaml")); rErr == nil {
+			yaml.Unmarshal(raw, &cfg)
 		}
 	}
-	cfgLoginTmpl.Execute(w, data)
+	if cfg.Logo != "" {
+		data["LogoURL"] = "/bases/" + b.ID + "/configurator/logo"
+	}
+	if db, dbErr := getAuthDB(r.Context(), b); dbErr == nil {
+		repo := auth.NewRepo(db)
+		if users, uErr := repo.ListForSelection(r.Context()); uErr == nil {
+			var admins []*auth.User
+			for _, u := range users {
+				if u.IsAdmin {
+					admins = append(admins, u)
+				}
+			}
+			data["Users"] = admins
+		}
+	}
+	return data
+}
+
+func (h *handler) cfgLoginPage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	id := chi.URLParam(r, "id")
+	b, err := h.store.Get(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	cfgLoginTmpl.Execute(w, h.cfgLoginData(r, b))
 }
 
 func (h *handler) cfgLoginSubmit(w http.ResponseWriter, r *http.Request) {
@@ -139,38 +146,38 @@ func (h *handler) cfgLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	renderErr := func(code int, msg string) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(code)
+		data := h.cfgLoginData(r, b)
+		data["Error"] = msg
+		cfgLoginTmpl.Execute(w, data)
+	}
+
 	r.ParseForm()
 	login := r.FormValue("login")
 	password := r.FormValue("password")
 
 	db, err := getAuthDB(r.Context(), b)
 	if err != nil {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(500)
-		cfgLoginTmpl.Execute(w, map[string]any{"Error": "Ошибка подключения к БД: " + err.Error()})
+		renderErr(500, "Ошибка подключения к БД: "+err.Error())
 		return
 	}
 
 	repo := auth.NewRepo(db)
 	if err := repo.EnsureSchema(r.Context()); err != nil {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(500)
-		cfgLoginTmpl.Execute(w, map[string]any{"Error": "Ошибка инициализации: " + err.Error()})
+		renderErr(500, "Ошибка инициализации: "+err.Error())
 		return
 	}
 
 	user, err := repo.Authenticate(r.Context(), login, password)
 	if err != nil {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(401)
-		cfgLoginTmpl.Execute(w, map[string]any{"Error": "Неверное имя пользователя или пароль"})
+		renderErr(401, "Неверное имя пользователя или пароль")
 		return
 	}
 
 	if !user.IsAdmin {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(403)
-		cfgLoginTmpl.Execute(w, map[string]any{"Error": "Доступ запрещён. Только для администраторов."})
+		renderErr(403, "Доступ запрещён. Только для администраторов.")
 		return
 	}
 
@@ -189,6 +196,26 @@ func (h *handler) cfgLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	})
 
 	http.Redirect(w, r, "/bases/"+id+"/configurator", http.StatusFound)
+}
+
+func (h *handler) cfgLogout(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	cookie, err := r.Cookie("onebase_session")
+	if err == nil {
+		if b, berr := h.store.Get(id); berr == nil {
+			if db, dberr := getAuthDB(r.Context(), b); dberr == nil {
+				auth.NewRepo(db).DeleteSession(r.Context(), cookie.Value)
+			}
+		}
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:    "onebase_session",
+		Value:   "",
+		Path:    "/",
+		MaxAge:  -1,
+		Expires: time.Unix(0, 0),
+	})
+	http.Redirect(w, r, "/bases/"+id+"/configurator/login", http.StatusFound)
 }
 
 func (h *handler) cfgAuthMiddleware(next http.Handler) http.Handler {
