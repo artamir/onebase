@@ -324,3 +324,13 @@ func midStr(args []any) string {
 	}
 	return string(s[start:end])
 }
+
+// KnownBuiltinNames returns a set of all builtin function names (lowercase).
+// Used by the syntax checker to validate function calls in modules.
+func KnownBuiltinNames() map[string]struct{} {
+	names := make(map[string]struct{}, len(builtins))
+	for k := range builtins {
+		names[k] = struct{}{}
+	}
+	return names
+}

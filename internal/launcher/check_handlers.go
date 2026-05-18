@@ -2,6 +2,7 @@ package launcher
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -9,6 +10,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/ivantit66/onebase/internal/configdb"
+	"github.com/ivantit66/onebase/internal/dsl/ast"
+	"github.com/ivantit66/onebase/internal/dsl/interpreter"
 	"github.com/ivantit66/onebase/internal/dsl/lexer"
 	"github.com/ivantit66/onebase/internal/dsl/parser"
 	"github.com/ivantit66/onebase/internal/metadata"
@@ -261,16 +264,107 @@ func checkQueries(proj *project.Project) []checkIssue {
 	return issues
 }
 
-// parseDSL runs the lexer and parser on a snippet and returns one issue per
-// parser error. The parser today reports the first error and stops; that's
-// still useful, and once it learns to recover the caller doesn't change.
+// parseDSL runs the lexer and parser on a snippet and then validates all
+// function calls against known builtins + procedures defined in the module.
 func parseDSL(source, label string) []checkIssue {
 	l := lexer.New(source, label)
 	p := parser.New(l)
-	if _, err := p.ParseProgram(); err != nil {
+	prog, err := p.ParseProgram()
+	if err != nil {
 		return []checkIssue{{File: label, Message: err.Error()}}
 	}
-	return nil
+	return checkDSLCalls(prog, label)
+}
+
+// checkDSLCalls walks the AST and reports calls to undefined functions.
+// Known = builtins (interpreter package) + procedures declared in the same module.
+func checkDSLCalls(prog *ast.Program, label string) []checkIssue {
+	known := interpreter.KnownBuiltinNames()
+	// collect names defined in this module
+	for _, pr := range prog.Procedures {
+		known[strings.ToLower(pr.Name.Literal)] = struct{}{}
+	}
+	var issues []checkIssue
+	for _, pr := range prog.Procedures {
+		walkStmts(pr.Body, known, label, &issues)
+	}
+	return issues
+}
+
+func walkStmts(stmts []ast.Stmt, known map[string]struct{}, label string, issues *[]checkIssue) {
+	for _, s := range stmts {
+		walkStmt(s, known, label, issues)
+	}
+}
+
+func walkStmt(s ast.Stmt, known map[string]struct{}, label string, issues *[]checkIssue) {
+	switch v := s.(type) {
+	case *ast.ExprStmt:
+		walkExpr(v.X, known, label, issues)
+	case *ast.AssignStmt:
+		walkExpr(v.Value, known, label, issues)
+	case *ast.ReturnStmt:
+		if v.Value != nil {
+			walkExpr(v.Value, known, label, issues)
+		}
+	case *ast.IfStmt:
+		walkExpr(v.Cond, known, label, issues)
+		walkStmts(v.Then, known, label, issues)
+		for _, ei := range v.ElseIfs {
+			walkExpr(ei.Cond, known, label, issues)
+			walkStmts(ei.Body, known, label, issues)
+		}
+		walkStmts(v.Else, known, label, issues)
+	case *ast.ForEachStmt:
+		walkExpr(v.Collection, known, label, issues)
+		walkStmts(v.Body, known, label, issues)
+	case *ast.NumericForStmt:
+		walkExpr(v.Start, known, label, issues)
+		walkExpr(v.End, known, label, issues)
+		walkStmts(v.Body, known, label, issues)
+	case *ast.TryStmt:
+		walkStmts(v.Try, known, label, issues)
+		walkStmts(v.Except, known, label, issues)
+	}
+}
+
+func walkExpr(e ast.Expr, known map[string]struct{}, label string, issues *[]checkIssue) {
+	if e == nil {
+		return
+	}
+	switch v := e.(type) {
+	case *ast.CallExpr:
+		if ident, ok := v.Callee.(*ast.Ident); ok {
+			name := strings.ToLower(ident.Tok.Literal)
+			if _, found := known[name]; !found {
+				*issues = append(*issues, checkIssue{
+					File:    label,
+					Line:    ident.Tok.Line,
+					Column:  ident.Tok.Col,
+					Message: fmt.Sprintf("неизвестная функция %q", ident.Tok.Literal),
+				})
+			}
+		}
+		// always walk callee and args
+		walkExpr(v.Callee, known, label, issues)
+		for _, arg := range v.Args {
+			walkExpr(arg, known, label, issues)
+		}
+	case *ast.BinaryExpr:
+		walkExpr(v.Left, known, label, issues)
+		walkExpr(v.Right, known, label, issues)
+	case *ast.UnaryExpr:
+		walkExpr(v.Operand, known, label, issues)
+	case *ast.MemberExpr:
+		walkExpr(v.Object, known, label, issues)
+	case *ast.IndexExpr:
+		walkExpr(v.Object, known, label, issues)
+		walkExpr(v.Index, known, label, issues)
+	case *ast.TernaryExpr:
+		walkExpr(v.Cond, known, label, issues)
+		walkExpr(v.True, known, label, issues)
+		walkExpr(v.False, known, label, issues)
+	}
 }
 
 func checkDSLSource(source, name string) []checkIssue {
