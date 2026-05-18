@@ -21,19 +21,36 @@ input:focus{border-color:#1a5fa8;box-shadow:0 0 0 2px rgba(26,95,168,.15)}
 .btn{width:100%;background:#1a5fa8;color:#fff;border:none;padding:10px;font-size:14px;border-radius:3px;cursor:pointer;font-weight:500}
 .btn:hover{background:#1550a0}
 .err{color:#c00;font-size:13px;margin-bottom:14px;padding:8px;background:#fff0f0;border-radius:3px;border:1px solid #fcc}
+.user-list{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.user-chip{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:20px;padding:5px 14px;font-size:13px;cursor:pointer;color:#1e293b;transition:all .15s}
+.user-chip:hover{background:#dbeafe;border-color:#93c5fd;color:#1d4ed8}
+.user-chip.active{background:#1a5fa8;border-color:#1a5fa8;color:#fff}
 </style></head>
 <body>
 <div class="box">
   <h2>⚡ onebase — Вход</h2>
   {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
+  {{if .Users}}
+  <div class="user-list" id="userList">
+    {{range .Users}}<button type="button" class="user-chip" onclick="pickUser(this,'{{.Login}}')">{{if .FullName}}{{.FullName}}{{else}}{{.Login}}{{end}}</button>{{end}}
+  </div>
+  {{end}}
   <form method="POST">
     <label>Имя пользователя</label>
-    <input name="login" autofocus autocomplete="username">
+    <input id="loginInput" name="login" autofocus autocomplete="username">
     <label>Пароль</label>
-    <input name="password" type="password" autocomplete="current-password">
+    <input id="pwdInput" name="password" type="password" autocomplete="current-password">
     <button class="btn" type="submit">Войти</button>
   </form>
 </div>
+<script>
+function pickUser(btn,login){
+  document.getElementById('loginInput').value=login;
+  document.querySelectorAll('.user-chip').forEach(function(c){c.classList.remove('active')});
+  btn.classList.add('active');
+  document.getElementById('pwdInput').focus();
+}
+</script>
 </body></html>`))
 
 // AuditLogger is implemented by storage.DB to log auth events.
@@ -48,7 +65,11 @@ type Handlers struct {
 
 func (h *Handlers) LoginPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	loginTmpl.Execute(w, map[string]any{"Error": ""})
+	var users []*User
+	if h.Repo != nil {
+		users, _ = h.Repo.ListForSelection(r.Context())
+	}
+	loginTmpl.Execute(w, map[string]any{"Error": "", "Users": users})
 }
 
 func (h *Handlers) LoginSubmit(w http.ResponseWriter, r *http.Request) {
