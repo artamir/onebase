@@ -300,6 +300,14 @@ func walkStmts(stmts []ast.Stmt, known map[string]struct{}, label string, issues
 func walkStmt(s ast.Stmt, known map[string]struct{}, label string, issues *[]checkIssue) {
 	switch v := s.(type) {
 	case *ast.ExprStmt:
+		if ident, ok := v.X.(*ast.Ident); ok {
+			*issues = append(*issues, checkIssue{
+				File:    label,
+				Line:    ident.Tok.Line,
+				Column:  ident.Tok.Col,
+				Message: fmt.Sprintf("выражение без эффекта: «%s» (возможно, пропущены скобки вызова?)", ident.Tok.Literal),
+			})
+		}
 		walkExpr(v.X, known, label, issues)
 	case *ast.AssignStmt:
 		walkExpr(v.Value, known, label, issues)
