@@ -393,12 +393,22 @@ func (h *handler) cfgAdminAbout(w http.ResponseWriter, r *http.Request) {
 		cfgRows += fmt.Sprintf(`<tr><td style="padding:6px 0;color:#888">Версия конфигурации</td><td style="padding:6px 0">%s</td></tr>`, escHTML(cfg.Version))
 	}
 
+	userRow := ""
+	if u := cfgUserFromContext(r.Context()); u != nil {
+		label := escHTML(u.Login)
+		if u.FullName != "" {
+			label += " <span style='color:#888;font-weight:400'>" + escHTML(u.FullName) + "</span>"
+		}
+		userRow = fmt.Sprintf(`<tr><td style="padding:6px 0;color:#888;width:140px">Пользователь</td><td style="padding:6px 0">%s</td></tr>`, label)
+	}
+
 	html := fmt.Sprintf(`<div style="padding:24px;max-width:400px">
 	<div style="text-align:center;margin-bottom:20px">
 	  %s
 	  <div style="font-size:18px;font-weight:600;color:#1a5fa8">OneBase</div>
 	</div>
 	<table style="width:100%%;border-collapse:collapse;font-size:13px">
+	%s
 	<tr><td style="padding:6px 0;color:#888;width:140px">Версия платформы</td><td style="padding:6px 0">%s</td></tr>
 	%s
 	<tr><td style="padding:6px 0;color:#888">Режим конфигурации</td><td style="padding:6px 0">%s</td></tr>
@@ -407,6 +417,7 @@ func (h *handler) cfgAdminAbout(w http.ResponseWriter, r *http.Request) {
 	</table>
 	</div>`,
 		logoHTML,
+		userRow,
 		escHTML(version.String()),
 		cfgRows,
 		escHTML(b.ConfigSource),

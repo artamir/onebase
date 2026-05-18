@@ -16,6 +16,13 @@ import (
 	"github.com/ivantit66/onebase/internal/storage"
 )
 
+type cfgUserKey struct{}
+
+func cfgUserFromContext(ctx context.Context) *auth.User {
+	u, _ := ctx.Value(cfgUserKey{}).(*auth.User)
+	return u
+}
+
 // cfgAuthDBs caches storage.DB per base key so we don't open a new connection
 // on every configurator request. Key: base.ID (or DSN/path for legacy paths).
 var cfgAuthDBs sync.Map // map[string]*storage.DB
@@ -214,6 +221,7 @@ func (h *handler) cfgAuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		next.ServeHTTP(w, r)
+		ctx := context.WithValue(r.Context(), cfgUserKey{}, user)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
