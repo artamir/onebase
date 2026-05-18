@@ -16,39 +16,37 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f0f0;display:flex;ali
 .box{background:#fff;padding:32px 40px;border:1px solid #ccc;border-radius:4px;width:340px;box-shadow:0 2px 8px rgba(0,0,0,.15)}
 h2{margin:0 0 24px;color:#1a5fa8;font-size:18px;font-weight:600}
 label{display:block;font-size:13px;margin-bottom:4px;color:#333;font-weight:500}
-input{width:100%;padding:8px 10px;border:1px solid #bbb;border-radius:3px;font-size:14px;margin-bottom:16px;outline:none}
-input:focus{border-color:#1a5fa8;box-shadow:0 0 0 2px rgba(26,95,168,.15)}
+input,select{width:100%;padding:8px 10px;border:1px solid #bbb;border-radius:3px;font-size:14px;margin-bottom:16px;outline:none;background:#fff}
+input:focus,select:focus{border-color:#1a5fa8;box-shadow:0 0 0 2px rgba(26,95,168,.15)}
 .btn{width:100%;background:#1a5fa8;color:#fff;border:none;padding:10px;font-size:14px;border-radius:3px;cursor:pointer;font-weight:500}
 .btn:hover{background:#1550a0}
 .err{color:#c00;font-size:13px;margin-bottom:14px;padding:8px;background:#fff0f0;border-radius:3px;border:1px solid #fcc}
-.user-list{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
-.user-chip{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:20px;padding:5px 14px;font-size:13px;cursor:pointer;color:#1e293b;transition:all .15s}
-.user-chip:hover{background:#dbeafe;border-color:#93c5fd;color:#1d4ed8}
-.user-chip.active{background:#1a5fa8;border-color:#1a5fa8;color:#fff}
 </style></head>
 <body>
 <div class="box">
   <h2>⚡ onebase — Вход</h2>
   {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
-  {{if .Users}}
-  <div class="user-list" id="userList">
-    {{range .Users}}<button type="button" class="user-chip" onclick="pickUser(this,'{{.Login}}')">{{if .FullName}}{{.FullName}}{{else}}{{.Login}}{{end}}</button>{{end}}
-  </div>
-  {{end}}
   <form method="POST">
+    {{if .Users}}
+    <label>Пользователь</label>
+    <select id="userSelect" onchange="pickUser(this)" autofocus>
+      <option value=""></option>
+      {{range .Users}}<option value="{{.Login}}">{{if .FullName}}{{.FullName}}{{else}}{{.Login}}{{end}}</option>{{end}}
+    </select>
+    <input id="loginInput" name="login" type="hidden">
+    {{else}}
     <label>Имя пользователя</label>
-    <input id="loginInput" name="login" autofocus autocomplete="username">
+    <input name="login" autofocus autocomplete="username">
+    {{end}}
     <label>Пароль</label>
     <input id="pwdInput" name="password" type="password" autocomplete="current-password">
     <button class="btn" type="submit">Войти</button>
   </form>
 </div>
 <script>
-function pickUser(btn,login){
-  document.getElementById('loginInput').value=login;
-  document.querySelectorAll('.user-chip').forEach(function(c){c.classList.remove('active')});
-  btn.classList.add('active');
-  document.getElementById('pwdInput').focus();
+function pickUser(sel){
+  document.getElementById('loginInput').value=sel.value;
+  if(sel.value) document.getElementById('pwdInput').focus();
 }
 </script>
 </body></html>`))
