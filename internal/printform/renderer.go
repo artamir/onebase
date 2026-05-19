@@ -117,16 +117,29 @@ func resolveExpr(expr string, ctx *RenderContext, rowNum int, currentRow map[str
 	// Simple field — try current row first, then document
 	if currentRow != nil {
 		if v, ok := currentRow[expr]; ok {
-			return v
+			return resolveRefValue(v, ctx)
 		}
 	}
 	if ctx.Document != nil {
 		if v, ok := ctx.Document[expr]; ok {
-			return v
+			return resolveRefValue(v, ctx)
 		}
 	}
 	return nil
 }
+
+// resolveRefValue checks if v is a UUID present in ctx.Refs and returns its display name.
+func resolveRefValue(v any, ctx *RenderContext) any {
+	if id, ok := v.(string); ok && ctx.Refs != nil {
+		if refData, ok := ctx.Refs[id]; ok {
+			if name, ok := refData["наименование"]; ok {
+				return name
+			}
+		}
+	}
+	return v
+}
+
 
 func renderTable(ts *TableSection, ctx *RenderContext) string {
 	rows := ctx.TableParts[ts.Source]
@@ -192,7 +205,7 @@ func renderTable(ts *TableSection, ctx *RenderContext) string {
 					}
 				}
 			} else {
-				val = row[col.Field]
+				val = resolveRefValue(row[col.Field], ctx)
 			}
 			cell := template.HTMLEscapeString(ApplyFormat(val, col.Format))
 			if style != "" {

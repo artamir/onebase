@@ -327,6 +327,7 @@ type refDimInfo struct {
 	idCol     string // DB column: "номенклатура_id"
 	joinAlias string // SQL alias for auto-JOIN: "ref_номенклатура"
 	joinTable string // referenced catalog table: "номенклатура"
+	isVT      bool   // true: VT outer query, JOIN ON uses fieldName instead of idCol
 }
 
 type translator struct {
@@ -960,11 +961,25 @@ func preScanRefDims(tokens []tok, opts CompileOpts) []refDimInfo {
 		if !isSourceType(upper) || tokens[i+1].kind != tDot || tokens[i+2].kind != tIdent {
 			continue
 		}
-		// skip virtual tables: TypeName.EntityName.VTName(...)
-		if i+3 < len(tokens) && tokens[i+3].kind == tDot {
-			continue
-		}
 		regName := tokens[i+2].val
+		// VT source: TypeName.EntityName.VTName(...)
+		if i+3 < len(tokens) && tokens[i+3].kind == tDot {
+			if isAccumRegType(upper) {
+				for _, reg := range opts.Registers {
+					if strings.EqualFold(reg.Name, regName) {
+						return buildVTRefDimInfos(reg.Dimensions)
+					}
+				}
+			} else if isInfoRegType(upper) {
+				for _, ir := range opts.InfoRegs {
+					if strings.EqualFold(ir.Name, regName) {
+						return buildVTRefDimInfos(ir.Dimensions)
+					}
+				}
+			}
+			return nil
+		}
+		// Regular source
 		if isAccumRegType(upper) {
 			for _, reg := range opts.Registers {
 				if strings.EqualFold(reg.Name, regName) {
@@ -980,6 +995,25 @@ func preScanRefDims(tokens []tok, opts CompileOpts) []refDimInfo {
 		}
 	}
 	return nil
+}
+
+// buildVTRefDimInfos creates refDimInfos for VT outer queries where the subquery
+// aliases _id columns to logical names, so JOIN ON uses fieldName instead of idCol.
+func buildVTRefDimInfos(dims []metadata.Field) []refDimInfo {
+	var result []refDimInfo
+	for _, d := range dims {
+		if d.RefEntity != "" {
+			fn := strings.ToLower(d.Name)
+			result = append(result, refDimInfo{
+				fieldName: fn,
+				idCol:     fn, // VT aliased from _id
+				joinAlias: "ref_" + fn,
+				joinTable: strings.ToLower(d.RefEntity),
+				isVT:      true,
+			})
+		}
+	}
+	return result
 }
 
 func buildRefDimInfos(dims []metadata.Field) []refDimInfo {
@@ -1122,6 +1156,15 @@ func translate(tokens []tok, opts CompileOpts) (Result, error) {
 						return Result{}, err
 					}
 					tr.emit("(" + subq + ") AS " + alias)
+					// Auto-JOIN for reference dimensions in VT outer query
+					if tr.section == sectionFrom {
+						for _, rd := range tr.refDims {
+							if rd.isVT {
+								tr.emit(fmt.Sprintf("LEFT JOIN %s %s ON %s.id = %s.%s",
+									rd.joinTable, rd.joinAlias, rd.joinAlias, alias, rd.fieldName))
+							}
+						}
+					}
 					continue
 				}
 
@@ -1138,6 +1181,15 @@ func translate(tokens []tok, opts CompileOpts) (Result, error) {
 						return Result{}, err
 					}
 					tr.emit("(" + subq + ") AS " + alias)
+					// Auto-JOIN for reference dimensions in VT outer query
+					if tr.section == sectionFrom {
+						for _, rd := range tr.refDims {
+							if rd.isVT {
+								tr.emit(fmt.Sprintf("LEFT JOIN %s %s ON %s.id = %s.%s",
+									rd.joinTable, rd.joinAlias, rd.joinAlias, alias, rd.fieldName))
+							}
+						}
+					}
 					continue
 				}
 
@@ -1154,6 +1206,15 @@ func translate(tokens []tok, opts CompileOpts) (Result, error) {
 						return Result{}, err
 					}
 					tr.emit("(" + subq + ") AS " + alias)
+					// Auto-JOIN for reference dimensions in VT outer query
+					if tr.section == sectionFrom {
+						for _, rd := range tr.refDims {
+							if rd.isVT {
+								tr.emit(fmt.Sprintf("LEFT JOIN %s %s ON %s.id = %s.%s",
+									rd.joinTable, rd.joinAlias, rd.joinAlias, alias, rd.fieldName))
+							}
+						}
+					}
 					continue
 				}
 			}
@@ -1263,11 +1324,14 @@ func translate(tokens []tok, opts CompileOpts) (Result, error) {
 					switch tr.section {
 					case sectionSelect:
 						tr.emit(rd.joinAlias + ".наименование")
-						tr.emit("AS")
-						tr.emit(rd.fieldName)
-					case sectionGroupBy:
+						// Skip auto-alias when user provides КАК/AS
+						if p := strings.ToUpper(tr.peek(0).val); p != "КАК" && p != "AS" {
+							tr.emit("AS")
+							tr.emit(rd.fieldName)
+						}
+					case sectionGroupBy, sectionOrderBy:
 						tr.emit(rd.joinAlias + ".наименование")
-					default: // WHERE, HAVING, ORDER BY, FROM (after dot), OTHER → use _id column
+					default: // WHERE, HAVING, FROM (after dot), OTHER → raw column (UUID for VT, _id for plain)
 						tr.emit(rd.idCol)
 					}
 				} else if col, ok := tr.colMap[lower]; ok && !prevDot {

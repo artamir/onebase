@@ -330,3 +330,46 @@ func TestCompile_BareCatalogInFrom(t *testing.T) {
 		t.Errorf("bare catalog name must NOT be replaced by _id column; got: %s", sql)
 	}
 }
+
+// TestCompile_VT_RefDim_AutoJoin ensures that VT queries (Остатки, etc.) also
+// get auto-JOINs for reference dimensions so results show names, not UUIDs.
+func TestCompile_VT_RefDim_AutoJoin(t *testing.T) {
+	src := "ВЫБРАТЬ Номенклатура КАК Ном, КоличествоОстаток КАК Количество " +
+		"ИЗ РегистрНакопления.ПартииТоваров.Остатки() " +
+		"ГДЕ (&Номенклатура ЕСТЬ ПУСТО ИЛИ Номенклатура = &Номенклатура) " +
+		"УПОРЯДОЧИТЬ ПО Ном"
+
+	reg := &metadata.Register{
+		Name: "ПартииТоваров",
+		Dimensions: []metadata.Field{
+			{Name: "Номенклатура", RefEntity: "Номенклатура"},
+		},
+		Resources: []metadata.Field{{Name: "Количество"}},
+	}
+
+	r, err := query.Compile(src, query.CompileOpts{
+		Registers: []*metadata.Register{reg},
+		Params:    map[string]any{"Номенклатура": nil},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := r.SQL
+
+	// SELECT: must resolve ref dim via JOIN, not double AS
+	if !strings.Contains(sql, "ref_номенклатура.наименование AS ном") {
+		t.Errorf("expected ref_номенклатура.наименование AS ном, got: %s", sql)
+	}
+	// LEFT JOIN must be present in outer query
+	if !strings.Contains(sql, "LEFT JOIN номенклатура ref_номенклатура") {
+		t.Errorf("expected LEFT JOIN for VT outer query, got: %s", sql)
+	}
+	// WHERE: outer query must use logical name (aliased from VT subquery)
+	if !strings.Contains(sql, "номенклатура = NULL") {
+		t.Errorf("expected logical name in outer WHERE, got: %s", sql)
+	}
+	// ORDER BY: alias is fine
+	if !strings.Contains(sql, "ORDER BY ном") {
+		t.Errorf("expected ORDER BY ном (alias), got: %s", sql)
+	}
+}
