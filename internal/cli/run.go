@@ -190,6 +190,12 @@ func runServer(cmd *cobra.Command, _ []string) error {
 	}
 
 	if appCfg != nil && appCfg.Demo != nil && appCfg.Demo.Enabled {
+		// Замечание #11: защита от случайной активации демо-режима на проде.
+		if err := checkDemoEnv(os.Getenv("ONEBASE_ENV")); err != nil {
+			return err
+		}
+		fmt.Fprintln(os.Stderr, "⚠️  ONEBASE: ДЕМО-РЕЖИМ. Данные сбрасываются по расписанию.")
+
 		uiCfg.DemoMode = true
 		msg := appCfg.Demo.Message
 		if msg == "" {
