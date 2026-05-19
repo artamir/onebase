@@ -79,7 +79,15 @@ func (db *DB) MigrateRegisters(ctx context.Context, registers []*metadata.Regist
 	return nil
 }
 
-// MigrateInfoRegisters creates tables for info registers.
+// MigrateInfoRegisters creates tables for info registers and дотягивает схему
+// существующих таблиц — добавляет недостающие колонки. Так регистры можно
+// расширять (добавление periodic, новое измерение / ресурс) без ручной
+// миграции БД.
+//
+// Что НЕ покрыто: изменение PRIMARY KEY (нельзя через ALTER в SQLite,
+// нужен пересоздаваемый ALTER TABLE RENAME + INSERT SELECT). Поэтому если
+// добавляется periodic-флаг к существующей непустой таблице — данные
+// останутся, но PK не обновится; могут быть дубли по (dim) ключу.
 func (db *DB) MigrateInfoRegisters(ctx context.Context, regs []*metadata.InfoRegister) error {
 	d := db.dialect
 	for _, ir := range regs {
@@ -87,6 +95,20 @@ func (db *DB) MigrateInfoRegisters(ctx context.Context, regs []*metadata.InfoReg
 			return fmt.Errorf("migrate info register %s: %w", ir.Name, err)
 		}
 		table := metadata.InfoRegTableName(ir.Name)
+		// period колонка для periodic-регистров — может отсутствовать,
+		// если в YAML только что добавили `periodic: true`. ALLOW NULL,
+		// потому что existing rows иначе не вставить.
+		if ir.Periodic {
+			if err := db.AddColumnIfMissing(ctx, table, "period", d.TypeTimestamp()); err != nil {
+				return fmt.Errorf("migrate info register %s.period: %w", ir.Name, err)
+			}
+		}
+		// Измерения и ресурсы — добавляем если их нет.
+		for _, f := range ir.Dimensions {
+			if err := db.AddColumnIfMissing(ctx, table, metadata.ColumnName(f), fieldType(d, f)); err != nil {
+				return fmt.Errorf("migrate info register %s.%s: %w", ir.Name, f.Name, err)
+			}
+		}
 		if err := db.AddColumnIfMissing(ctx, table, "updated_at", d.TypeTimestamp()); err != nil {
 			return fmt.Errorf("migrate info register %s.updated_at: %w", ir.Name, err)
 		}
