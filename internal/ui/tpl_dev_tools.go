@@ -180,6 +180,7 @@ function qbApplyToEditor() {
 }
 
 function qcParseQueryToBuilder() {
+  try {
   var code = window.qcEditor ? window.qcEditor.getValue() : '';
   if (!code.trim()) return;
   var norm = code.replace(/\s+/g, ' ').trim();
@@ -210,7 +211,7 @@ function qcParseQueryToBuilder() {
   }
 
   // 2. Parse JOINs
-  var joinRe = /\b(ЛЕВОЕ|ВНУТРЕННЕЕ|ПРАВОЕ|ПОЛНОЕ)\s+СОЕДИНЕНИЕ\s+([\wА-Яа-яёЁ.]+)(?:\s+КАК\s+(\w+))?\s+ПО\s+([^ГСУ]+?)(?=\s+(?:ГДЕ|СГРУППИРОВАТЬ|УПОРЯДОЧИТЬ|ЛЕВОЕ|ВНУТРЕННЕЕ|ПРАВОЕ|ПОЛНОЕ|$))/gi;
+  var joinRe = /\b(ЛЕВОЕ|ВНУТРЕННЕЕ|ПРАВОЕ|ПОЛНОЕ)\s+СОЕДИНЕНИЕ\s+([\wА-Яа-яёЁ.]+)(?:\s+КАК\s+(\w+))?\s+ПО\s+(.+?)(?=\s+(?:ГДЕ|СГРУППИРОВАТЬ|УПОРЯДОЧИТЬ|ЛЕВОЕ|ВНУТРЕННЕЕ|ПРАВОЕ|ПОЛНОЕ|$))/gi;
   _joins = [];
   document.getElementById('qb-joins').innerHTML = '';
   var jm;
@@ -312,6 +313,7 @@ function qcParseQueryToBuilder() {
   }
 
   qbGenerate();
+  } catch(e) { console.error('qcParseQueryToBuilder:', e); }
 }
 
 function setSelectValue(sel, val) {
