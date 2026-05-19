@@ -55,6 +55,20 @@ type saveRegister struct {
 	Attributes []saveField `yaml:"attributes,omitempty"`
 }
 
+type saveInfoReg struct {
+	Name       string      `yaml:"name"`
+	Periodic   bool        `yaml:"periodic,omitempty"`
+	Dimensions []saveField `yaml:"dimensions,omitempty"`
+	Resources  []saveField `yaml:"resources,omitempty"`
+}
+
+type saveAccountReg struct {
+	Name      string      `yaml:"name"`
+	Title     string      `yaml:"title,omitempty"`
+	Accounts  string      `yaml:"accounts,omitempty"`
+	Resources []saveField `yaml:"resources,omitempty"`
+}
+
 // ── view types ────────────────────────────────────────────────────────────────
 
 type cfgField struct {
@@ -93,6 +107,7 @@ type cfgEntity struct {
 	Source           string // raw .os content (object module)
 	PostingSource    string // raw .posting.os content (ОбработкаПроведения)
 	LinkedPrintForms []cfgPrintForm
+	Predefined       []cfgPredefined
 }
 
 type cfgRegister struct {
@@ -163,6 +178,18 @@ type cfgInfoRegister struct {
 	Resources  []cfgField
 }
 
+type cfgAccountRegister struct {
+	Name      string
+	Title     string
+	Accounts  string
+	Resources []cfgField
+}
+
+type cfgPredefined struct {
+	Name   string
+	Fields map[string]string // field name → display value
+}
+
 type cfgSubsystem struct {
 	Name     string
 	Title    string
@@ -182,7 +209,8 @@ type configuratorData struct {
 	Catalogs  []cfgEntity
 	Docs      []cfgEntity
 	Registers []cfgRegister
-	InfoRegisters []cfgInfoRegister
+	InfoRegisters    []cfgInfoRegister
+	AccountRegisters []cfgAccountRegister
 	Enums     []cfgEnum
 	Constants []cfgConstant
 	Reports   []cfgReport
@@ -437,6 +465,13 @@ func (h *handler) loadCfgData(ctx context.Context, b *Base, tab string) *configu
 			}
 			ev.TableParts = append(ev.TableParts, tpv)
 		}
+		for _, pd := range e.Predefined {
+			pv := cfgPredefined{Name: pd.Name, Fields: make(map[string]string, len(pd.Fields))}
+			for k, v := range pd.Fields {
+				pv.Fields[k] = fmt.Sprintf("%v", v)
+			}
+			ev.Predefined = append(ev.Predefined, pv)
+		}
 		// Mark fields hidden based on form config
 		if len(e.ListForm) > 0 {
 			lfSet := make(map[string]bool, len(e.ListForm))
@@ -529,6 +564,14 @@ func (h *handler) loadCfgData(ctx context.Context, b *Base, tab string) *configu
 			rv.Resources = append(rv.Resources, toCfgField(f))
 		}
 		data.InfoRegisters = append(data.InfoRegisters, rv)
+	}
+
+	for _, ar := range proj.AccountRegisters {
+		rv := cfgAccountRegister{Name: ar.Name, Title: ar.Title, Accounts: ar.Accounts}
+		for _, f := range ar.Resources {
+			rv.Resources = append(rv.Resources, toCfgField(f))
+		}
+		data.AccountRegisters = append(data.AccountRegisters, rv)
 	}
 
 	for _, en := range proj.Enums {
@@ -1715,6 +1758,8 @@ func newObjectContent(kind, name string) (subdir, content string) {
 		return "subsystems", "name: " + name + "\ntitle: " + name + "\norder: 10\ncontents:\n  catalogs: []\n  documents: []\n  registers: []\n"
 	case "widget":
 		return "widgets", "name: " + name + "\ntype: kpi\ntitle: " + name + "\nformat: number\nquery: |\n  ВЫБРАТЬ КОЛИЧЕСТВО(*) КАК Значение ИЗ Документ.ИмяДокумента\n"
+	case "accountreg":
+		return "accountregs", "name: " + name + "\ntitle: " + name + "\naccounts: ПланСчетов\nresources:\n  - name: Сумма\n    type: number\n"
 	}
 	return "", ""
 }
@@ -2582,6 +2627,384 @@ func (h *handler) configuratorSaveApp(w http.ResponseWriter, r *http.Request) {
 		data.FieldsSavedEntity = "__app__"
 	}
 	renderCfg(w, data)
+}
+
+// ── InfoRegister field save ───────────────────────────────────────────────────
+
+func findInfoRegFilePath(dir, name string) (string, error) {
+	entries, err := os.ReadDir(filepath.Join(dir, "inforegs"))
+	if err != nil {
+		return "", fmt.Errorf("inforegs dir: %w", err)
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
+			continue
+		}
+		p := filepath.Join(dir, "inforegs", e.Name())
+		raw, _ := os.ReadFile(p)
+		var tmp struct{ Name string `yaml:"name"` }
+		if yaml.Unmarshal(raw, &tmp) == nil && tmp.Name == name {
+			return p, nil
+		}
+	}
+	return "", fmt.Errorf("inforeg %q not found", name)
+}
+
+func saveInfoRegToFile(dir string, reg saveInfoReg) error {
+	p, err := findInfoRegFilePath(dir, reg.Name)
+	if err != nil {
+		return err
+	}
+	out, err := yaml.Marshal(&reg)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(p, out, 0o644)
+}
+
+func (h *handler) saveInfoRegToDB(ctx context.Context, b *Base, reg saveInfoReg) error {
+	db, err := OpenDB(ctx, b)
+	if err != nil {
+		return fmt.Errorf("connect: %w", err)
+	}
+	defer db.Close()
+	rows, err := db.Query(ctx, `SELECT path, content FROM _onebase_config WHERE path LIKE 'inforegs/%.yaml'`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var targetPath string
+	for rows.Next() {
+		var p string
+		var content []byte
+		if err := rows.Scan(&p, &content); err != nil {
+			continue
+		}
+		var tmp struct{ Name string `yaml:"name"` }
+		if yaml.Unmarshal(content, &tmp) == nil && tmp.Name == reg.Name {
+			targetPath = p
+			break
+		}
+	}
+	rows.Close()
+	if targetPath == "" {
+		return fmt.Errorf("inforeg %q not found in DB config", reg.Name)
+	}
+	out, err := yaml.Marshal(&reg)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(ctx, `
+		INSERT INTO _onebase_config (path, content, updated_at)
+		VALUES ($1, $2, CURRENT_TIMESTAMP)
+		ON CONFLICT (path) DO UPDATE SET content=EXCLUDED.content, updated_at=CURRENT_TIMESTAMP
+	`, targetPath, out)
+	return err
+}
+
+func (h *handler) configuratorSaveInfoRegFields(w http.ResponseWriter, r *http.Request) {
+	b, err := h.store.Get(chi.URLParam(r, "id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	parseSection := func(prefix string) []saveField {
+		var fields []saveField
+		for i := 0; i < 500; i++ {
+			name := r.FormValue(fmt.Sprintf("%s.%d.name", prefix, i))
+			if name == "" {
+				break
+			}
+			typ := r.FormValue(fmt.Sprintf("%s.%d.type", prefix, i))
+			ref := r.FormValue(fmt.Sprintf("%s.%d.ref", prefix, i))
+			if typ == "reference" && ref != "" {
+				typ = "reference:" + ref
+			}
+			fields = append(fields, saveField{Name: name, Type: typ})
+		}
+		return fields
+	}
+	reg := saveInfoReg{
+		Name:       r.FormValue("inforeg"),
+		Periodic:   r.FormValue("periodic") == "true",
+		Dimensions: parseSection("dim"),
+		Resources:  parseSection("res"),
+	}
+	var saveErr error
+	if b.ConfigSource == "database" {
+		saveErr = h.saveInfoRegToDB(r.Context(), b, reg)
+	} else {
+		saveErr = saveInfoRegToFile(b.Path, reg)
+	}
+	data := h.loadCfgData(r.Context(), b, "tree")
+	if saveErr != nil {
+		data.Error = "Ошибка сохранения: " + saveErr.Error()
+	} else {
+		data.FieldsSaved = true
+		data.FieldsSavedEntity = reg.Name
+	}
+	renderCfg(w, data)
+}
+
+// ── AccountRegister save ───────────────────────────────────────────────────────
+
+func findAccountRegFilePath(dir, name string) (string, error) {
+	entries, err := os.ReadDir(filepath.Join(dir, "accountregs"))
+	if err != nil {
+		return "", fmt.Errorf("accountregs dir: %w", err)
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
+			continue
+		}
+		p := filepath.Join(dir, "accountregs", e.Name())
+		raw, _ := os.ReadFile(p)
+		var tmp struct{ Name string `yaml:"name"` }
+		if yaml.Unmarshal(raw, &tmp) == nil && tmp.Name == name {
+			return p, nil
+		}
+	}
+	return "", fmt.Errorf("accountreg %q not found", name)
+}
+
+func saveAccountRegToFile(dir string, reg saveAccountReg) error {
+	p, err := findAccountRegFilePath(dir, reg.Name)
+	if err != nil {
+		// create new file
+		os.MkdirAll(filepath.Join(dir, "accountregs"), 0o755)
+		p = filepath.Join(dir, "accountregs", nameToFilename(reg.Name)+".yaml")
+	}
+	out, err := yaml.Marshal(&reg)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(p, out, 0o644)
+}
+
+func (h *handler) saveAccountRegToDB(ctx context.Context, b *Base, reg saveAccountReg) error {
+	db, err := OpenDB(ctx, b)
+	if err != nil {
+		return fmt.Errorf("connect: %w", err)
+	}
+	defer db.Close()
+	rows, err := db.Query(ctx, `SELECT path, content FROM _onebase_config WHERE path LIKE 'accountregs/%.yaml'`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	targetPath := "accountregs/" + nameToFilename(reg.Name) + ".yaml"
+	for rows.Next() {
+		var p string
+		var content []byte
+		if err := rows.Scan(&p, &content); err != nil {
+			continue
+		}
+		var tmp struct{ Name string `yaml:"name"` }
+		if yaml.Unmarshal(content, &tmp) == nil && tmp.Name == reg.Name {
+			targetPath = p
+			break
+		}
+	}
+	rows.Close()
+	out, err := yaml.Marshal(&reg)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(ctx, `
+		INSERT INTO _onebase_config (path, content, updated_at)
+		VALUES ($1, $2, CURRENT_TIMESTAMP)
+		ON CONFLICT (path) DO UPDATE SET content=EXCLUDED.content, updated_at=CURRENT_TIMESTAMP
+	`, targetPath, out)
+	return err
+}
+
+func (h *handler) configuratorSaveAccountRegister(w http.ResponseWriter, r *http.Request) {
+	b, err := h.store.Get(chi.URLParam(r, "id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	parseSection := func(prefix string) []saveField {
+		var fields []saveField
+		for i := 0; i < 500; i++ {
+			name := r.FormValue(fmt.Sprintf("%s.%d.name", prefix, i))
+			if name == "" {
+				break
+			}
+			typ := r.FormValue(fmt.Sprintf("%s.%d.type", prefix, i))
+			fields = append(fields, saveField{Name: name, Type: typ})
+		}
+		return fields
+	}
+	reg := saveAccountReg{
+		Name:      r.FormValue("accountreg"),
+		Title:     strings.TrimSpace(r.FormValue("title")),
+		Accounts:  strings.TrimSpace(r.FormValue("accounts")),
+		Resources: parseSection("res"),
+	}
+	var saveErr error
+	if b.ConfigSource == "database" {
+		saveErr = h.saveAccountRegToDB(r.Context(), b, reg)
+	} else {
+		saveErr = saveAccountRegToFile(b.Path, reg)
+	}
+	data := h.loadCfgData(r.Context(), b, "tree")
+	if saveErr != nil {
+		data.Error = "Ошибка сохранения: " + saveErr.Error()
+	} else {
+		data.FieldsSaved = true
+		data.FieldsSavedEntity = reg.Name
+	}
+	renderCfg(w, data)
+}
+
+// ── Predefined items save ─────────────────────────────────────────────────────
+
+func (h *handler) configuratorSavePredefined(w http.ResponseWriter, r *http.Request) {
+	b, err := h.store.Get(chi.URLParam(r, "id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	entityName := r.FormValue("entity")
+	// collect predefined items
+	type rawPD struct {
+		Name   string                 `yaml:"name"`
+		Fields map[string]interface{} `yaml:"fields,omitempty"`
+	}
+	var predefined []rawPD
+	fieldNames := r.Form["pre_field_names"]
+	for i := 0; i < 500; i++ {
+		name := strings.TrimSpace(r.FormValue(fmt.Sprintf("pre.%d.name", i)))
+		if name == "" {
+			break
+		}
+		fields := make(map[string]interface{})
+		for _, fn := range fieldNames {
+			if v := r.FormValue(fmt.Sprintf("pre.%d.field.%s", i, fn)); v != "" {
+				fields[fn] = v
+			}
+		}
+		pd := rawPD{Name: name}
+		if len(fields) > 0 {
+			pd.Fields = fields
+		}
+		predefined = append(predefined, pd)
+	}
+
+	var saveErr error
+	if b.ConfigSource == "database" {
+		saveErr = h.savePredefinedToDB(r.Context(), b, entityName, predefined)
+	} else {
+		saveErr = savePredefinedToFile(b.Path, entityName, predefined)
+	}
+	data := h.loadCfgData(r.Context(), b, "tree")
+	if saveErr != nil {
+		data.Error = "Ошибка сохранения: " + saveErr.Error()
+	} else {
+		data.FieldsSaved = true
+		data.FieldsSavedEntity = entityName
+	}
+	renderCfg(w, data)
+}
+
+func savePredefinedToFile(dir, entityName string, predefined interface{}) error {
+	// find entity file in catalogs/ or documents/
+	for _, subdir := range []string{"catalogs", "documents"} {
+		entries, _ := os.ReadDir(filepath.Join(dir, subdir))
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
+				continue
+			}
+			p := filepath.Join(dir, subdir, e.Name())
+			raw, err := os.ReadFile(p)
+			if err != nil {
+				continue
+			}
+			var top struct{ Name string `yaml:"name"` }
+			if yaml.Unmarshal(raw, &top) != nil || top.Name != entityName {
+				continue
+			}
+			var node map[string]interface{}
+			if err := yaml.Unmarshal(raw, &node); err != nil {
+				return err
+			}
+			if predefined == nil {
+				delete(node, "predefined")
+			} else {
+				node["predefined"] = predefined
+			}
+			out, err := yaml.Marshal(node)
+			if err != nil {
+				return err
+			}
+			return os.WriteFile(p, out, 0o644)
+		}
+	}
+	return fmt.Errorf("entity %q not found", entityName)
+}
+
+func (h *handler) savePredefinedToDB(ctx context.Context, b *Base, entityName string, predefined interface{}) error {
+	db, err := OpenDB(ctx, b)
+	if err != nil {
+		return fmt.Errorf("connect: %w", err)
+	}
+	defer db.Close()
+	rows, err := db.Query(ctx, `SELECT path, content FROM _onebase_config WHERE path ~ '^(catalogs|documents)/[^/]+\.yaml$'`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var targetPath string
+	var rawContent []byte
+	for rows.Next() {
+		var p string
+		var content []byte
+		if err := rows.Scan(&p, &content); err != nil {
+			continue
+		}
+		var top struct{ Name string `yaml:"name"` }
+		if yaml.Unmarshal(content, &top) == nil && top.Name == entityName {
+			targetPath = p
+			rawContent = content
+			break
+		}
+	}
+	rows.Close()
+	if targetPath == "" {
+		return fmt.Errorf("entity %q not found in DB config", entityName)
+	}
+	var node map[string]interface{}
+	if err := yaml.Unmarshal(rawContent, &node); err != nil {
+		return err
+	}
+	if predefined == nil {
+		delete(node, "predefined")
+	} else {
+		node["predefined"] = predefined
+	}
+	out, err := yaml.Marshal(node)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(ctx, `
+		INSERT INTO _onebase_config (path, content, updated_at)
+		VALUES ($1, $2, CURRENT_TIMESTAMP)
+		ON CONFLICT (path) DO UPDATE SET content=EXCLUDED.content, updated_at=CURRENT_TIMESTAMP
+	`, targetPath, out)
+	return err
 }
 
 // ── debug proxy ──────────────────────────────────────────────────────────────

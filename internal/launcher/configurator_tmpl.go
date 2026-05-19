@@ -509,7 +509,7 @@ const cfgFoot = `{{define "cfg-foot"}}
 </div>
 <script>
 // ── New object form ────────────────────────────────────────────
-var _cfgNewTitles = {catalog:'Новый справочник', document:'Новый документ', register:'Новый регистр', inforeg:'Новый регистр сведений', enum:'Новое перечисление', subsystem:'Новая подсистема', widget:'Новый виджет'};
+var _cfgNewTitles = {catalog:'Новый справочник', document:'Новый документ', register:'Новый регистр', inforeg:'Новый регистр сведений', accountreg:'Новый регистр бухгалтерии', enum:'Новое перечисление', subsystem:'Новая подсистема', widget:'Новый виджет'};
 function cfgNewObj(kind) {
   if (kind === 'printform') { cfgNewPrintFormShow(); return; }
   var f = document.getElementById('cfg-new-form');
@@ -593,6 +593,40 @@ function cfgAddTP(btn, entityName) {
     +'</div>';
   btn.parentNode.insertBefore(wrapper, btn);
   cfgAddField(tblId, 'new_tp.'+_cfgNewTpIdx+'.field', entityName);
+}
+// ── Predefined items row ──────────────────────────────────────────
+var _cfgPreRowIdx = 10000;
+function cfgAddPreRow(tblId, fieldCount) {
+  _cfgPreRowIdx++;
+  var tbl = document.getElementById(tblId);
+  if (!tbl) { tbl = document.querySelector('[id="'+tblId+'"]'); }
+  if (!tbl) return;
+  var idx = _cfgPreRowIdx;
+  // read column headers to get field names
+  var headers = tbl.querySelectorAll('th');
+  var tr = document.createElement('tr');
+  var html = '<td><input type="text" name="pre.'+idx+'.name" placeholder="ИмяЭлемента" style="width:100%;font-size:12px;padding:2px 4px;border:1px solid #dde;border-radius:3px"></td>';
+  for (var i = 1; i < headers.length; i++) {
+    var fn = headers[i].textContent.trim();
+    html += '<td><input type="text" name="pre.'+idx+'.field.'+fn+'" style="width:100%;font-size:12px;padding:2px 4px;border:1px solid #dde;border-radius:3px"></td>';
+  }
+  tr.innerHTML = html;
+  tbl.appendChild(tr);
+  tr.querySelector('input').focus();
+}
+// ── AccountReg resource row ───────────────────────────────────────
+var _cfgARResIdx = 0;
+function cfgAddARField(tblId) {
+  _cfgARResIdx++;
+  var tbl = document.getElementById(tblId);
+  if (!tbl) return;
+  tbl.style.display = '';
+  var idx = tbl.querySelectorAll('tr').length - 1;
+  var tr = document.createElement('tr');
+  tr.innerHTML = '<td><input type="text" name="res.'+idx+'.name" placeholder="ИмяРесурса" style="width:100%;font-size:12px;padding:2px 4px;border:1px solid #dde;border-radius:3px"></td>'
+    +'<td><select name="res.'+idx+'.type"><option value="number">число</option><option value="string">строка</option><option value="bool">булево</option></select></td>';
+  tbl.appendChild(tr);
+  tr.querySelector('input').focus();
 }
 // ── Click-to-edit module (Monaco with textarea fallback) ─────────
 var monacoEditors = {};
@@ -817,7 +851,7 @@ document.addEventListener('contextmenu', function(ev) {
   var item = ev.target.closest('.cfg-item');
   if (!item) return;
   var did = item.dataset.id || '';
-  if (did.indexOf('e-') !== 0 && did.indexOf('r-') !== 0 && did.indexOf('ir-') !== 0 &&
+  if (did.indexOf('e-') !== 0 && did.indexOf('r-') !== 0 && did.indexOf('ir-') !== 0 && did.indexOf('ar-') !== 0 &&
       did.indexOf('en-') !== 0 && did.indexOf('rep-') !== 0 && did.indexOf('mod-') !== 0 &&
       did.indexOf('proc-') !== 0 && did.indexOf('pf-') !== 0 && did.indexOf('sub-') !== 0) return;
   ev.preventDefault();
@@ -857,7 +891,7 @@ function cfgSelectPanel(id) {
   var saved='{{.FieldsSavedEntity}}'?'{{.FieldsSavedEntity}}':'{{.ModuleSavedEntity}}';
   var el=null;
   if(directId)el=document.querySelector('[data-id="'+directId+'"]');
-  if(!el&&saved&&saved!=='')['e-','r-','ir-','en-','cn-','rep-','mod-','proc-','pf-','dpf-','mkt-','sub-','panel-app'].forEach(function(p){if(!el)el=document.querySelector('[data-id="'+p+saved+'"]');});
+  if(!el&&saved&&saved!=='')['e-','r-','ir-','ar-','en-','cn-','rep-','mod-','proc-','pf-','dpf-','mkt-','sub-','panel-app'].forEach(function(p){if(!el)el=document.querySelector('[data-id="'+p+saved+'"]');});
   if(el)selItem(el);else{var f=document.querySelector('.cfg-item');if(f)selItem(f);}
 })();
 
@@ -2682,6 +2716,14 @@ const cfgTabTree = `{{define "tab-tree"}}
   {{end}}
   </details>
 
+  <details open class="cfg-tree"><summary class="cfg-group cfg-group-hd"><span>Регистры бухгалтерии</span><span class="cfg-add-btn" onclick="event.stopPropagation();cfgNewObj('accountreg')" title="Добавить регистр бухгалтерии">+</span></summary>
+  {{range .AccountRegisters}}
+  <div class="cfg-item" data-id="ar-{{.Name}}" onclick="selItem(this)">
+    <span class="ic">⚖</span>{{if .Title}}{{.Title}}{{else}}{{.Name}}{{end}}
+  </div>
+  {{end}}
+  </details>
+
   <details open class="cfg-tree"><summary class="cfg-group cfg-group-hd"><span>Перечисления</span><span class="cfg-add-btn" onclick="event.stopPropagation();cfgNewObj('enum')" title="Добавить перечисление">+</span></summary>
   {{range .Enums}}
   <div class="cfg-item" data-id="en-{{.Name}}" onclick="selItem(this)">
@@ -2878,21 +2920,135 @@ const cfgTabTree = `{{define "tab-tree"}}
 
   {{/* InfoRegisters */}}
   {{range .InfoRegisters}}
+  {{$ir := .}}
   <div class="cfg-panel" id="ir-{{.Name}}">
     <div class="panel-title">{{if .Periodic}}⏱{{else}}📋{{end}} {{.Name}}</div>
-    <div class="panel-kind">Регистр сведений{{if .Periodic}} (периодический){{end}}</div>
-    <div class="section-hd">Измерения</div>
+    <div class="panel-kind">Регистр сведений</div>
+    <form method="POST" action="/bases/{{$.Base.ID}}/configurator/inforeg-fields">
+    <input type="hidden" name="inforeg" value="{{.Name}}">
+    <div style="margin:10px 0 12px">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+        <input type="radio" name="periodic" value="true" {{if .Periodic}}checked{{end}}> Периодический (ключ включает период)
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-top:4px">
+        <input type="radio" name="periodic" value="false" {{if not .Periodic}}checked{{end}}> Непериодический
+      </label>
+    </div>
+    {{$allEntities := $.AllEntityNames}}
     {{if .Dimensions}}
-    <div class="fields-table">
-      {{range .Dimensions}}<div class="field-row"><span class="fn">{{.Name}}</span><span class="ft {{fieldTypeClass .Type}}">{{fieldTypeLabel .Type .RefEntity}}</span></div>{{end}}
-    </div>
-    {{else}}<div style="color:#aaa;font-size:12px;padding:4px 0">Нет измерений</div>{{end}}
-    <div class="section-hd" style="margin-top:10px">Ресурсы</div>
+    <details open><summary class="section-hd" style="cursor:pointer">Измерения ({{len .Dimensions}})</summary>
+    <table class="fields-tbl" id="ir-dim-{{.Name}}">
+    <tr><th>Поле</th><th>Тип</th><th style="min-width:150px">Объект</th></tr>
+    {{range $i, $f := .Dimensions}}
+    <input type="hidden" name="dim.{{$i}}.name" value="{{$f.Name}}">
+    <tr>
+      <td>{{$f.Name}}</td>
+      <td>
+        <select name="dim.{{$i}}.type" onchange="cfgToggleRef(this,'irdr-{{$ir.Name}}-{{$i}}')">
+          <option value="string"    {{if eq $f.Type "string"}}selected{{end}}>строка</option>
+          <option value="number"    {{if eq $f.Type "number"}}selected{{end}}>число</option>
+          <option value="date"      {{if eq $f.Type "date"}}selected{{end}}>дата</option>
+          <option value="bool"      {{if eq $f.Type "bool"}}selected{{end}}>булево</option>
+          <option value="reference" {{if eq $f.Type "reference"}}selected{{end}}>ссылка →</option>
+        </select>
+      </td>
+      <td>
+        <select name="dim.{{$i}}.ref" id="irdr-{{$ir.Name}}-{{$i}}"{{if ne $f.Type "reference"}} style="display:none"{{end}}>
+          <option value="">— выбрать —</option>
+          {{range $allEntities}}<option value="{{.}}"{{if eq . $f.RefEntity}} selected{{end}}>{{.}}</option>{{end}}
+        </select>
+      </td>
+    </tr>
+    {{end}}
+    </table>
+    <button type="button" onclick="cfgAddField('ir-dim-{{.Name}}','new_dim','')" style="font-size:11px;color:#1a4a80;background:none;border:1px dashed #c0c8d8;padding:2px 8px;border-radius:3px;cursor:pointer;margin:4px 0">+ Добавить измерение</button>
+    </details>
+    {{end}}
     {{if .Resources}}
-    <div class="fields-table">
-      {{range .Resources}}<div class="field-row"><span class="fn">{{.Name}}</span><span class="ft {{fieldTypeClass .Type}}">{{fieldTypeLabel .Type .RefEntity}}</span></div>{{end}}
+    <details open><summary class="section-hd" style="cursor:pointer;margin-top:8px">Ресурсы ({{len .Resources}})</summary>
+    <table class="fields-tbl" id="ir-res-{{.Name}}">
+    <tr><th>Поле</th><th>Тип</th><th style="min-width:150px">Объект</th></tr>
+    {{range $i, $f := .Resources}}
+    <input type="hidden" name="res.{{$i}}.name" value="{{$f.Name}}">
+    <tr>
+      <td>{{$f.Name}}</td>
+      <td>
+        <select name="res.{{$i}}.type" onchange="cfgToggleRef(this,'irrr-{{$ir.Name}}-{{$i}}')">
+          <option value="string"    {{if eq $f.Type "string"}}selected{{end}}>строка</option>
+          <option value="number"    {{if eq $f.Type "number"}}selected{{end}}>число</option>
+          <option value="date"      {{if eq $f.Type "date"}}selected{{end}}>дата</option>
+          <option value="bool"      {{if eq $f.Type "bool"}}selected{{end}}>булево</option>
+          <option value="reference" {{if eq $f.Type "reference"}}selected{{end}}>ссылка →</option>
+        </select>
+      </td>
+      <td>
+        <select name="res.{{$i}}.ref" id="irrr-{{$ir.Name}}-{{$i}}"{{if ne $f.Type "reference"}} style="display:none"{{end}}>
+          <option value="">— выбрать —</option>
+          {{range $allEntities}}<option value="{{.}}"{{if eq . $f.RefEntity}} selected{{end}}>{{.}}</option>{{end}}
+        </select>
+      </td>
+    </tr>
+    {{end}}
+    </table>
+    <button type="button" onclick="cfgAddField('ir-res-{{.Name}}','new_res','')" style="font-size:11px;color:#1a4a80;background:none;border:1px dashed #c0c8d8;padding:2px 8px;border-radius:3px;cursor:pointer;margin:4px 0">+ Добавить ресурс</button>
+    </details>
+    {{end}}
+    <div class="module-save-row" style="margin-bottom:14px;margin-top:10px">
+      <button class="btn-save" type="submit">Сохранить</button>
+      {{if and $.FieldsSaved (eq $.FieldsSavedEntity .Name)}}<span class="save-ok">✓ Сохранено</span>{{end}}
     </div>
-    {{else}}<div style="color:#aaa;font-size:12px;padding:4px 0">Нет ресурсов</div>{{end}}
+    </form>
+  </div>
+  {{end}}
+
+  {{/* AccountRegisters */}}
+  {{range .AccountRegisters}}
+  {{$ar := .}}
+  <div class="cfg-panel" id="ar-{{.Name}}">
+    <div class="panel-title">⚖ {{if .Title}}{{.Title}}{{else}}{{.Name}}{{end}}</div>
+    <div class="panel-kind">Регистр бухгалтерии</div>
+    <form method="POST" action="/bases/{{$.Base.ID}}/configurator/account-register">
+    <input type="hidden" name="accountreg" value="{{.Name}}">
+    <div class="fg" style="margin-bottom:10px">
+      <label>Заголовок</label>
+      <input type="text" name="title" value="{{.Title}}" placeholder="Отображаемое имя">
+    </div>
+    <div class="fg" style="margin-bottom:12px">
+      <label>План счетов (имя объекта)</label>
+      <input type="text" name="accounts" value="{{.Accounts}}" placeholder="ПланСчетов">
+    </div>
+    {{$allEntities := $.AllEntityNames}}
+    {{if .Resources}}
+    <details open><summary class="section-hd" style="cursor:pointer">Ресурсы ({{len .Resources}})</summary>
+    <table class="fields-tbl" id="ar-res-{{.Name}}">
+    <tr><th>Поле</th><th>Тип</th></tr>
+    {{range $i, $f := .Resources}}
+    <input type="hidden" name="res.{{$i}}.name" value="{{$f.Name}}">
+    <tr>
+      <td>{{$f.Name}}</td>
+      <td>
+        <select name="res.{{$i}}.type">
+          <option value="number" {{if eq $f.Type "number"}}selected{{end}}>число</option>
+          <option value="string" {{if eq $f.Type "string"}}selected{{end}}>строка</option>
+          <option value="bool"   {{if eq $f.Type "bool"}}selected{{end}}>булево</option>
+        </select>
+      </td>
+    </tr>
+    {{end}}
+    </table>
+    <button type="button" onclick="cfgAddARField('ar-res-{{.Name}}')" style="font-size:11px;color:#1a4a80;background:none;border:1px dashed #c0c8d8;padding:2px 8px;border-radius:3px;cursor:pointer;margin:4px 0">+ Добавить ресурс</button>
+    </details>
+    {{else}}
+    <div id="ar-res-{{.Name}}-wrap">
+    <table class="fields-tbl" id="ar-res-{{.Name}}" style="display:none"><tr><th>Поле</th><th>Тип</th></tr></table>
+    </div>
+    <button type="button" onclick="cfgAddARField('ar-res-{{.Name}}')" style="font-size:11px;color:#1a4a80;background:none;border:1px dashed #c0c8d8;padding:2px 8px;border-radius:3px;cursor:pointer;margin:4px 0">+ Добавить ресурс</button>
+    {{end}}
+    <div class="module-save-row" style="margin-bottom:14px;margin-top:10px">
+      <button class="btn-save" type="submit">Сохранить</button>
+      {{if and $.FieldsSaved (eq $.FieldsSavedEntity .Name)}}<span class="save-ok">✓ Сохранено</span>{{end}}
+    </div>
+    </form>
   </div>
   {{end}}
 
@@ -3527,6 +3683,31 @@ const cfgTabTree = `{{define "tab-tree"}}
   {{if and $fSaved (eq $fSavedEnt $e.Name)}}<span class="save-ok">✓ Сохранено</span>{{end}}
 </div>
 </form>
+
+{{/* Predefined items — only for catalogs */}}
+{{if eq $e.Kind "Справочник"}}
+<details style="margin-top:18px"><summary class="section-hd" style="cursor:pointer">Предопределённые элементы ({{len $e.Predefined}})</summary>
+<form method="POST" action="/bases/{{$baseID}}/configurator/predefined">
+<input type="hidden" name="entity" value="{{$e.Name}}">
+{{range $e.Fields}}<input type="hidden" name="pre_field_names" value="{{.Name}}">{{end}}
+<div style="font-size:11px;color:#64748b;margin-bottom:8px">Элементы, которые всегда присутствуют в справочнике. Имя — программный идентификатор (без пробелов).</div>
+<table class="fields-tbl" id="pre-tbl-{{$e.Name}}">
+<tr><th>Имя</th>{{range $e.Fields}}<th>{{.Name}}</th>{{end}}</tr>
+{{range $i, $pd := $e.Predefined}}
+<tr>
+  <td><input type="text" name="pre.{{$i}}.name" value="{{$pd.Name}}" style="width:100%;font-size:12px;padding:2px 4px;border:1px solid #dde;border-radius:3px"></td>
+  {{range $e.Fields}}<td><input type="text" name="pre.{{$i}}.field.{{.Name}}" value="{{index $pd.Fields .Name}}" style="width:100%;font-size:12px;padding:2px 4px;border:1px solid #dde;border-radius:3px"></td>{{end}}
+</tr>
+{{end}}
+</table>
+<button type="button" onclick="cfgAddPreRow('pre-tbl-{{$e.Name}}',{{len $e.Fields}})" style="font-size:11px;color:#1a4a80;background:none;border:1px dashed #c0c8d8;padding:2px 8px;border-radius:3px;cursor:pointer;margin:6px 0">+ Добавить элемент</button>
+<div class="module-save-row" style="margin-bottom:8px;margin-top:6px">
+  <button class="btn-save" type="submit">Сохранить предопределённые</button>
+  {{if and $fSaved (eq $fSavedEnt $e.Name)}}<span class="save-ok">✓ Сохранено</span>{{end}}
+</div>
+</form>
+</details>
+{{end}}
 
 {{/* Linked print forms */}}
 {{if $e.LinkedPrintForms}}
