@@ -233,6 +233,8 @@ type configuratorData struct {
 	Error     string
 	// all entity names for reference picker
 	AllEntityNames []string
+	// all enum names for enum-type field picker
+	AllEnumNames []string
 	// query builder schema (JSON for inline query builder)
 	QBSchema template.JS
 	// converter
@@ -605,6 +607,7 @@ func (h *handler) loadCfgData(ctx context.Context, b *Base, tab string) *configu
 
 	for _, en := range proj.Enums {
 		data.Enums = append(data.Enums, cfgEnum{Name: en.Name, Values: en.Values})
+		data.AllEnumNames = append(data.AllEnumNames, en.Name)
 	}
 
 	for _, c := range proj.Constants {
@@ -1375,14 +1378,18 @@ func (h *handler) configuratorSaveFields(w http.ResponseWriter, r *http.Request)
 		}
 		typ := r.FormValue(fmt.Sprintf("field.%d.type", i))
 		ref := r.FormValue(fmt.Sprintf("field.%d.ref", i))
-		if typ == "reference" {
+		if typ == "reference" || typ == "enum" {
 			if ref == "" {
 				data := h.loadCfgData(r.Context(), b, "tree")
-				data.Error = fmt.Sprintf("Поле «%s»: выберите объект для ссылки", name)
+				kind := "объект для ссылки"
+				if typ == "enum" {
+					kind = "перечисление"
+				}
+				data.Error = fmt.Sprintf("Поле «%s»: выберите %s", name, kind)
 				renderCfg(w, data)
 				return
 			}
-			typ = "reference:" + ref
+			typ = typ + ":" + ref
 		}
 		fields = append(fields, saveField{Name: name, Type: typ})
 	}
@@ -1394,14 +1401,18 @@ func (h *handler) configuratorSaveFields(w http.ResponseWriter, r *http.Request)
 		}
 		typ := r.FormValue(fmt.Sprintf("new_field.%d.type", i))
 		ref := r.FormValue(fmt.Sprintf("new_field.%d.ref", i))
-		if typ == "reference" {
+		if typ == "reference" || typ == "enum" {
 			if ref == "" {
 				data := h.loadCfgData(r.Context(), b, "tree")
-				data.Error = fmt.Sprintf("Поле «%s»: выберите объект для ссылки", name)
+				kind := "объект для ссылки"
+				if typ == "enum" {
+					kind = "перечисление"
+				}
+				data.Error = fmt.Sprintf("Поле «%s»: выберите %s", name, kind)
 				renderCfg(w, data)
 				return
 			}
-			typ = "reference:" + ref
+			typ = typ + ":" + ref
 		}
 		fields = append(fields, saveField{Name: name, Type: typ})
 	}
@@ -1416,14 +1427,18 @@ func (h *handler) configuratorSaveFields(w http.ResponseWriter, r *http.Request)
 			}
 			typ := r.FormValue(fmt.Sprintf("tp.%s.field.%d.type", tpName, i))
 			ref := r.FormValue(fmt.Sprintf("tp.%s.field.%d.ref", tpName, i))
-			if typ == "reference" {
+			if typ == "reference" || typ == "enum" {
 				if ref == "" {
 					data := h.loadCfgData(r.Context(), b, "tree")
-					data.Error = fmt.Sprintf("Поле «%s.%s»: выберите объект для ссылки", tpName, name)
+					kind := "объект для ссылки"
+					if typ == "enum" {
+						kind = "перечисление"
+					}
+					data.Error = fmt.Sprintf("Поле «%s.%s»: выберите %s", tpName, name, kind)
 					renderCfg(w, data)
 					return
 				}
-				typ = "reference:" + ref
+				typ = typ + ":" + ref
 			}
 			f = append(f, saveField{Name: name, Type: typ})
 		}
@@ -1450,14 +1465,18 @@ func (h *handler) configuratorSaveFields(w http.ResponseWriter, r *http.Request)
 			}
 			typ := r.FormValue(fmt.Sprintf("new_tp.%d.field.%d.type", ntp, i))
 			ref := r.FormValue(fmt.Sprintf("new_tp.%d.field.%d.ref", ntp, i))
-			if typ == "reference" {
+			if typ == "reference" || typ == "enum" {
 				if ref == "" {
 					data := h.loadCfgData(r.Context(), b, "tree")
-					data.Error = fmt.Sprintf("Поле «%s.%s»: выберите объект для ссылки", tpKey, name)
+					kind := "объект для ссылки"
+					if typ == "enum" {
+						kind = "перечисление"
+					}
+					data.Error = fmt.Sprintf("Поле «%s.%s»: выберите %s", tpKey, name, kind)
 					renderCfg(w, data)
 					return
 				}
-				typ = "reference:" + ref
+				typ = typ + ":" + ref
 			}
 			f = append(f, saveField{Name: name, Type: typ})
 		}
