@@ -5,7 +5,7 @@
 
 ## Чек-лист
 
-- [ ] **#13** — в `*.proc.os` видна только одна процедура
+- [x] **#13** — в `*.proc.os` видна только одна процедура → добавлен `Interpreter.LookupSiblingProc`, резолвит helper-процедуры по файлу. `Registry.GetSiblingProc(currentFile, name)` сканирует `r.procs` с фильтром по `Name.File`. Подключено в `cli/run.go`, `cli/dev.go`. Тесты `TestInterpreter_SiblingProc*` в `interpreter_test.go`.
 - [x] **#18** — виртуальное поле `Ссылка` в запросах не работает → проверка `prevDot` в `internal/query/query.go:1238` убрана; теперь `Ссылка`/`Reference`/`Ref` транслируется в `id` и с префиксом (`Н.Ссылка`), и без (`Ссылка`). Тесты `TestCompile_Ssylka_Bare`, `TestCompile_Ssylka_InWhere` в `query_test.go`.
 - [x] **#20** — `Справочники.X.ИмяПредопределённой` → теперь возвращает `*Ref`. Добавил `CatalogsRoot/CatalogProxy` в `internal/dsl/interpreter/catalogs_proxy.go`, зарегистрировал как `Справочники`/`Catalogs` в `internal/ui/handlers.go:1454`.
 - [x] **#21** — `НайтиПоНаименованию` / `НайтиПоКоду` → реализованы как методы `CatalogProxy`. Storage-метод `FindCatalogByField` в `internal/storage/predefined.go`.

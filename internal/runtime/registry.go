@@ -375,6 +375,32 @@ func (r *Registry) GetModuleProc(name string) *ast.ProcedureDecl {
 	return r.moduleProcs[strings.ToLower(name)]
 }
 
+// GetSiblingProc resolves a helper procedure declared in the same source
+// file as currentFile. Lets `.proc.os` (processor entry-point) call
+// helpers also defined inside it without flattening every entity proc
+// into a global namespace (which would let arbitrary code invoke
+// OnWrite/OnPost handlers by name).
+//
+// currentFile comes from interpreter.curFile (the file:line of the
+// last executed statement), so the resolver naturally scopes to the
+// currently running source.
+func (r *Registry) GetSiblingProc(currentFile, name string) *ast.ProcedureDecl {
+	if currentFile == "" {
+		return nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	low := strings.ToLower(name)
+	for _, pm := range r.procs {
+		for procLow, decl := range pm {
+			if procLow == low && decl.Name.File == currentFile {
+				return decl
+			}
+		}
+	}
+	return nil
+}
+
 func (r *Registry) Processors() []*processor.Processor {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

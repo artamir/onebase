@@ -62,6 +62,7 @@ func runDev(cmd *cobra.Command, _ []string) error {
 	reg := runtime.NewRegistry()
 	interp := interpreter.New()
 	interp.LookupProc = reg.GetModuleProc
+	interp.LookupSiblingProc = reg.GetSiblingProc
 
 	sched := scheduler.New(db, reg, interp)
 

@@ -39,9 +39,14 @@ type DebugHook interface {
 
 type Interpreter struct {
 	LookupProc func(name string) *ast.ProcedureDecl
-	DebugHook  DebugHook // nil = no debugging
-	curFile    string    // last executed statement location (for error reporting)
-	curLine    int
+	// LookupSiblingProc resolves a helper procedure defined in the same
+	// source file as the currently-executing statement. Used so that
+	// `.proc.os` / `.posting.os` / `.rep.os` могут содержать вспомогательные
+	// процедуры (см. замечание #13). Optional — может быть nil.
+	LookupSiblingProc func(file, name string) *ast.ProcedureDecl
+	DebugHook         DebugHook // nil = no debugging
+	curFile           string    // last executed statement location (for error reporting)
+	curLine           int
 }
 
 func New() *Interpreter { return &Interpreter{} }
@@ -458,6 +463,13 @@ func (i *Interpreter) evalCall(c *ast.CallExpr, e *env) any {
 		}
 		if i.LookupProc != nil {
 			if proc := i.LookupProc(fnName); proc != nil {
+				return i.callUserProc(proc, e, args)
+			}
+		}
+		// Помощник из того же файла (.proc.os / .posting.os / .rep.os),
+		// см. замечание #13.
+		if i.LookupSiblingProc != nil && i.curFile != "" {
+			if proc := i.LookupSiblingProc(i.curFile, fnName); proc != nil {
 				return i.callUserProc(proc, e, args)
 			}
 		}
