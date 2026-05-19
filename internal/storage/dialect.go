@@ -199,13 +199,38 @@ func (SQLiteDialect) LatestPerKey(cols, partitionBy, orderBy []string, baseTable
 	if where != "" {
 		whereSQL = " WHERE " + where
 	}
+	// Outer SELECT берёт колонки из inner subquery, где они уже под
+	// alias-именами («номенклатура_id AS номенклатура»). Поэтому в outer
+	// нужно использовать только alias, иначе SQLite ругается «no such
+	// column: номенклатура_id» — оригинального имени уже нет в scope
+	// подзапроса. Inner SELECT же читает колонки таблицы — там полные
+	// выражения с AS работают.
+	outerCols := make([]string, len(cols))
+	for i, c := range cols {
+		outerCols[i] = aliasOf(c)
+	}
 	return fmt.Sprintf(
 		"SELECT %s FROM (SELECT %s, ROW_NUMBER() OVER (PARTITION BY %s ORDER BY %s) AS _rn FROM %s AS %s%s) _w WHERE _rn = 1",
-		joinCols(cols),
+		joinCols(outerCols),
 		joinCols(cols),
 		joinCols(partitionBy), joinCols(orderBy),
 		baseTable, alias, whereSQL,
 	)
+}
+
+// aliasOf вытаскивает alias-имя из выражения вида «expr AS alias»; если
+// AS нет — возвращает выражение как есть. Регистронезависимый поиск
+// потому что в DSL встречается и AS, и as.
+func aliasOf(col string) string {
+	for i := 0; i+3 < len(col); i++ {
+		if (col[i] == ' ') &&
+			(col[i+1] == 'A' || col[i+1] == 'a') &&
+			(col[i+2] == 'S' || col[i+2] == 's') &&
+			(col[i+3] == ' ') {
+			return col[i+4:]
+		}
+	}
+	return col
 }
 
 func joinCols(cs []string) string {
