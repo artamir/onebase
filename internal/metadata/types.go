@@ -49,6 +49,10 @@ type Numerator struct {
 	Prefix string // e.g. "ПОС-"
 	Length int    // digits in numeric part, padded with leading zeros
 	Period string // "year" | "month" | "none"
+	// Scope — имя поля документа, значение которого включается в ключ
+	// нумерации. Например, scope: "Организация" даст отдельные счётчики
+	// для каждой организации. Замечание #6.
+	Scope string
 }
 
 // PredefinedItem describes a catalog record that is always present in the DB

@@ -48,23 +48,39 @@ func FormatNumber(prefix string, length, number int) string {
 }
 
 // ComputePeriodKey derives the period key from a document date field and
-// the numerator's Period setting ("year", "month", "none").
+// the numerator's Period setting ("year", "month", "none"). Scope (если задан)
+// добавляется к ключу — например, scope: Организация даст у каждой
+// организации свой счётчик (замечание #6). Формат: "<period>|<scopeValue>",
+// либо просто "<period>" если scope не задан.
 func ComputePeriodKey(num *metadata.Numerator, fields map[string]any) string {
-	if num.Period == "none" {
-		return ""
-	}
-	var date time.Time
-	for _, v := range fields {
-		if t, ok := v.(time.Time); ok && !t.IsZero() {
-			date = t
-			break
+	var periodPart string
+	if num.Period != "none" {
+		var date time.Time
+		for _, v := range fields {
+			if t, ok := v.(time.Time); ok && !t.IsZero() {
+				date = t
+				break
+			}
+		}
+		if date.IsZero() {
+			date = time.Now()
+		}
+		if num.Period == "month" {
+			periodPart = date.Format("2006-01")
+		} else {
+			periodPart = date.Format("2006")
 		}
 	}
-	if date.IsZero() {
-		date = time.Now()
+
+	if num.Scope == "" {
+		return periodPart
 	}
-	if num.Period == "month" {
-		return date.Format("2006-01")
+	scopeVal := ""
+	if v, ok := fields[num.Scope]; ok && v != nil {
+		scopeVal = fmt.Sprintf("%v", v)
 	}
-	return date.Format("2006")
+	if periodPart == "" {
+		return scopeVal
+	}
+	return periodPart + "|" + scopeVal
 }
