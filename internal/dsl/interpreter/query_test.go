@@ -12,6 +12,7 @@ import (
 	"github.com/ivantit66/onebase/internal/dsl/parser"
 	"github.com/ivantit66/onebase/internal/metadata"
 	"github.com/ivantit66/onebase/internal/runtime"
+	"github.com/ivantit66/onebase/internal/storage"
 )
 
 // stubDB — mock QueryDB для тестов.
@@ -23,6 +24,7 @@ type stubDB struct {
 func (s *stubDB) QueryAll(_ context.Context, _ string, _ ...any) ([]map[string]any, error) {
 	return s.rows, s.err
 }
+func (s *stubDB) Dialect() storage.Dialect { return nil }
 
 // stubReg — mock QueryRegistry.
 type stubReg struct{}
@@ -149,4 +151,34 @@ func (c *captureDB) QueryAll(_ context.Context, sql string, args ...any) ([]map[
 		c.onQuery(sql, args)
 	}
 	return nil, nil
+}
+func (c *captureDB) Dialect() storage.Dialect { return nil }
+
+// TestQuery_ArrayParam_ExpandsInClause проверяет что Массив в IN (&Param)
+// раскрывается в несколько позиционных параметров, а не передаётся как один объект.
+func TestQuery_ArrayParam_ExpandsInClause(t *testing.T) {
+	var capturedSQL string
+	var capturedArgs []any
+	db := &captureDB{onQuery: func(sql string, args []any) {
+		capturedSQL = sql
+		capturedArgs = args
+	}}
+	src := `Процедура Тест()
+		Список = Новый Массив;
+		Список.Добавить("uuid-1");
+		Список.Добавить("uuid-2");
+		Список.Добавить("uuid-3");
+		Запрос = Новый Запрос;
+		Запрос.Текст = "ВЫБРАТЬ Наименование ИЗ Справочник.Номенклатура ГДЕ Ссылка В (&Список)";
+		Запрос.УстановитьПараметр("Список", Список);
+		Запрос.Выполнить();
+		Возврат 1;
+	КонецПроцедуры`
+	evalQuery(t, src, db, &stubReg{})
+	assert.NotEmpty(t, capturedSQL)
+	// Должно быть 3 отдельных аргумента, не один *Array
+	assert.Len(t, capturedArgs, 3)
+	assert.Equal(t, "uuid-1", capturedArgs[0])
+	assert.Equal(t, "uuid-2", capturedArgs[1])
+	assert.Equal(t, "uuid-3", capturedArgs[2])
 }

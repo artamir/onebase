@@ -40,6 +40,8 @@ type DebugHook interface {
 type Interpreter struct {
 	LookupProc func(name string) *ast.ProcedureDecl
 	DebugHook  DebugHook // nil = no debugging
+	curFile    string    // last executed statement location (for error reporting)
+	curLine    int
 }
 
 func New() *Interpreter { return &Interpreter{} }
@@ -59,7 +61,7 @@ func (i *Interpreter) RunWithResult(proc *ast.ProcedureDecl, this This, result *
 			case dslStop:
 				err = s.err
 			case userError:
-				err = &DSLError{Msg: s.Msg}
+				err = &DSLError{File: i.curFile, Line: i.curLine, Msg: s.Msg}
 			case dslReturn:
 				if result != nil {
 					*result = s.val
@@ -88,7 +90,7 @@ func (i *Interpreter) Run(proc *ast.ProcedureDecl, this This, extraVars ...map[s
 			case dslStop:
 				err = s.err
 			case userError:
-				err = &DSLError{Msg: s.Msg}
+				err = &DSLError{File: i.curFile, Line: i.curLine, Msg: s.Msg}
 			case dslReturn:
 				// early return from procedure — not an error
 			default:
@@ -108,6 +110,10 @@ func (i *Interpreter) Run(proc *ast.ProcedureDecl, this This, extraVars ...map[s
 
 func (i *Interpreter) execBlock(stmts []ast.Stmt, e *env) {
 	for _, s := range stmts {
+		if loc := getLocation(s); loc != nil {
+			i.curFile = loc.File
+			i.curLine = loc.Line
+		}
 		if i.DebugHook != nil {
 			i.beforeStmt(s, e)
 		}

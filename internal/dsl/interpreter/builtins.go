@@ -19,7 +19,10 @@ type DSLError struct {
 }
 
 func (e *DSLError) Error() string {
-	return fmt.Sprintf("%s:%d: Error: %s", e.File, e.Line, e.Msg)
+	if e.File != "" && e.Line > 0 {
+		return fmt.Sprintf("%s:%d: %s", e.File, e.Line, e.Msg)
+	}
+	return e.Msg
 }
 
 var builtins = map[string]func(args []any, file string, line int) (any, error){

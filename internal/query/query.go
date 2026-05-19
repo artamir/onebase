@@ -379,12 +379,32 @@ func (tr *translator) build() string {
 }
 
 // addParam registers a named parameter and returns its SQL placeholder.
+// If the value is []any (DSL array converted by unwrapArrayParams), it expands
+// to a comma-joined list of placeholders suitable for IN (...) clauses.
 func (tr *translator) addParam(name string) string {
 	v := tr.paramValues[name]
 	if v == nil {
 		return "NULL"
 	}
 	d := dialectOrDefault(tr.opts.Dialect)
+
+	// Expand array parameters for IN clauses: IN (&Param) → IN ($1, $2, $3)
+	if items, ok := v.([]any); ok {
+		if len(items) == 0 {
+			return "NULL"
+		}
+		placeholders := make([]string, 0, len(items))
+		for _, item := range items {
+			tr.args = append(tr.args, item)
+			ph := d.Placeholder(len(tr.args))
+			if d.Name() == "postgres" {
+				ph += castSuffix(d, item)
+			}
+			placeholders = append(placeholders, ph)
+		}
+		return strings.Join(placeholders, ", ")
+	}
+
 	if d.Name() != "postgres" {
 		// SQLite uses positional `?` — each occurrence consumes a separate arg slot.
 		// Unlike PostgreSQL's $N, `?` cannot be reused for the same param.

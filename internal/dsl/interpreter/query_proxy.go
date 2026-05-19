@@ -79,12 +79,26 @@ func (q *queryProxy) CallMethod(name string, args []any) any {
 	panic(userError{Msg: "Объект Запрос не имеет метода " + name})
 }
 
+// unwrapArrayParams converts *Array DSL params to []any so the query
+// compiler can expand them into individual IN-clause placeholders.
+func unwrapArrayParams(params map[string]any) map[string]any {
+	result := make(map[string]any, len(params))
+	for k, v := range params {
+		if arr, ok := v.(*Array); ok {
+			result[k] = arr.items
+		} else {
+			result[k] = v
+		}
+	}
+	return result
+}
+
 func (q *queryProxy) execute() *Array {
 	if strings.TrimSpace(q.text) == "" {
 		panic(userError{Msg: "Запрос.Текст не задан"})
 	}
 	res, err := query.Compile(q.text, query.CompileOpts{
-		Params:      q.params,
+		Params:      unwrapArrayParams(q.params),
 		Registers:   q.reg.Registers(),
 		InfoRegs:    q.reg.InfoRegisters(),
 		AccountRegs: q.reg.AccountRegisters(),
