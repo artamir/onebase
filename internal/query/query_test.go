@@ -208,6 +208,38 @@ func TestCompile_Ssylka_InSelect(t *testing.T) {
 	}
 }
 
+// Регрессия для замечания #18: bare-Ссылка (без алиаса) тоже должна
+// транслироваться в id.
+func TestCompile_Ssylka_Bare(t *testing.T) {
+	src := `ВЫБРАТЬ Ссылка, Наименование ИЗ Справочник.ТипЦен`
+
+	r, err := query.Compile(src, query.CompileOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Ссылка → id, без префикса
+	if !strings.Contains(r.SQL, "SELECT id") {
+		t.Errorf("expected SELECT id, got: %s", r.SQL)
+	}
+	if strings.Contains(r.SQL, "ссылка") {
+		t.Errorf("bare Ссылка leaked into SQL: %s", r.SQL)
+	}
+}
+
+func TestCompile_Ssylka_InWhere(t *testing.T) {
+	src := `ВЫБРАТЬ Наименование ИЗ Справочник.ТипЦен ГДЕ Ссылка = &ИД`
+
+	r, err := query.Compile(src, query.CompileOpts{
+		Params: map[string]any{"ИД": "00000000-0000-0000-0000-000000000000"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(r.SQL, "WHERE id =") {
+		t.Errorf("expected WHERE id =, got: %s", r.SQL)
+	}
+}
+
 func TestCompile_RefDim_AutoJoin(t *testing.T) {
 	// When a register has a reference-type dimension, the query compiler should:
 	// • SELECT:   Номенклатура → ref_номенклатура.наименование AS номенклатура

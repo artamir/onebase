@@ -1234,8 +1234,10 @@ func translate(tokens []tok, opts CompileOpts) (Result, error) {
 			tr.advance()
 			prevDot := tr.prevWasDot
 			tr.prevWasDot = false
-			// .Ссылка / .Reference → .id (virtual primary-key field, like 1C)
-			if prevDot && (strings.ToUpper(t.val) == "ССЫЛКА" || strings.ToUpper(t.val) == "REFERENCE" || strings.ToUpper(t.val) == "REF") {
+			// Ссылка / Reference → id (virtual primary-key field, like 1C).
+			// Работает и после точки (Н.Ссылка → н.id), и без алиаса
+			// (ВЫБРАТЬ Ссылка ИЗ Справочник.X → SELECT id FROM x).
+			if up := strings.ToUpper(t.val); up == "ССЫЛКА" || up == "REFERENCE" || up == "REF" {
 				tr.emit("id")
 				continue
 			}
