@@ -2772,13 +2772,13 @@ const cfgTabTree = `{{define "tab-tree"}}
 
   <details open class="cfg-tree"><summary class="cfg-group cfg-group-hd"><span>Печатные формы</span><span class="cfg-add-btn" onclick="event.stopPropagation();cfgNewObj('printform')" title="Добавить печатную форму">+</span></summary>
   {{range .PrintForms}}
-  <div class="cfg-item" data-id="pf-{{.Name}}" onclick="selItem(this)">
-    <span class="ic">🖨</span>{{.Name}}<span style="color:#aaa;font-size:10px;margin-left:4px">→{{.Document}}</span>
+  <div class="cfg-item{{if .Shadowed}} cfg-item-shadowed{{end}}" data-id="pf-{{.Name}}" onclick="selItem(this)"{{if .Shadowed}} title="Эту YAML-форму перебивает одноимённая .os — в runtime используется DSL-вариант (см. замечание #10)"{{end}}>
+    <span class="ic">🖨</span>{{if .Shadowed}}<span style="color:#d97706" title="Перебивается .os">⚠️ </span>{{end}}{{.Name}}<span style="color:#aaa;font-size:10px;margin-left:4px">→{{.Document}}{{if .Shadowed}} (скрыта .os){{end}}</span>
   </div>
   {{end}}
   {{range .DSLPrintForms}}
-  <div class="cfg-item" data-id="dpf-{{.Name}}" onclick="selItem(this)">
-    <span class="ic">📋</span>{{.Name}}<span style="color:#aaa;font-size:10px;margin-left:4px">→{{.Document}} (DSL)</span>
+  <div class="cfg-item" data-id="dpf-{{.Name}}" onclick="selItem(this)"{{if .Overrides}} title="Перебивает одноимённую YAML-форму у этого документа"{{end}}>
+    <span class="ic">📋</span>{{.Name}}<span style="color:#aaa;font-size:10px;margin-left:4px">→{{.Document}} (DSL{{if .Overrides}}, перебивает YAML{{end}})</span>
   </div>
   {{if .HasLayout}}
   <div class="cfg-item cfg-sub" data-id="mkt-{{.Name}}" onclick="selItem(this)" style="padding-left:32px">

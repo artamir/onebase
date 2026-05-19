@@ -159,6 +159,12 @@ type cfgPrintForm struct {
 	Document string
 	Source   string
 	FileName string
+	// Shadowed — для этого entity+name есть одноимённая .os-форма.
+	// Runtime в onebase run использует .os-вариант, YAML игнорируется
+	// (см. замечание #10). UI конфигуратора показывает оба, но помечает
+	// YAML значком ⚠️ — чтобы автор конфигурации не удивлялся, что
+	// его правки в YAML «не работают».
+	Shadowed bool
 }
 
 type cfgDSLPrintForm struct {
@@ -169,6 +175,9 @@ type cfgDSLPrintForm struct {
 	HasLayout     bool
 	LayoutYAML    string
 	LayoutPreview template.HTML
+	// Overrides — есть одноимённая YAML-форма у того же entity,
+	// которую этот .os перебивает.
+	Overrides bool
 }
 
 type cfgInfoRegister struct {
@@ -504,10 +513,29 @@ func (h *handler) loadCfgData(ctx context.Context, b *Base, tab string) *configu
 
 	// load print forms and link to entities
 	pfSources := readPrintFormSources(proj.Dir)
+
+	// Замечание #10: индекс «(doc,name)→true» по .os формам, чтобы пометить
+	// YAML-формы, которые runtime тихо игнорирует.
+	dslIndex := make(map[string]bool, len(proj.DSLPrintForms))
+	for _, df := range proj.DSLPrintForms {
+		dslIndex[strings.ToLower(df.Document)+"|"+strings.ToLower(df.Name)] = true
+	}
+	// И обратный индекс для пометки .os-форм, которые перебивают YAML.
+	yamlIndex := make(map[string]bool, len(proj.PrintForms))
+	for _, pf := range proj.PrintForms {
+		yamlIndex[strings.ToLower(pf.Document)+"|"+strings.ToLower(pf.Name)] = true
+	}
+
 	pfByDoc := make(map[string][]cfgPrintForm)
 	for _, pf := range proj.PrintForms {
 		entry := pfSources[pf.Name]
-		cpf := cfgPrintForm{Name: pf.Name, Document: pf.Document, Source: entry.source, FileName: entry.filename}
+		cpf := cfgPrintForm{
+			Name:     pf.Name,
+			Document: pf.Document,
+			Source:   entry.source,
+			FileName: entry.filename,
+			Shadowed: dslIndex[strings.ToLower(pf.Document)+"|"+strings.ToLower(pf.Name)],
+		}
 		data.PrintForms = append(data.PrintForms, cpf)
 		pfByDoc[strings.ToLower(pf.Document)] = append(pfByDoc[strings.ToLower(pf.Document)], cpf)
 	}
@@ -515,10 +543,11 @@ func (h *handler) loadCfgData(ctx context.Context, b *Base, tab string) *configu
 		// load DSL print forms (.os)
 		for _, df := range proj.DSLPrintForms {
 			cpf := cfgDSLPrintForm{
-				Name:     df.Name,
-				Document: df.Document,
-				Source:   df.Source,
-				FileName: df.Name + ".os",
+				Name:      df.Name,
+				Document:  df.Document,
+				Source:    df.Source,
+				FileName:  df.Name + ".os",
+				Overrides: yamlIndex[strings.ToLower(df.Document)+"|"+strings.ToLower(df.Name)],
 			}
 			if df.Layout != nil {
 				cpf.HasLayout = true
