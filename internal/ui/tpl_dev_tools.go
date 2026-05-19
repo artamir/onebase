@@ -170,14 +170,6 @@ function qcToggleBuilder() {
   }
 }
 
-// qbApplyToEditor copies the generated query text into the Monaco editor.
-function qbApplyToEditor() {
-  var q = document.getElementById('qb-query-out').value;
-  if (!q.trim()) return;
-  if (window.qcEditor) {
-    window.qcEditor.setValue(q);
-  }
-}
 
 function qcParseQueryToBuilder() {
   try {
