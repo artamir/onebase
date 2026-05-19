@@ -163,9 +163,19 @@ function qcToggleBuilder() {
     btn.style.color = '#fff';
     qcParseQueryToBuilder();
   } else {
+    qbApplyToEditor();
     el.style.display = 'none';
     btn.style.background = '#e2e8f0';
     btn.style.color = '#475569';
+  }
+}
+
+// qbApplyToEditor copies the generated query text into the Monaco editor.
+function qbApplyToEditor() {
+  var q = document.getElementById('qb-query-out').value;
+  if (!q.trim()) return;
+  if (window.qcEditor) {
+    window.qcEditor.setValue(q);
   }
 }
 
