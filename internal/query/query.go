@@ -718,6 +718,10 @@ func (tr *translator) genBalances(reg *metadata.Register, args [][]tok) (string,
 		cols = append(cols,
 			"SUM(CASE WHEN вид_движения = 'Приход' THEN "+col+" ELSE -"+col+" END) AS "+col+"остаток")
 	}
+	// Замечание #4: атрибуты — не часть ключа измерения, но должны быть
+	// доступны в outer SELECT/WHERE. Берём MIN(col) — детерминированно
+	// и работает в обоих диалектах (TEXT/UUID сравнимы лексикографически).
+	cols = append(cols, attributeAggCols(reg.Attributes)...)
 
 	var sb strings.Builder
 	sb.WriteString("SELECT ")
@@ -764,6 +768,7 @@ func (tr *translator) genTurnovers(reg *metadata.Register, args [][]tok) (string
 			"SUM(CASE WHEN вид_движения = 'Приход' THEN "+col+" ELSE -"+col+" END) AS "+col+"оборот",
 		)
 	}
+	cols = append(cols, attributeAggCols(reg.Attributes)...)
 
 	var sb strings.Builder
 	sb.WriteString("SELECT ")
@@ -849,6 +854,7 @@ func (tr *translator) genBalancesAndTurnovers(reg *metadata.Register, args [][]t
 					" THEN -"+col+" ELSE 0 END) AS "+col+"конечный")
 		}
 	}
+	cols = append(cols, attributeAggCols(reg.Attributes)...)
 
 	var sb strings.Builder
 	sb.WriteString("SELECT ")
@@ -873,6 +879,21 @@ func (tr *translator) genBalancesAndTurnovers(reg *metadata.Register, args [][]t
 	}
 
 	return sb.String(), alias, nil
+}
+
+// attributeAggCols returns "MIN(col) AS col" expressions for each attribute.
+// Атрибуты не часть ключа измерения, поэтому в SELECT их нельзя оставлять
+// без агрегата (SQL ошибся бы). MIN — детерминированный выбор. Если атрибут
+// варьируется в пределах одного значения измерения, MIN отдаст
+// лексикографически минимальное; в стабильных учётных моделях такое
+// нехарактерно.
+func attributeAggCols(attrs []metadata.Field) []string {
+	out := make([]string, 0, len(attrs))
+	for _, a := range attrs {
+		col := metadata.ColumnName(a)
+		out = append(out, "MIN("+col+") AS "+col)
+	}
+	return out
 }
 
 // genInfoSlice generates SrezPoslednih/SrezPervyh SQL.

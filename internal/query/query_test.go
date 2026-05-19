@@ -332,6 +332,92 @@ func TestCompile_DateFuncs_EnglishAliases(t *testing.T) {
 	}
 }
 
+// Замечание #4: вариант 1 — внешний ГДЕ на атрибут поверх .Остатки().
+// Inner subquery должен экспортировать атрибут, чтобы outer WHERE сработал.
+func TestCompile_Balances_OuterWhereOnAttribute(t *testing.T) {
+	src := `ВЫБРАТЬ Контрагент, СуммаОстаток ИЗ РегистрНакопления.Взаиморасчёты.Остатки() ГДЕ ТипКонтрагента = &ТипК`
+	reg := &metadata.Register{
+		Name: "Взаиморасчёты",
+		Dimensions: []metadata.Field{
+			{Name: "Контрагент", Type: metadata.FieldTypeString},
+		},
+		Resources: []metadata.Field{
+			{Name: "Сумма", Type: metadata.FieldTypeNumber},
+		},
+		Attributes: []metadata.Field{
+			{Name: "ТипКонтрагента", Type: metadata.FieldTypeString},
+		},
+	}
+	r, err := query.Compile(src, query.CompileOpts{
+		Registers: []*metadata.Register{reg},
+		Params:    map[string]any{"ТипК": "Поставщик"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// inner subquery теперь экспортирует атрибут через MIN(),
+	// поэтому outer WHERE на типконтрагента работает.
+	if !strings.Contains(r.SQL, "MIN(типконтрагента)") {
+		t.Errorf("атрибут не агрегирован в inner SELECT: %s", r.SQL)
+	}
+	if !strings.Contains(r.SQL, "WHERE типконтрагента") {
+		t.Errorf("outer WHERE на атрибут не сгенерирован: %s", r.SQL)
+	}
+}
+
+// SELECT атрибута поверх .Остатки() должен работать после фикса.
+func TestCompile_Balances_OuterSelectOnAttribute(t *testing.T) {
+	src := `ВЫБРАТЬ Контрагент, ТипКонтрагента, СуммаОстаток ИЗ РегистрНакопления.Взаиморасчёты.Остатки()`
+	reg := &metadata.Register{
+		Name: "Взаиморасчёты",
+		Dimensions: []metadata.Field{
+			{Name: "Контрагент", Type: metadata.FieldTypeString},
+		},
+		Resources: []metadata.Field{
+			{Name: "Сумма", Type: metadata.FieldTypeNumber},
+		},
+		Attributes: []metadata.Field{
+			{Name: "ТипКонтрагента", Type: metadata.FieldTypeString},
+		},
+	}
+	r, err := query.Compile(src, query.CompileOpts{Registers: []*metadata.Register{reg}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(r.SQL, "MIN(типконтрагента)") {
+		t.Errorf("атрибут не агрегирован: %s", r.SQL)
+	}
+}
+
+// Замечание #4: атрибуты регистров должны быть доступны в фильтрах .Остатки().
+func TestCompile_Balances_FilterByAttribute(t *testing.T) {
+	src := `ВЫБРАТЬ * ИЗ РегистрНакопления.Взаиморасчёты.Остатки(, ТипКонтрагента = &ТипК)`
+	reg := &metadata.Register{
+		Name: "Взаиморасчёты",
+		Dimensions: []metadata.Field{
+			{Name: "Контрагент", Type: metadata.FieldTypeString},
+		},
+		Resources: []metadata.Field{
+			{Name: "Сумма", Type: metadata.FieldTypeNumber},
+		},
+		Attributes: []metadata.Field{
+			{Name: "ТипКонтрагента", Type: metadata.FieldTypeString},
+		},
+	}
+	r, err := query.Compile(src, query.CompileOpts{
+		Registers: []*metadata.Register{reg},
+		Params:    map[string]any{"ТипК": "Поставщик"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// в WHERE должно быть условие на типконтрагента (lowercase)
+	if !strings.Contains(r.SQL, "типконтрагента") {
+		t.Errorf("атрибут не попал в WHERE: %s", r.SQL)
+	}
+	t.Logf("compiled SQL: %s", r.SQL)
+}
+
 func TestCompile_Ssylka_InWhere(t *testing.T) {
 	src := `ВЫБРАТЬ Наименование ИЗ Справочник.ТипЦен ГДЕ Ссылка = &ИД`
 
