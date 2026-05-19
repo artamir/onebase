@@ -515,6 +515,14 @@ func (i *Interpreter) callUserProc(proc *ast.ProcedureDecl, callEnv *env, args [
 	for idx, param := range proc.Params {
 		if idx < len(args) {
 			child.set(param.Literal, args[idx])
+			continue
+		}
+		// Параметр без переданного значения — пробуем дефолт (замечание #12).
+		// Дефолт вычисляется в callEnv, чтобы видеть глобальные/модульные
+		// идентификаторы. child ещё не имеет других параметров — это
+		// сознательно: не даём дефолтам ссылаться на «соседей» (1С-семантика).
+		if idx < len(proc.Defaults) && proc.Defaults[idx] != nil {
+			child.set(param.Literal, i.evalExpr(proc.Defaults[idx], callEnv))
 		} else {
 			child.set(param.Literal, nil)
 		}
