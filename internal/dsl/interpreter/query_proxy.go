@@ -79,18 +79,34 @@ func (q *queryProxy) CallMethod(name string, args []any) any {
 	panic(userError{Msg: "Объект Запрос не имеет метода " + name})
 }
 
-// unwrapArrayParams converts *Array DSL params to []any so the query
-// compiler can expand them into individual IN-clause placeholders.
+// unwrapArrayParams converts DSL params for query compilation:
+// - *Array → []any (each item unwrapped)
+// - *Ref → UUID string
+// This ensures pgx receives plain Go types, not interpreter-specific wrappers.
 func unwrapArrayParams(params map[string]any) map[string]any {
 	result := make(map[string]any, len(params))
 	for k, v := range params {
-		if arr, ok := v.(*Array); ok {
-			result[k] = arr.items
-		} else {
+		switch val := v.(type) {
+		case *Array:
+			items := make([]any, len(val.items))
+			for i, item := range val.items {
+				items[i] = unwrapRef(item)
+			}
+			result[k] = items
+		case *Ref:
+			result[k] = val.UUID
+		default:
 			result[k] = v
 		}
 	}
 	return result
+}
+
+func unwrapRef(v any) any {
+	if ref, ok := v.(*Ref); ok {
+		return ref.UUID
+	}
+	return v
 }
 
 func (q *queryProxy) execute() *Array {

@@ -385,6 +385,14 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request) {
 	action := r.FormValue("_action")
 	isPosting := entity.Posting && (action == "post" || action == "post_and_close")
 
+	if isPosting {
+		for _, tp := range entity.TableParts {
+			if rows, ok := obj.TablePartRows[tp.Name]; ok {
+				s.enrichTPRowsWithRefs(r.Context(), tp, rows)
+			}
+		}
+	}
+
 	var dslErrMsg string
 	var dslMsgs []string
 	if isPosting {
@@ -599,6 +607,14 @@ func (s *Server) submitEdit(w http.ResponseWriter, r *http.Request) {
 	action := r.FormValue("_action")
 	isPostingAct := entity.Posting && (action == "post" || action == "post_and_close")
 
+	if isPostingAct {
+		for _, tp := range entity.TableParts {
+			if rows, ok := obj.TablePartRows[tp.Name]; ok {
+				s.enrichTPRowsWithRefs(r.Context(), tp, rows)
+			}
+		}
+	}
+
 	var dslErr2 string
 	if isPostingAct {
 		dslErr2, _ = s.runOnPostCtx(r.Context(), obj, mc)
@@ -682,6 +698,7 @@ func (s *Server) postDocument(w http.ResponseWriter, r *http.Request) {
 	tpRows := make(map[string][]map[string]any)
 	for _, tp := range entity.TableParts {
 		rows, _ := s.store.GetTablePartRows(r.Context(), entity.Name, tp.Name, id, tp)
+		s.enrichTPRowsWithRefs(r.Context(), tp, rows)
 		tpRows[tp.Name] = rows
 	}
 	obj.TablePartRows = tpRows
@@ -1936,6 +1953,50 @@ func (s *Server) resolveRefs(ctx context.Context, entity *metadata.Entity, rows 
 			if v := row[f.Name]; v != nil {
 				if label, ok := labels[fmt.Sprintf("%v", v)]; ok {
 					row[f.Name] = label
+				}
+			}
+		}
+	}
+}
+
+// enrichTPRowsWithRefs replaces UUID strings in reference fields of table-part rows
+// with interpreter.Ref{UUID, Name} so that DSL Строка(ref) returns the display name
+// while UUID-based map lookups and SQL parameters still work correctly.
+func (s *Server) enrichTPRowsWithRefs(ctx context.Context, tp metadata.TablePart, rows []map[string]any) {
+	for _, f := range tp.Fields {
+		if f.RefEntity == "" {
+			continue
+		}
+		refEntity := s.reg.GetEntity(f.RefEntity)
+		if refEntity == nil {
+			continue
+		}
+		// collect unique IDs
+		seen := map[string]bool{}
+		for _, row := range rows {
+			if v := row[f.Name]; v != nil {
+				seen[fmt.Sprintf("%v", v)] = true
+			}
+		}
+		// resolve each unique ID to a display label
+		labels := make(map[string]string, len(seen))
+		for idStr := range seen {
+			id, err := uuid.Parse(idStr)
+			if err != nil {
+				continue
+			}
+			refRow, err := s.store.GetByID(ctx, refEntity.Name, id, refEntity)
+			if err != nil {
+				continue
+			}
+			labels[idStr] = firstStringField(refRow, refEntity)
+		}
+		// replace plain UUID strings with *interpreter.Ref{UUID, Name}
+		for _, row := range rows {
+			if v := row[f.Name]; v != nil {
+				idStr := fmt.Sprintf("%v", v)
+				if name, ok := labels[idStr]; ok {
+					row[f.Name] = &interpreter.Ref{UUID: idStr, Name: name}
 				}
 			}
 		}

@@ -5,6 +5,26 @@ import (
 	"strings"
 )
 
+// ─── Ref (ссылка на объект метаданных) ───────────────────────────────────────
+
+// Ref represents a DSL reference value: UUID for identity/SQL, Name for display.
+// Строка(ref) returns Name; SQL parameter expansion uses UUID.
+type Ref struct {
+	UUID string
+	Name string
+}
+
+func (r *Ref) String() string { return r.Name }
+
+// refKey extracts the comparison key: UUID for Ref, string representation otherwise.
+// Used in Map.findIdx and equal() so *Ref and plain UUID strings match each other.
+func refKey(v any) string {
+	if ref, ok := v.(*Ref); ok {
+		return ref.UUID
+	}
+	return fmt.Sprintf("%v", v)
+}
+
 // ─── Array (Массив) ───────────────────────────────────────────────────────────
 
 type Array struct {
@@ -149,9 +169,9 @@ type Map struct {
 }
 
 func (m *Map) findIdx(key any) int {
-	ks := fmt.Sprintf("%v", key)
+	ks := refKey(key)
 	for i, k := range m.keys {
-		if fmt.Sprintf("%v", k) == ks {
+		if refKey(k) == ks {
 			return i
 		}
 	}

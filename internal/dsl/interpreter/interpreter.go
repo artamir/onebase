@@ -535,7 +535,7 @@ func truthy(v any) bool {
 }
 
 func equal(a, b any) bool {
-	return fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)
+	return refKey(a) == refKey(b)
 }
 
 func compare(a, b any) int {
