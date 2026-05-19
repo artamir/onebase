@@ -22,20 +22,27 @@ func OpenPath(path string) error {
 }
 
 // BrowseDir opens a native folder picker dialog and returns the selected path.
-// Returns ("", nil) if the user cancelled.
-func BrowseDir(title string) (string, error) {
+// initialPath sets the starting directory. Returns ("", nil) if the user cancelled.
+func BrowseDir(title, initialPath string) (string, error) {
 	switch runtime.GOOS {
 	case "windows":
+		initDir := ""
+		if initialPath != "" {
+			initDir = "$d.SelectedPath = '" + initialPath + "'\n"
+		}
 		script := `Add-Type -AssemblyName System.Windows.Forms
 $d = New-Object System.Windows.Forms.FolderBrowserDialog
 $d.Description = '` + title + `'
 $d.ShowNewFolderButton = $true
-if ($d.ShowDialog() -eq 'OK') { Write-Output $d.SelectedPath }`
+` + initDir + `if ($d.ShowDialog() -eq 'OK') { Write-Output $d.SelectedPath }`
 		out, err := runPowerShell(script)
 		return strings.TrimSpace(out), err
 	case "darwin":
-		out, err := exec.Command("osascript", "-e",
-			`choose folder with prompt "`+title+`"`).Output()
+		arg := `choose folder with prompt "` + title + `"`
+		if initialPath != "" {
+			arg += ` default location POSIX file "` + initialPath + `"`
+		}
+		out, err := exec.Command("osascript", "-e", arg).Output()
 		if err != nil {
 			return "", nil
 		}
@@ -43,7 +50,11 @@ if ($d.ShowDialog() -eq 'OK') { Write-Output $d.SelectedPath }`
 		p = strings.TrimPrefix(p, "alias ")
 		return p, nil
 	default:
-		out, err := exec.Command("zenity", "--file-selection", "--directory", "--title="+title).Output()
+		args := []string{"--file-selection", "--directory", "--title=" + title}
+		if initialPath != "" {
+			args = append(args, "--filename="+initialPath)
+		}
+		out, err := exec.Command("zenity", args...).Output()
 		if err != nil {
 			return "", nil
 		}

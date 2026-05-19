@@ -488,7 +488,8 @@ func (h *handler) browseDir(w http.ResponseWriter, r *http.Request) {
 	if title == "" {
 		title = "Выберите папку"
 	}
-	path, err := BrowseDir(title)
+	initialPath := r.URL.Query().Get("initial_path")
+	path, err := BrowseDir(title, initialPath)
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return

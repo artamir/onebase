@@ -304,9 +304,10 @@ function toggleDB(v) {
 }
 function pickDir(inputId, title) {
   var btn = event.target;
+  var cur = document.getElementById(inputId).value || '';
   btn.disabled = true;
   btn.textContent = '...';
-  fetch('/browse-dir?title=' + encodeURIComponent(title))
+  fetch('/browse-dir?title=' + encodeURIComponent(title) + '&initial_path=' + encodeURIComponent(cur))
     .then(function(r){ return r.json(); })
     .then(function(d){
       if (d.path) document.getElementById(inputId).value = d.path;
@@ -326,9 +327,11 @@ function pickFile(inputId, title, filter) {
 }
 function pickSQLiteDir(inputId) {
   var btn = event.target;
+  var cur = document.getElementById(inputId).value || '';
+  var dir = cur.replace(/\\[^\\]+$/, '');
   btn.disabled = true;
   btn.textContent = '...';
-  fetch('/browse-dir?title=' + encodeURIComponent('Выберите папку для файла базы данных'))
+  fetch('/browse-dir?title=' + encodeURIComponent('Выберите папку для файла базы данных') + '&initial_path=' + encodeURIComponent(dir))
     .then(function(r){ return r.json(); })
     .then(function(d){
       if (!d.path) return;
