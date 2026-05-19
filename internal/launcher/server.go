@@ -142,9 +142,11 @@ func (s *Server) ListenAndServe() error {
 			r.Post("/bases/{id}/configurator/backup/{file}/restore", s.h.backupRestore)
 			r.Get("/bases/{id}/configurator/backup/full-export", s.h.backupFullExport)
 			r.Post("/bases/{id}/configurator/backup/full-import", s.h.backupFullImport)
-		// Debug proxy — forwards /bases/{id}/debug/{action} to UI server (avoids CORS in webview)
-		r.HandleFunc("/bases/{id}/debug/{action}", s.h.debugProxy) // GET + POST
 	})
+
+	// Debug proxy — outside auth group: debug endpoints on UI server are already unprotected.
+	// Keeping this inside cfgAuthMiddleware caused silent 302→HTML when session expired.
+	r.HandleFunc("/bases/{id}/debug/{action}", s.h.debugProxy) // GET + POST
 
 	r.Post("/killall", s.h.killAll)
 	r.Post("/quit", func(w http.ResponseWriter, r *http.Request) {

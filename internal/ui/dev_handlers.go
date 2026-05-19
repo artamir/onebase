@@ -48,6 +48,7 @@ func (s *Server) queryConsoleExec(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Query = stripQueryQuotes(req.Query)
 
+	coerceParams(req.Params)
 	res, err := query.Compile(req.Query, query.CompileOpts{
 		Params:      req.Params,
 		Registers:   s.reg.Registers(),
@@ -79,7 +80,11 @@ func (s *Server) queryConsoleExec(w http.ResponseWriter, r *http.Request) {
 	for i, row := range rows {
 		vals := make([]any, len(columns))
 		for j, col := range columns {
-			vals[j] = row[col]
+			v := row[col]
+			if t, ok := v.(time.Time); ok {
+				v = t.Format("02.01.2006 15:04:05")
+			}
+			vals[j] = v
 		}
 		dataRows[i] = vals
 	}
@@ -434,3 +439,41 @@ func jsonResp(w http.ResponseWriter, status int, data map[string]any) {
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)
 }
+// coerceParams converts string values to appropriate types for query parameters:
+//   - "DD.MM.YYYY" or "DD.MM.YYYY HH:MM" → time.Time
+//   - numeric strings → float64
+// This is needed because JSON params arrive as strings from the query console.
+func coerceParams(params map[string]any) {
+	for k, v := range params {
+		s, ok := v.(string)
+		if !ok {
+			continue
+		}
+		// Try date formats
+		for _, layout := range []string{
+			"02.01.2006 15:04",
+			"02.01.2006 15:04:05",
+			"02.01.2006",
+			"2006-01-02",
+		} {
+			if t, err := time.Parse(layout, s); err == nil {
+				params[k] = t
+				break
+			}
+		}
+		if _, ok := params[k].(time.Time); ok {
+			continue
+		}
+		// Try numeric
+		if f, err := parseFloat(s); err == nil {
+			params[k] = f
+		}
+	}
+}
+
+func parseFloat(s string) (float64, error) {
+	var f float64
+	_, err := fmt.Sscanf(s, "%f", &f)
+	return f, err
+}
+

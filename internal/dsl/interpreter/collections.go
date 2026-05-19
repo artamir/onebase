@@ -89,7 +89,14 @@ func (a *Array) Iterate() []any { return a.items }
 func (a *Array) String() string  { return fmt.Sprintf("Массив[%d]", len(a.items)) }
 func (a *Array) TypeName() string { return "Массив" }
 
-// ─── Struct (Структура) ───────────────────────────────────────────────────────
+func (m *Map) Keys() []any            { return m.keys }
+func (m *Map) Get(key any) any {
+	if idx := m.findIdx(key); idx >= 0 {
+		return m.vals[idx]
+	}
+	return nil
+}
+func (s *Struct) Fields() []string { return s.keys }
 
 type Struct struct {
 	keys []string
@@ -179,6 +186,21 @@ func (m *Map) findIdx(key any) int {
 	for i, k := range m.keys {
 		if refKey(k) == ks {
 			return i
+		}
+	}
+	// Fallback: Ref.Name vs plain string (query auto-resolves references to names)
+	if ref, ok := key.(*Ref); ok {
+		for i, k := range m.keys {
+			if s, ok2 := k.(string); ok2 && s == ref.Name {
+				return i
+			}
+		}
+	}
+	if s, ok := key.(string); ok {
+		for i, k := range m.keys {
+			if ref, ok2 := k.(*Ref); ok2 && ref.Name == s {
+				return i
+			}
 		}
 	}
 	return -1

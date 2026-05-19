@@ -110,6 +110,9 @@ var builtins = map[string]func(args []any, file string, line int) (any, error){
 			}
 			return strconv.FormatFloat(f, 'f', -1, 64), nil
 		}
+		if t, ok := args[0].(time.Time); ok {
+			return t.Format("02.01.2006 15:04:05"), nil
+		}
 		return fmt.Sprintf("%v", args[0]), nil
 	},
 	"строка": func(args []any, file string, line int) (any, error) {
@@ -121,6 +124,9 @@ var builtins = map[string]func(args []any, file string, line int) (any, error){
 				return strconv.FormatInt(int64(f), 10), nil
 			}
 			return strconv.FormatFloat(f, 'f', -1, 64), nil
+		}
+		if t, ok := args[0].(time.Time); ok {
+			return t.Format("02.01.2006 15:04:05"), nil
 		}
 		return fmt.Sprintf("%v", args[0]), nil
 	},

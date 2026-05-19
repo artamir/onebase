@@ -327,6 +327,7 @@ type refDimInfo struct {
 	idCol     string // DB column: "номенклатура_id"
 	joinAlias string // SQL alias for auto-JOIN: "ref_номенклатура"
 	joinTable string // referenced catalog table: "номенклатура"
+	isVT      bool   // true: VT outer query, JOIN ON uses fieldName instead of idCol
 }
 
 type translator struct {
@@ -960,11 +961,25 @@ func preScanRefDims(tokens []tok, opts CompileOpts) []refDimInfo {
 		if !isSourceType(upper) || tokens[i+1].kind != tDot || tokens[i+2].kind != tIdent {
 			continue
 		}
-		// skip virtual tables: TypeName.EntityName.VTName(...)
-		if i+3 < len(tokens) && tokens[i+3].kind == tDot {
-			continue
-		}
 		regName := tokens[i+2].val
+		// VT source: TypeName.EntityName.VTName(...)
+		if i+3 < len(tokens) && tokens[i+3].kind == tDot {
+			if isAccumRegType(upper) {
+				for _, reg := range opts.Registers {
+					if strings.EqualFold(reg.Name, regName) {
+						return buildVTRefDimInfos(reg.Dimensions)
+					}
+				}
+			} else if isInfoRegType(upper) {
+				for _, ir := range opts.InfoRegs {
+					if strings.EqualFold(ir.Name, regName) {
+						return buildVTRefDimInfos(ir.Dimensions)
+					}
+				}
+			}
+			return nil
+		}
+		// Regular source
 		if isAccumRegType(upper) {
 			for _, reg := range opts.Registers {
 				if strings.EqualFold(reg.Name, regName) {
@@ -980,6 +995,25 @@ func preScanRefDims(tokens []tok, opts CompileOpts) []refDimInfo {
 		}
 	}
 	return nil
+}
+
+// buildVTRefDimInfos creates refDimInfos for VT outer queries where the subquery
+// aliases _id columns to logical names, so JOIN ON uses fieldName instead of idCol.
+func buildVTRefDimInfos(dims []metadata.Field) []refDimInfo {
+	var result []refDimInfo
+	for _, d := range dims {
+		if d.RefEntity != "" {
+			fn := strings.ToLower(d.Name)
+			result = append(result, refDimInfo{
+				fieldName: fn,
+				idCol:     fn, // VT aliased from _id
+				joinAlias: "ref_" + fn,
+				joinTable: strings.ToLower(d.RefEntity),
+				isVT:      true,
+			})
+		}
+	}
+	return result
 }
 
 func buildRefDimInfos(dims []metadata.Field) []refDimInfo {
@@ -1004,6 +1038,30 @@ func (tr *translator) findRefDim(name string) *refDimInfo {
 		}
 	}
 	return nil
+}
+
+// emitVTSubquery emits a VT subquery with its alias, detects optional user alias (КАК),
+// and adds auto-JOINs for reference dimensions using the correct alias.
+func (tr *translator) emitVTSubquery(subq, defaultAlias string) {
+	alias := defaultAlias
+	if p := tr.peek(0); p.kind == tIdent {
+		pUpper := strings.ToUpper(p.val)
+		if pUpper == "КАК" || pUpper == "AS" {
+			tr.advance()
+			if a := tr.peek(0); a.kind == tIdent {
+				alias = strings.ToLower(tr.advance().val)
+			}
+		}
+	}
+	tr.emit("(" + subq + ") AS " + alias)
+	if tr.section == sectionFrom {
+		for _, rd := range tr.refDims {
+			if rd.isVT {
+				tr.emit(fmt.Sprintf("LEFT JOIN %s %s ON %s.id = %s.%s",
+					rd.joinTable, rd.joinAlias, rd.joinAlias, alias, rd.fieldName))
+			}
+		}
+	}
 }
 
 // --- main translator loop ---
@@ -1121,7 +1179,7 @@ func translate(tokens []tok, opts CompileOpts) (Result, error) {
 					if err != nil {
 						return Result{}, err
 					}
-					tr.emit("(" + subq + ") AS " + alias)
+					tr.emitVTSubquery(subq, alias)
 					continue
 				}
 
@@ -1137,7 +1195,7 @@ func translate(tokens []tok, opts CompileOpts) (Result, error) {
 					if err != nil {
 						return Result{}, err
 					}
-					tr.emit("(" + subq + ") AS " + alias)
+					tr.emitVTSubquery(subq, alias)
 					continue
 				}
 
@@ -1153,18 +1211,28 @@ func translate(tokens []tok, opts CompileOpts) (Result, error) {
 					if err != nil {
 						return Result{}, err
 					}
-					tr.emit("(" + subq + ") AS " + alias)
+					tr.emitVTSubquery(subq, alias)
 					continue
 				}
 			}
 
-			// Regular source: TypeName.EntityName → table_name [+ auto-JOINs]
+			// Regular source: TypeName.EntityName → table_name [+ КАК alias] [+ auto-JOINs]
 			tr.advance()
 			tr.advance()
 			entity := tr.advance()
 			tableName := sourceToTable(upper, entity.val)
 			tr.mainTable = tableName
 			tr.emit(tableName)
+			// Consume optional КАК/AS alias before auto-JOINs
+			if p := tr.peek(0); p.kind == tIdent {
+				pUpper := strings.ToUpper(p.val)
+				if pUpper == "КАК" || pUpper == "AS" {
+					tr.advance()
+					if a := tr.peek(0); a.kind == tIdent {
+						tr.emit("AS " + strings.ToLower(tr.advance().val))
+					}
+				}
+			}
 			if tr.section == sectionFrom {
 				for _, rd := range tr.refDims {
 					tr.emit(fmt.Sprintf("LEFT JOIN %s %s ON %s.id = %s.%s",
@@ -1256,20 +1324,31 @@ func translate(tokens []tok, opts CompileOpts) (Result, error) {
 				}
 			} else {
 				lower := strings.ToLower(t.val)
-				// ref dim substitution is only for top-level (not after a dot)
-				if rd := tr.findRefDim(lower); rd != nil && !prevDot {
+				if tr.section == sectionFrom && !prevDot {
+					// In FROM clause bare identifiers are table names — skip colMap/refDim
+					tr.emit(lower)
+				} else if rd := tr.findRefDim(lower); rd != nil && !prevDot {
 					switch tr.section {
 					case sectionSelect:
 						tr.emit(rd.joinAlias + ".наименование")
-						tr.emit("AS")
-						tr.emit(rd.fieldName)
-					case sectionGroupBy:
+						// Skip auto-alias when user provides КАК/AS
+						if p := strings.ToUpper(tr.peek(0).val); p != "КАК" && p != "AS" {
+							tr.emit("AS")
+							tr.emit(rd.fieldName)
+						}
+					case sectionGroupBy, sectionOrderBy:
 						tr.emit(rd.joinAlias + ".наименование")
-					default: // WHERE, HAVING, ORDER BY, FROM, OTHER → use _id column
+					default: // WHERE, HAVING, FROM (after dot), OTHER → raw column (UUID for VT, _id for plain)
 						tr.emit(rd.idCol)
 					}
 				} else if col, ok := tr.colMap[lower]; ok && !prevDot {
 					tr.emit(col)
+				} else if prevDot {
+					if c, ok2 := tr.colMap[lower]; ok2 {
+						tr.emit(c)
+					} else {
+						tr.emit(lower)
+					}
 				} else {
 					tr.emit(lower)
 				}

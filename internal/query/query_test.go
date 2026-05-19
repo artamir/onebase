@@ -300,3 +300,108 @@ func TestCompile_StringDim_NoIdSuffix(t *testing.T) {
 		t.Errorf("expected plain 'номенклатура' column in SQL, got: %s", sql)
 	}
 }
+
+// TestCompile_BareCatalogInFrom ensures that a bare catalog name in FROM clause
+// is not replaced by colMap entry from a reference dimension in another register.
+// Regression: "ИЗ Номенклатура" was compiled to "FROM номенклатура_id" because
+// colMap fallback mapped it from a register with reference:Номенклатура.
+func TestCompile_BareCatalogInFrom(t *testing.T) {
+	src := "ВЫБРАТЬ Наименование, ЦенаПродажи ИЗ Номенклатура"
+
+	regProfit := &metadata.Register{
+		Name: "ВаловаяПрибыль",
+		Dimensions: []metadata.Field{
+			{Name: "Номенклатура", Type: "reference:Номенклатура", RefEntity: "Номенклатура"},
+		},
+		Resources: []metadata.Field{{Name: "Выручка"}},
+	}
+
+	r, err := query.Compile(src, query.CompileOpts{
+		Registers: []*metadata.Register{regProfit},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := r.SQL
+	if !strings.Contains(sql, "FROM номенклатура") {
+		t.Errorf("expected FROM номенклатура, got: %s", sql)
+	}
+	if strings.Contains(sql, "FROM номенклатура_id") {
+		t.Errorf("bare catalog name must NOT be replaced by _id column; got: %s", sql)
+	}
+}
+
+// TestCompile_VT_RefDim_AutoJoin ensures that VT queries (Остатки, etc.) also
+// get auto-JOINs for reference dimensions so results show names, not UUIDs.
+func TestCompile_VT_RefDim_AutoJoin(t *testing.T) {
+	src := "ВЫБРАТЬ Номенклатура КАК Ном, КоличествоОстаток КАК Количество " +
+		"ИЗ РегистрНакопления.ПартииТоваров.Остатки() " +
+		"ГДЕ (&Номенклатура ЕСТЬ ПУСТО ИЛИ Номенклатура = &Номенклатура) " +
+		"УПОРЯДОЧИТЬ ПО Ном"
+
+	reg := &metadata.Register{
+		Name: "ПартииТоваров",
+		Dimensions: []metadata.Field{
+			{Name: "Номенклатура", RefEntity: "Номенклатура"},
+		},
+		Resources: []metadata.Field{{Name: "Количество"}},
+	}
+
+	r, err := query.Compile(src, query.CompileOpts{
+		Registers: []*metadata.Register{reg},
+		Params:    map[string]any{"Номенклатура": nil},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := r.SQL
+
+	// SELECT: must resolve ref dim via JOIN, not double AS
+	if !strings.Contains(sql, "ref_номенклатура.наименование AS ном") {
+		t.Errorf("expected ref_номенклатура.наименование AS ном, got: %s", sql)
+	}
+	// LEFT JOIN must be present in outer query
+	if !strings.Contains(sql, "LEFT JOIN номенклатура ref_номенклатура") {
+		t.Errorf("expected LEFT JOIN for VT outer query, got: %s", sql)
+	}
+	// WHERE: outer query must use logical name (aliased from VT subquery)
+	if !strings.Contains(sql, "номенклатура = NULL") {
+		t.Errorf("expected logical name in outer WHERE, got: %s", sql)
+	}
+	// ORDER BY: alias is fine
+	if !strings.Contains(sql, "ORDER BY ном") {
+		t.Errorf("expected ORDER BY ном (alias), got: %s", sql)
+	}
+}
+
+// TestCompile_VT_WithUserAlias verifies that КАК after a VT subquery is consumed
+// and the user-provided alias is used in the auto-JOIN ON clause.
+func TestCompile_VT_WithUserAlias(t *testing.T) {
+	src := "ВЫБРАТЬ Номенклатура ИЗ РегистрНакопления.ПартииТоваров.Остатки() КАК Пар"
+
+	reg := &metadata.Register{
+		Name: "ПартииТоваров",
+		Dimensions: []metadata.Field{
+			{Name: "Номенклатура", RefEntity: "Номенклатура"},
+		},
+		Resources: []metadata.Field{{Name: "Количество"}},
+	}
+
+	r, err := query.Compile(src, query.CompileOpts{
+		Registers: []*metadata.Register{reg},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := r.SQL
+
+	if !strings.Contains(sql, "AS пар") {
+		t.Errorf("expected user alias 'пар', got: %s", sql)
+	}
+	if strings.Contains(sql, "AS остатки_партиитоваров") {
+		t.Errorf("default alias must not appear when user provides КАК, got: %s", sql)
+	}
+	if !strings.Contains(sql, "пар.номенклатура") {
+		t.Errorf("JOIN ON must use user alias, got: %s", sql)
+	}
+}
