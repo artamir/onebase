@@ -22,6 +22,7 @@ type rawNumerator struct {
 	Prefix string `yaml:"prefix"`
 	Length int    `yaml:"length"`
 	Period string `yaml:"period"`
+	Scope  string `yaml:"scope"`
 }
 
 type rawPredefined struct {
@@ -68,6 +69,7 @@ func LoadFile(path string, kind Kind) (*Entity, error) {
 			Prefix: raw.Numerator.Prefix,
 			Length: raw.Numerator.Length,
 			Period: raw.Numerator.Period,
+			Scope:  raw.Numerator.Scope,
 		}
 		if n.Length <= 0 {
 			n.Length = 8

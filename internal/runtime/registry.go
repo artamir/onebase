@@ -1,6 +1,8 @@
-package runtime
+﻿package runtime
 
 import (
+	"fmt"
+	"os"
 	"strings"
 	"sync"
 
@@ -24,6 +26,7 @@ type Registry struct {
 	dslPrintForms   map[string][]*printform.DSLPrintForm // lowercase entity name → DSL forms
 	procs           map[string]map[string]*ast.ProcedureDecl
 	moduleProcs     map[string]*ast.ProcedureDecl // flat: proc name → decl
+	moduleByName    map[string]map[string]*ast.ProcedureDecl // lowercase module → procs in it
 	processors      map[string]*processor.Processor
 	subsystems      []*metadata.Subsystem // sorted by Order
 	journals        map[string]*metadata.Journal
@@ -47,6 +50,7 @@ func NewRegistry() *Registry {
 		dslPrintForms:   make(map[string][]*printform.DSLPrintForm),
 		procs:           make(map[string]map[string]*ast.ProcedureDecl),
 		moduleProcs:     make(map[string]*ast.ProcedureDecl),
+		moduleByName:    make(map[string]map[string]*ast.ProcedureDecl),
 		processors:      make(map[string]*processor.Processor),
 		journals:        make(map[string]*metadata.Journal),
 		accountRegs:     make(map[string]*metadata.AccountRegister),
@@ -168,6 +172,11 @@ func (r *Registry) GetPrintForms(entityName string) []*printform.PrintForm {
 }
 
 // LoadDSLPrintForms registers DSL (.os) print forms indexed by entity name.
+// при коллизии «один и тот же name для одного и того же
+// document» с YAML-формой .os перебивает YAML, а YAML удаляется из реестра.
+// В лог печатается warning, чтобы автор конфигурации понимал, что
+// дубликат игнорируется. Должен вызываться ПОСЛЕ Load (где регистрируются
+// YAML-формы); проверка идёт под одной блокировкой.
 func (r *Registry) LoadDSLPrintForms(forms []*printform.DSLPrintForm) {
 	m := make(map[string][]*printform.DSLPrintForm)
 	for _, f := range forms {
@@ -176,6 +185,30 @@ func (r *Registry) LoadDSLPrintForms(forms []*printform.DSLPrintForm) {
 	}
 	r.mu.Lock()
 	r.dslPrintForms = m
+	// Дедуп YAML/.os коллизий: удаляем YAML, если есть .os с тем же именем.
+	for entityKey, dslList := range m {
+		yamlList := r.printForms[entityKey]
+		if len(yamlList) == 0 {
+			continue
+		}
+		var kept []*printform.PrintForm
+		for _, yf := range yamlList {
+			collides := false
+			for _, df := range dslList {
+				if strings.EqualFold(yf.Name, df.Name) {
+					collides = true
+					fmt.Fprintf(os.Stderr,
+						"warning: print form %q for %s — YAML и .os коллизия, используется .os (LayoutPath=%s); YAML-вариант игнорируется\n",
+						yf.Name, yf.Document, df.LayoutPath)
+					break
+				}
+			}
+			if !collides {
+				kept = append(kept, yf)
+			}
+		}
+		r.printForms[entityKey] = kept
+	}
 	r.mu.Unlock()
 }
 
@@ -349,14 +382,33 @@ var eventAliases = map[string]string{
 
 func (r *Registry) LoadModules(modules map[string]*ast.Program) {
 	flat := make(map[string]*ast.ProcedureDecl)
-	for _, prog := range modules {
+	byModule := make(map[string]map[string]*ast.ProcedureDecl)
+	for moduleName, prog := range modules {
+		modKey := strings.ToLower(moduleName)
+		byModule[modKey] = make(map[string]*ast.ProcedureDecl, len(prog.Procedures))
 		for _, p := range prog.Procedures {
-			flat[strings.ToLower(p.Name.Literal)] = p
+			procKey := strings.ToLower(p.Name.Literal)
+			flat[procKey] = p
+			byModule[modKey][procKey] = p
 		}
 	}
 	r.mu.Lock()
 	r.moduleProcs = flat
+	r.moduleByName = byModule
 	r.mu.Unlock()
+}
+
+// GetModuleNamespacedProc resolves Module.Proc() syntax — например
+// Утилиты.ФИФО(...). Это позволяет вызывать процедуры общих модулей
+// без коллизий имён между модулями (замечание #5).
+func (r *Registry) GetModuleNamespacedProc(moduleName, procName string) *ast.ProcedureDecl {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	mod, ok := r.moduleByName[strings.ToLower(moduleName)]
+	if !ok {
+		return nil
+	}
+	return mod[strings.ToLower(procName)]
 }
 
 func (r *Registry) LoadProcessors(procs []*processor.Processor) {
@@ -373,6 +425,32 @@ func (r *Registry) GetModuleProc(name string) *ast.ProcedureDecl {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.moduleProcs[strings.ToLower(name)]
+}
+
+// GetSiblingProc resolves a helper procedure declared in the same source
+// file as currentFile. Lets `.proc.os` (processor entry-point) call
+// helpers also defined inside it without flattening every entity proc
+// into a global namespace (which would let arbitrary code invoke
+// OnWrite/OnPost handlers by name).
+//
+// currentFile comes from interpreter.curFile (the file:line of the
+// last executed statement), so the resolver naturally scopes to the
+// currently running source.
+func (r *Registry) GetSiblingProc(currentFile, name string) *ast.ProcedureDecl {
+	if currentFile == "" {
+		return nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	low := strings.ToLower(name)
+	for _, pm := range r.procs {
+		for procLow, decl := range pm {
+			if procLow == low && decl.Name.File == currentFile {
+				return decl
+			}
+		}
+	}
+	return nil
 }
 
 func (r *Registry) Processors() []*processor.Processor {

@@ -19,7 +19,11 @@ type Program struct {
 type ProcedureDecl struct {
 	Name   token.Token
 	Params []token.Token
-	Body   []Stmt
+	// Defaults параллелен Params: Defaults[i] = nil → у параметра нет дефолта,
+	// Defaults[i] = expr → выражение вычисляется в caller-scope если арг не
+	// передан (см. замечание #12).
+	Defaults []Expr
+	Body     []Stmt
 }
 
 type IfStmt struct {

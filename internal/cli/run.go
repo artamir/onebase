@@ -1,4 +1,4 @@
-package cli
+﻿package cli
 
 import (
 	"context"
@@ -15,6 +15,7 @@ import (
 	"github.com/ivantit66/onebase/internal/auth"
 	"github.com/ivantit66/onebase/internal/backup"
 	"github.com/ivantit66/onebase/internal/configdb"
+	"github.com/ivantit66/onebase/internal/devserver"
 	"github.com/ivantit66/onebase/internal/dsl/interpreter"
 	"github.com/ivantit66/onebase/internal/launcher"
 	"github.com/ivantit66/onebase/internal/mailer"
@@ -39,6 +40,9 @@ func init() {
 	runCmd.Flags().String("sqlite", "", "path to SQLite database file (alternative to --db)")
 	runCmd.Flags().Int("port", 8080, "HTTP server port")
 	runCmd.Flags().String("config-source", "file", "configuration source: file or database")
+	// hot reload .os/.yaml без перезапуска. По умолчанию off,
+	// для прода обычно не нужен. Включается флагом --watch.
+	runCmd.Flags().Bool("watch", false, "reload project metadata when files change (.os/.yaml)")
 }
 
 func runServer(cmd *cobra.Command, _ []string) error {
@@ -176,6 +180,8 @@ func runServer(cmd *cobra.Command, _ []string) error {
 
 	interp := interpreter.New()
 	interp.LookupProc = reg.GetModuleProc
+	interp.LookupSiblingProc = reg.GetSiblingProc
+	interp.LookupModuleProc = reg.GetModuleNamespacedProc
 
 	if err := db.EnsureScheduledRunsTable(ctx); err != nil {
 		return fmt.Errorf("scheduled runs schema: %w", err)
@@ -189,6 +195,12 @@ func runServer(cmd *cobra.Command, _ []string) error {
 	}
 
 	if appCfg != nil && appCfg.Demo != nil && appCfg.Demo.Enabled {
+		// защита от случайной активации демо-режима на проде.
+		if err := checkDemoEnv(os.Getenv("ONEBASE_ENV")); err != nil {
+			return err
+		}
+		fmt.Fprintln(os.Stderr, "⚠️  ONEBASE: ДЕМО-РЕЖИМ. Данные сбрасываются по расписанию.")
+
 		uiCfg.DemoMode = true
 		msg := appCfg.Demo.Message
 		if msg == "" {
@@ -227,6 +239,35 @@ func runServer(cmd *cobra.Command, _ []string) error {
 	}
 
 	srv := api.New(reg, db, interp, authRepo, port, uiCfg, sched)
+
+	// опциональный hot reload (см. --watch).
+	// Перечитываем только метаданные (reg.Load*), миграции не повторяем —
+	// они единоразовы и потенциально опасны. Срабатывает только для
+	// file-based конфигов (configdb не имеет смысла отслеживать).
+	if watchEnabled, _ := cmd.Flags().GetBool("watch"); watchEnabled && configSource == "file" {
+		reload := func() {
+			newProj, err := project.Load(dir)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "[watch] reload error:", err)
+				return
+			}
+			reg.Load(newProj.Entities, newProj.Programs, newProj.Registers, newProj.InfoRegisters, newProj.Enums, newProj.Constants, newProj.Reports, newProj.PrintForms)
+			reg.LoadDSLPrintForms(newProj.DSLPrintForms)
+			reg.LoadModules(newProj.Modules)
+			reg.LoadProcessors(newProj.Processors)
+			reg.LoadSubsystems(newProj.Subsystems)
+			reg.LoadJournals(newProj.Journals)
+			reg.LoadAccountRegisters(newProj.AccountRegisters, newProj.ChartsOfAccounts)
+			reg.LoadWidgets(newProj.Widgets)
+			reg.LoadHomePage(newProj.HomePage)
+			fmt.Fprintln(os.Stdout, "[watch] метаданные перезагружены")
+		}
+		if err := devserver.Watch(dir, reload); err != nil {
+			fmt.Fprintln(os.Stderr, "[watch] init failed:", err)
+		} else {
+			fmt.Fprintf(os.Stdout, "[watch] отслеживаем %s — изменения .yaml/.os подхватятся без рестарта\n", dir)
+		}
+	}
 
 	schedCtx, schedCancel := context.WithCancel(ctx)
 	defer schedCancel()

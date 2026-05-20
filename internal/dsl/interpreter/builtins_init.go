@@ -125,6 +125,72 @@ func init() {
 	builtins["значениезаполнено"] = filledFn
 	builtins["isfilled"] = filledFn
 
+	// ПустаяСсылка(x) — узкий предикат именно для ссылок (см. замечание #3).
+	// Отличается от Пустая(x) тем, что 0 / Ложь / пустая коллекция → НЕ пустая
+	// ссылка. Принимает nil, строку (UUID или ""), *Ref.
+	emptyRefFn := func(args []any, _ string, _ int) (any, error) {
+		if len(args) == 0 {
+			return true, nil
+		}
+		return isEmptyRefVal(args[0]), nil
+	}
+	builtins["пустаяссылка"] = emptyRefFn
+	builtins["isemptyref"] = emptyRefFn
+
+	// ЧислоПрописью(сумма [, валюта]) — текстовое представление денежной суммы
+	// с правильным склонением рубль/рубля/рублей и копейки (замечание #8).
+	amountWordsFn := func(args []any, _ string, _ int) (any, error) {
+		if len(args) == 0 {
+			return "", nil
+		}
+		amount, _ := toFloat(args[0])
+		currency := "rub"
+		if len(args) >= 2 {
+			if s, ok := args[1].(string); ok && s != "" {
+				currency = s
+			}
+		}
+		return AmountInWords(amount, currency), nil
+	}
+	builtins["числопрописью"] = amountWordsFn
+	builtins["amountinwords"] = amountWordsFn
+
+	// Распределить(сумма, веса[, точность]) — пропорциональное распределение
+	// с гарантией суммы (замечание #9). Веса — Массив чисел; результат — Массив
+	// той же длины. Точность по умолчанию 2 (копейки).
+	distributeFn := func(args []any, _ string, _ int) (any, error) {
+		if len(args) < 2 {
+			return &Array{}, nil
+		}
+		total, _ := toFloat(args[0])
+		var weights []float64
+		switch a := args[1].(type) {
+		case *Array:
+			for _, item := range a.items {
+				f, _ := toFloat(item)
+				weights = append(weights, f)
+			}
+		case []any:
+			for _, item := range a {
+				f, _ := toFloat(item)
+				weights = append(weights, f)
+			}
+		}
+		scale := 2
+		if len(args) >= 3 {
+			s, _ := toFloat(args[2])
+			scale = int(s)
+		}
+		shares := DistributeAmount(total, weights, scale)
+		out := &Array{}
+		for _, v := range shares {
+			out.items = append(out.items, v)
+		}
+		return out, nil
+	}
+	builtins["распределить"] = distributeFn
+	builtins["distribute"] = distributeFn
+
 	// ─── B5: Формат ───────────────────────────────────────────────────────
 	formatFn := func(args []any, _ string, _ int) (any, error) {
 		s, err := fmtBuiltin(args)

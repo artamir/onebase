@@ -551,10 +551,33 @@ function removeLogo() {
   if (fileInput) fileInput.value = '';
 }
 
-// ── Reference picker toggle ────────────────────────────────────
+// ── Reference / enum picker toggle ───────────────────────────────
+// Один и тот же select-target используется и для reference, и для enum:
+// при смене типа JS меняет options между списком сущностей и списком
+// перечислений. Сохраняем выбранное значение если оно есть в новой
+// группе options.
+var _cfgEntityNames = [{{range $i, $ := $.AllEntityNames}}{{if $i}},{{end}}'{{.}}'{{end}}];
+var _cfgEnumNames = [{{range $i, $ := $.AllEnumNames}}{{if $i}},{{end}}'{{.}}'{{end}}];
 function cfgToggleRef(sel, refId) {
   var r = document.getElementById(refId);
-  if (r) r.style.display = sel.value === 'reference' ? '' : 'none';
+  if (!r) return;
+  if (sel.value === 'reference' || sel.value === 'enum') {
+    r.style.display = '';
+    var src = sel.value === 'enum' ? _cfgEnumNames : _cfgEntityNames;
+    var cur = r.value;
+    var keep = false;
+    var html = '<option value="">— выбрать —</option>';
+    for (var i = 0; i < src.length; i++) {
+      var n = src[i];
+      var sel2 = (n === cur) ? ' selected' : '';
+      if (n === cur) keep = true;
+      html += '<option value="' + n + '"' + sel2 + '>' + n + '</option>';
+    }
+    r.innerHTML = html;
+    if (!keep) r.value = '';
+  } else {
+    r.style.display = 'none';
+  }
 }
 var _cfgNewFieldIdx = 0;
 function cfgAddField(tblId, prefix, entityName) {
@@ -565,11 +588,10 @@ function cfgAddField(tblId, prefix, entityName) {
   var tr = document.createElement('tr');
   tr.innerHTML = '<td><input name="'+prefix+'.'+_cfgNewFieldIdx+'.name" style="width:100%;padding:3px 5px;border:1px solid #ccd0d8;border-radius:3px;font-size:12px" placeholder="ИмяПоля"></td>'
     +'<td><select name="'+prefix+'.'+_cfgNewFieldIdx+'.type" onchange="cfgToggleRef(this,\''+refId+'\')">'
-    +'<option value="string">строка</option><option value="number">число</option><option value="date">дата</option><option value="bool">булево</option><option value="reference">ссылка →</option>'
+    +'<option value="string">строка</option><option value="number">число</option><option value="date">дата</option><option value="bool">булево</option><option value="reference">ссылка →</option><option value="enum">перечисление →</option>'
     +'</select></td>'
     +'<td><select name="'+prefix+'.'+_cfgNewFieldIdx+'.ref" id="'+refId+'" style="display:none">'
     +'<option value="">— выбрать —</option>'
-    +{{range $i, $ := $.AllEntityNames}}{{if $i}}+{{end}}'<option value="{{.}}">{{.}}</option>'{{end}}
     +'</select></td>';
   tbl.appendChild(tr);
   tr.querySelector('input').focus();
@@ -2772,13 +2794,13 @@ const cfgTabTree = `{{define "tab-tree"}}
 
   <details open class="cfg-tree"><summary class="cfg-group cfg-group-hd"><span>Печатные формы</span><span class="cfg-add-btn" onclick="event.stopPropagation();cfgNewObj('printform')" title="Добавить печатную форму">+</span></summary>
   {{range .PrintForms}}
-  <div class="cfg-item" data-id="pf-{{.Name}}" onclick="selItem(this)">
-    <span class="ic">🖨</span>{{.Name}}<span style="color:#aaa;font-size:10px;margin-left:4px">→{{.Document}}</span>
+  <div class="cfg-item{{if .Shadowed}} cfg-item-shadowed{{end}}" data-id="pf-{{.Name}}" onclick="selItem(this)"{{if .Shadowed}} title="Эту YAML-форму перебивает одноимённая .os — в runtime используется DSL-вариант (см. замечание #10)"{{end}}>
+    <span class="ic">🖨</span>{{if .Shadowed}}<span style="color:#d97706" title="Перебивается .os">⚠️ </span>{{end}}{{.Name}}<span style="color:#aaa;font-size:10px;margin-left:4px">→{{.Document}}{{if .Shadowed}} (скрыта .os){{end}}</span>
   </div>
   {{end}}
   {{range .DSLPrintForms}}
-  <div class="cfg-item" data-id="dpf-{{.Name}}" onclick="selItem(this)">
-    <span class="ic">📋</span>{{.Name}}<span style="color:#aaa;font-size:10px;margin-left:4px">→{{.Document}} (DSL)</span>
+  <div class="cfg-item" data-id="dpf-{{.Name}}" onclick="selItem(this)"{{if .Overrides}} title="Перебивает одноимённую YAML-форму у этого документа"{{end}}>
+    <span class="ic">📋</span>{{.Name}}<span style="color:#aaa;font-size:10px;margin-left:4px">→{{.Document}} (DSL{{if .Overrides}}, перебивает YAML{{end}})</span>
   </div>
   {{if .HasLayout}}
   <div class="cfg-item cfg-sub" data-id="mkt-{{.Name}}" onclick="selItem(this)" style="padding-left:32px">
@@ -2899,7 +2921,7 @@ const cfgTabTree = `{{define "tab-tree"}}
   <div class="cfg-panel" id="e-{{.Name}}">
     <div class="panel-title">📄 {{.Name}}</div>
     <div class="panel-kind">Справочник</div>
-    {{template "entity-detail" (dict "Entity" . "BaseID" $.Base.ID "ConfigSource" $.Base.ConfigSource "ModuleSaved" $.ModuleSaved "ModuleSavedEntity" $.ModuleSavedEntity "AllEntityNames" $.AllEntityNames "FieldsSaved" $.FieldsSaved "FieldsSavedEntity" $.FieldsSavedEntity)}}
+    {{template "entity-detail" (dict "Entity" . "BaseID" $.Base.ID "ConfigSource" $.Base.ConfigSource "ModuleSaved" $.ModuleSaved "ModuleSavedEntity" $.ModuleSavedEntity "AllEntityNames" $.AllEntityNames "AllEnumNames" $.AllEnumNames "FieldsSaved" $.FieldsSaved "FieldsSavedEntity" $.FieldsSavedEntity)}}
   </div>
   {{end}}
 
@@ -2911,7 +2933,7 @@ const cfgTabTree = `{{define "tab-tree"}}
       {{if .Posting}}<span style="background:#dbeafe;color:#1d4ed8;font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px">проводится</span>{{end}}
     </div>
     <div class="panel-kind">Документ</div>
-    {{template "entity-detail" (dict "Entity" . "BaseID" $.Base.ID "ConfigSource" $.Base.ConfigSource "ModuleSaved" $.ModuleSaved "ModuleSavedEntity" $.ModuleSavedEntity "AllEntityNames" $.AllEntityNames "FieldsSaved" $.FieldsSaved "FieldsSavedEntity" $.FieldsSavedEntity)}}
+    {{template "entity-detail" (dict "Entity" . "BaseID" $.Base.ID "ConfigSource" $.Base.ConfigSource "ModuleSaved" $.ModuleSaved "ModuleSavedEntity" $.ModuleSavedEntity "AllEntityNames" $.AllEntityNames "AllEnumNames" $.AllEnumNames "FieldsSaved" $.FieldsSaved "FieldsSavedEntity" $.FieldsSavedEntity)}}
   </div>
   {{end}}
 
@@ -3541,6 +3563,7 @@ const cfgTabTree = `{{define "tab-tree"}}
 {{$e := .Entity}}
 {{$baseID := .BaseID}}
 {{$allEntities := .AllEntityNames}}
+{{$allEnums := .AllEnumNames}}
 {{$fSaved := .FieldsSaved}}
 {{$fSavedEnt := .FieldsSavedEntity}}
 
@@ -3635,12 +3658,17 @@ const cfgTabTree = `{{define "tab-tree"}}
       <option value="date"      {{if eq $f.Type "date"}}selected{{end}}>дата</option>
       <option value="bool"      {{if eq $f.Type "bool"}}selected{{end}}>булево</option>
       <option value="reference" {{if eq $f.Type "reference"}}selected{{end}}>ссылка →</option>
+      <option value="enum"      {{if eq $f.Type "enum"}}selected{{end}}>перечисление →</option>
     </select>
   </td>
   <td>
-    <select name="field.{{$i}}.ref" id="cfr-{{$e.Name}}-f{{$i}}"{{if ne $f.Type "reference"}} style="display:none"{{end}}>
+    <select name="field.{{$i}}.ref" id="cfr-{{$e.Name}}-f{{$i}}"{{if and (ne $f.Type "reference") (ne $f.Type "enum")}} style="display:none"{{end}}>
       <option value="">— выбрать —</option>
-      {{range $allEntities}}<option value="{{.}}"{{if eq . $f.RefEntity}} selected{{end}}>{{.}}</option>{{end}}
+      {{if eq $f.Type "enum"}}
+        {{range $allEnums}}<option value="{{.}}"{{if eq . $f.EnumName}} selected{{end}}>{{.}}</option>{{end}}
+      {{else}}
+        {{range $allEntities}}<option value="{{.}}"{{if eq . $f.RefEntity}} selected{{end}}>{{.}}</option>{{end}}
+      {{end}}
     </select>
   </td>
 </tr>
@@ -3666,12 +3694,17 @@ const cfgTabTree = `{{define "tab-tree"}}
       <option value="date"      {{if eq $f.Type "date"}}selected{{end}}>дата</option>
       <option value="bool"      {{if eq $f.Type "bool"}}selected{{end}}>булево</option>
       <option value="reference" {{if eq $f.Type "reference"}}selected{{end}}>ссылка →</option>
+      <option value="enum"      {{if eq $f.Type "enum"}}selected{{end}}>перечисление →</option>
     </select>
   </td>
   <td>
-    <select name="tp.{{$tp.Name}}.field.{{$i}}.ref" id="cfr-{{$e.Name}}-tp{{$j}}f{{$i}}"{{if ne $f.Type "reference"}} style="display:none"{{end}}>
+    <select name="tp.{{$tp.Name}}.field.{{$i}}.ref" id="cfr-{{$e.Name}}-tp{{$j}}f{{$i}}"{{if and (ne $f.Type "reference") (ne $f.Type "enum")}} style="display:none"{{end}}>
       <option value="">— выбрать —</option>
-      {{range $allEntities}}<option value="{{.}}"{{if eq . $f.RefEntity}} selected{{end}}>{{.}}</option>{{end}}
+      {{if eq $f.Type "enum"}}
+        {{range $allEnums}}<option value="{{.}}"{{if eq . $f.EnumName}} selected{{end}}>{{.}}</option>{{end}}
+      {{else}}
+        {{range $allEntities}}<option value="{{.}}"{{if eq . $f.RefEntity}} selected{{end}}>{{.}}</option>{{end}}
+      {{end}}
     </select>
   </td>
 </tr>

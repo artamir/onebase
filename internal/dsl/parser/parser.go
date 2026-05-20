@@ -73,12 +73,24 @@ func (p *Parser) parseProcedure() (*ast.ProcedureDecl, error) {
 		return nil, err
 	}
 	var params []token.Token
+	var defaults []ast.Expr
 	for p.cur.Type != token.RPAREN && p.cur.Type != token.EOF {
 		paramTok, err := p.expect(token.IDENT)
 		if err != nil {
 			return nil, err
 		}
 		params = append(params, paramTok)
+		// Опциональное значение по умолчанию: ИмяПарам = expr (см. замечание #12).
+		var def ast.Expr
+		if p.cur.Type == token.ASSIGN {
+			p.advance() // consume =
+			d, err := p.parseExpr()
+			if err != nil {
+				return nil, err
+			}
+			def = d
+		}
+		defaults = append(defaults, def)
 		if p.cur.Type == token.COMMA {
 			p.advance()
 		}
@@ -95,7 +107,7 @@ func (p *Parser) parseProcedure() (*ast.ProcedureDecl, error) {
 		return nil, err
 	}
 	p.advance() // consume EndProcedure/EndFunction
-	return &ast.ProcedureDecl{Name: nameTok, Params: params, Body: body}, nil
+	return &ast.ProcedureDecl{Name: nameTok, Params: params, Defaults: defaults, Body: body}, nil
 }
 
 // isBlockEnd returns true for tokens that end a block from the outside.

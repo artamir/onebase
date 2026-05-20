@@ -1,4 +1,4 @@
-package query
+﻿package query
 
 import (
 	"fmt"
@@ -719,6 +719,10 @@ func (tr *translator) genBalances(reg *metadata.Register, args [][]tok) (string,
 		cols = append(cols,
 			"SUM(CASE WHEN вид_движения = 'Приход' THEN "+col+" ELSE -"+col+" END) AS "+col+"остаток")
 	}
+	// атрибуты — не часть ключа измерения, но должны быть
+	// доступны в outer SELECT/WHERE. Берём MIN(col) — детерминированно
+	// и работает в обоих диалектах (TEXT/UUID сравнимы лексикографически).
+	cols = append(cols, attributeAggCols(reg.Attributes)...)
 
 	var sb strings.Builder
 	sb.WriteString("SELECT ")
@@ -765,6 +769,7 @@ func (tr *translator) genTurnovers(reg *metadata.Register, args [][]tok) (string
 			"SUM(CASE WHEN вид_движения = 'Приход' THEN "+col+" ELSE -"+col+" END) AS "+col+"оборот",
 		)
 	}
+	cols = append(cols, attributeAggCols(reg.Attributes)...)
 
 	var sb strings.Builder
 	sb.WriteString("SELECT ")
@@ -850,6 +855,7 @@ func (tr *translator) genBalancesAndTurnovers(reg *metadata.Register, args [][]t
 					" THEN -"+col+" ELSE 0 END) AS "+col+"конечный")
 		}
 	}
+	cols = append(cols, attributeAggCols(reg.Attributes)...)
 
 	var sb strings.Builder
 	sb.WriteString("SELECT ")
@@ -874,6 +880,21 @@ func (tr *translator) genBalancesAndTurnovers(reg *metadata.Register, args [][]t
 	}
 
 	return sb.String(), alias, nil
+}
+
+// attributeAggCols returns "MIN(col) AS col" expressions for each attribute.
+// Атрибуты не часть ключа измерения, поэтому в SELECT их нельзя оставлять
+// без агрегата (SQL ошибся бы). MIN — детерминированный выбор. Если атрибут
+// варьируется в пределах одного значения измерения, MIN отдаст
+// лексикографически минимальное; в стабильных учётных моделях такое
+// нехарактерно.
+func attributeAggCols(attrs []metadata.Field) []string {
+	out := make([]string, 0, len(attrs))
+	for _, a := range attrs {
+		col := metadata.ColumnName(a)
+		out = append(out, "MIN("+col+") AS "+col)
+	}
+	return out
 }
 
 // genInfoSlice generates SrezPoslednih/SrezPervyh SQL.
@@ -1142,6 +1163,9 @@ func translate(tokens []tok, opts CompileOpts) (Result, error) {
 	if opts.Params == nil {
 		opts.Params = map[string]any{}
 	}
+	// Замечание #19б: расширяем НачалоДня/Год/Месяц/... в SQL-эквиваленты
+	// до основной трансляции, чтобы остальные шаги ничего не знали о них.
+	tokens = rewriteDateFuncs(tokens, dialectName(opts.Dialect))
 	tr := &translator{
 		tokens:      tokens,
 		params:      map[string]int{},
@@ -1302,9 +1326,17 @@ func translate(tokens []tok, opts CompileOpts) (Result, error) {
 			tr.advance()
 			prevDot := tr.prevWasDot
 			tr.prevWasDot = false
-			// .Ссылка / .Reference → .id (virtual primary-key field, like 1C)
-			if prevDot && (strings.ToUpper(t.val) == "ССЫЛКА" || strings.ToUpper(t.val) == "REFERENCE" || strings.ToUpper(t.val) == "REF") {
+			// Ссылка / Reference → id (virtual primary-key field, like 1C).
+			// Работает и после точки (Н.Ссылка → н.id), и без алиаса
+			// (ВЫБРАТЬ Ссылка ИЗ Справочник.X → SELECT id FROM x).
+			if up := strings.ToUpper(t.val); up == "ССЫЛКА" || up == "REFERENCE" || up == "REF" {
 				tr.emit("id")
+				continue
+			}
+			// Системные колонки регистра — PascalCase русские алиасы
+			// (см. замечание #19а). Работает и с префиксом (Х.Период), и без.
+			if col, ok := systemColAlias(t.val); ok {
+				tr.emit(col)
 				continue
 			}
 			if agg, ok := sqlAgg(t.val); ok && tr.peek(0).kind == tLParen {
@@ -1359,6 +1391,144 @@ func translate(tokens []tok, opts CompileOpts) (Result, error) {
 		tr.advance()
 	}
 	return Result{SQL: tr.build(), Args: tr.args}, nil
+}
+
+// dialectName возвращает строковое имя диалекта SQL для opts.Dialect; nil → "pg"
+// (значение по умолчанию из dialectOrDefault). Используется в выборе шаблонов
+// функций даты — strftime в SQLite, EXTRACT в PostgreSQL.
+func dialectName(d storage.Dialect) string {
+	if d == nil {
+		return "pg"
+	}
+	return d.Name()
+}
+
+// dateFuncRewrite — пара prefix/suffix токенов, которые оборачивают исходный
+// аргумент функции даты. Например, Год(x) в SQLite → CAST(strftime('%Y', x) AS INTEGER).
+type dateFuncRewrite struct {
+	prefix []tok
+	suffix []tok
+}
+
+// tokenizeFragment токенизирует SQL-фрагмент и убирает финальный EOF.
+func tokenizeFragment(s string) []tok {
+	t := tokenize(s)
+	if len(t) > 0 && t[len(t)-1].kind == tEOF {
+		t = t[:len(t)-1]
+	}
+	return t
+}
+
+// dateFuncRewrites возвращает таблицу замен для функций даты под нужный диалект.
+// Ключи в нижнем регистре, сопоставление case-insensitive.
+func dateFuncRewrites(dialect string) map[string]dateFuncRewrite {
+	rw := func(prefix, suffix string) dateFuncRewrite {
+		return dateFuncRewrite{prefix: tokenizeFragment(prefix), suffix: tokenizeFragment(suffix)}
+	}
+	switch dialect {
+	case "sqlite":
+		return map[string]dateFuncRewrite{
+			"началодня":   rw("date(", ")"),
+			"startofday":  rw("date(", ")"),
+			"конецдня":    rw("datetime(date(", "), '+1 day', '-1 second')"),
+			"endofday":    rw("datetime(date(", "), '+1 day', '-1 second')"),
+			"началомесяца": rw("date(", ", 'start of month')"),
+			"startofmonth": rw("date(", ", 'start of month')"),
+			"началогода":   rw("date(", ", 'start of year')"),
+			"startofyear":  rw("date(", ", 'start of year')"),
+			"год":          rw("CAST(strftime('%Y',", ") AS INTEGER)"),
+			"year":         rw("CAST(strftime('%Y',", ") AS INTEGER)"),
+			"месяц":        rw("CAST(strftime('%m',", ") AS INTEGER)"),
+			"month":        rw("CAST(strftime('%m',", ") AS INTEGER)"),
+			"день":         rw("CAST(strftime('%d',", ") AS INTEGER)"),
+			"day":          rw("CAST(strftime('%d',", ") AS INTEGER)"),
+		}
+	default: // pg
+		return map[string]dateFuncRewrite{
+			"началодня":    rw("date_trunc('day',", ")"),
+			"startofday":   rw("date_trunc('day',", ")"),
+			"конецдня":     rw("(date_trunc('day',", ") + INTERVAL '1 day' - INTERVAL '1 microsecond')"),
+			"endofday":     rw("(date_trunc('day',", ") + INTERVAL '1 day' - INTERVAL '1 microsecond')"),
+			"началомесяца": rw("date_trunc('month',", ")"),
+			"startofmonth": rw("date_trunc('month',", ")"),
+			"началогода":   rw("date_trunc('year',", ")"),
+			"startofyear":  rw("date_trunc('year',", ")"),
+			// CAST(... AS INTEGER) — портативно (PG поддерживает обе формы,
+			// :: не транслируется нашим токенизатором).
+			"год":   rw("CAST(EXTRACT(YEAR FROM", ") AS INTEGER)"),
+			"year":  rw("CAST(EXTRACT(YEAR FROM", ") AS INTEGER)"),
+			"месяц": rw("CAST(EXTRACT(MONTH FROM", ") AS INTEGER)"),
+			"month": rw("CAST(EXTRACT(MONTH FROM", ") AS INTEGER)"),
+			"день":  rw("CAST(EXTRACT(DAY FROM", ") AS INTEGER)"),
+			"day":   rw("CAST(EXTRACT(DAY FROM", ") AS INTEGER)"),
+		}
+	}
+}
+
+// rewriteDateFuncs обходит токены и разворачивает Год(x), НачалоДня(x), … в
+// соответствующий SQL-шаблон диалекта. Раскрытие — на уровне токенов:
+// сохраняются tIdent/tStr/tLParen и т.п., чтобы основной транслятор обработал
+// внутренний аргумент через обычные правила (resolve ref dims, параметры и т.п.).
+// Рекурсивно для вложенных вызовов: Месяц(НачалоМесяца(x)) тоже разворачивается.
+func rewriteDateFuncs(tokens []tok, dialect string) []tok {
+	rewrites := dateFuncRewrites(dialect)
+	var out []tok
+	for i := 0; i < len(tokens); i++ {
+		t := tokens[i]
+		if t.kind == tIdent && i+1 < len(tokens) && tokens[i+1].kind == tLParen {
+			key := strings.ToLower(t.val)
+			if rw, ok := rewrites[key]; ok {
+				// поиск парной закрывающей )
+				depth := 0
+				end := -1
+				for j := i + 1; j < len(tokens); j++ {
+					switch tokens[j].kind {
+					case tLParen:
+						depth++
+					case tRParen:
+						depth--
+						if depth == 0 {
+							end = j
+						}
+					}
+					if end >= 0 {
+						break
+					}
+				}
+				if end < 0 {
+					// нет пары — оставляем как есть, пусть SQL потом упадёт явно
+					out = append(out, t)
+					continue
+				}
+				inner := tokens[i+2 : end]
+				inner = rewriteDateFuncs(inner, dialect) // рекурсия
+				out = append(out, rw.prefix...)
+				out = append(out, inner...)
+				out = append(out, rw.suffix...)
+				i = end // пропускаем закрывающую )
+				continue
+			}
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
+// systemColAlias maps the PascalCase русский alias for register system columns
+// (period / вид_движения / recorder / line_number) to the actual DB column name.
+// Используется и в SELECT/WHERE верхнего уровня, и после точки (alias.Период).
+func systemColAlias(name string) (string, bool) {
+	switch strings.ToLower(name) {
+	case "период":
+		return "period", true
+	case "виддвижения":
+		return "вид_движения", true
+	case "регистратор":
+		return "recorder", true
+	case "номерстроки":
+		return "line_number", true
+	}
+	return "", false
 }
 
 func isUUID(s string) bool {

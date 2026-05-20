@@ -159,6 +159,12 @@ type cfgPrintForm struct {
 	Document string
 	Source   string
 	FileName string
+	// Shadowed — для этого entity+name есть одноимённая .os-форма.
+	// Runtime в onebase run использует .os-вариант, YAML игнорируется
+	// (см. замечание #10). UI конфигуратора показывает оба, но помечает
+	// YAML значком ⚠️ — чтобы автор конфигурации не удивлялся, что
+	// его правки в YAML «не работают».
+	Shadowed bool
 }
 
 type cfgDSLPrintForm struct {
@@ -169,6 +175,9 @@ type cfgDSLPrintForm struct {
 	HasLayout     bool
 	LayoutYAML    string
 	LayoutPreview template.HTML
+	// Overrides — есть одноимённая YAML-форма у того же entity,
+	// которую этот .os перебивает.
+	Overrides bool
 }
 
 type cfgInfoRegister struct {
@@ -224,6 +233,8 @@ type configuratorData struct {
 	Error     string
 	// all entity names for reference picker
 	AllEntityNames []string
+	// all enum names for enum-type field picker
+	AllEnumNames []string
 	// query builder schema (JSON for inline query builder)
 	QBSchema template.JS
 	// converter
@@ -504,10 +515,29 @@ func (h *handler) loadCfgData(ctx context.Context, b *Base, tab string) *configu
 
 	// load print forms and link to entities
 	pfSources := readPrintFormSources(proj.Dir)
+
+	// индекс «(doc,name)→true» по .os формам, чтобы пометить
+	// YAML-формы, которые runtime тихо игнорирует.
+	dslIndex := make(map[string]bool, len(proj.DSLPrintForms))
+	for _, df := range proj.DSLPrintForms {
+		dslIndex[strings.ToLower(df.Document)+"|"+strings.ToLower(df.Name)] = true
+	}
+	// И обратный индекс для пометки .os-форм, которые перебивают YAML.
+	yamlIndex := make(map[string]bool, len(proj.PrintForms))
+	for _, pf := range proj.PrintForms {
+		yamlIndex[strings.ToLower(pf.Document)+"|"+strings.ToLower(pf.Name)] = true
+	}
+
 	pfByDoc := make(map[string][]cfgPrintForm)
 	for _, pf := range proj.PrintForms {
 		entry := pfSources[pf.Name]
-		cpf := cfgPrintForm{Name: pf.Name, Document: pf.Document, Source: entry.source, FileName: entry.filename}
+		cpf := cfgPrintForm{
+			Name:     pf.Name,
+			Document: pf.Document,
+			Source:   entry.source,
+			FileName: entry.filename,
+			Shadowed: dslIndex[strings.ToLower(pf.Document)+"|"+strings.ToLower(pf.Name)],
+		}
 		data.PrintForms = append(data.PrintForms, cpf)
 		pfByDoc[strings.ToLower(pf.Document)] = append(pfByDoc[strings.ToLower(pf.Document)], cpf)
 	}
@@ -515,10 +545,11 @@ func (h *handler) loadCfgData(ctx context.Context, b *Base, tab string) *configu
 		// load DSL print forms (.os)
 		for _, df := range proj.DSLPrintForms {
 			cpf := cfgDSLPrintForm{
-				Name:     df.Name,
-				Document: df.Document,
-				Source:   df.Source,
-				FileName: df.Name + ".os",
+				Name:      df.Name,
+				Document:  df.Document,
+				Source:    df.Source,
+				FileName:  df.Name + ".os",
+				Overrides: yamlIndex[strings.ToLower(df.Document)+"|"+strings.ToLower(df.Name)],
 			}
 			if df.Layout != nil {
 				cpf.HasLayout = true
@@ -576,6 +607,7 @@ func (h *handler) loadCfgData(ctx context.Context, b *Base, tab string) *configu
 
 	for _, en := range proj.Enums {
 		data.Enums = append(data.Enums, cfgEnum{Name: en.Name, Values: en.Values})
+		data.AllEnumNames = append(data.AllEnumNames, en.Name)
 	}
 
 	for _, c := range proj.Constants {
@@ -1346,14 +1378,18 @@ func (h *handler) configuratorSaveFields(w http.ResponseWriter, r *http.Request)
 		}
 		typ := r.FormValue(fmt.Sprintf("field.%d.type", i))
 		ref := r.FormValue(fmt.Sprintf("field.%d.ref", i))
-		if typ == "reference" {
+		if typ == "reference" || typ == "enum" {
 			if ref == "" {
 				data := h.loadCfgData(r.Context(), b, "tree")
-				data.Error = fmt.Sprintf("Поле «%s»: выберите объект для ссылки", name)
+				kind := "объект для ссылки"
+				if typ == "enum" {
+					kind = "перечисление"
+				}
+				data.Error = fmt.Sprintf("Поле «%s»: выберите %s", name, kind)
 				renderCfg(w, data)
 				return
 			}
-			typ = "reference:" + ref
+			typ = typ + ":" + ref
 		}
 		fields = append(fields, saveField{Name: name, Type: typ})
 	}
@@ -1365,14 +1401,18 @@ func (h *handler) configuratorSaveFields(w http.ResponseWriter, r *http.Request)
 		}
 		typ := r.FormValue(fmt.Sprintf("new_field.%d.type", i))
 		ref := r.FormValue(fmt.Sprintf("new_field.%d.ref", i))
-		if typ == "reference" {
+		if typ == "reference" || typ == "enum" {
 			if ref == "" {
 				data := h.loadCfgData(r.Context(), b, "tree")
-				data.Error = fmt.Sprintf("Поле «%s»: выберите объект для ссылки", name)
+				kind := "объект для ссылки"
+				if typ == "enum" {
+					kind = "перечисление"
+				}
+				data.Error = fmt.Sprintf("Поле «%s»: выберите %s", name, kind)
 				renderCfg(w, data)
 				return
 			}
-			typ = "reference:" + ref
+			typ = typ + ":" + ref
 		}
 		fields = append(fields, saveField{Name: name, Type: typ})
 	}
@@ -1387,14 +1427,18 @@ func (h *handler) configuratorSaveFields(w http.ResponseWriter, r *http.Request)
 			}
 			typ := r.FormValue(fmt.Sprintf("tp.%s.field.%d.type", tpName, i))
 			ref := r.FormValue(fmt.Sprintf("tp.%s.field.%d.ref", tpName, i))
-			if typ == "reference" {
+			if typ == "reference" || typ == "enum" {
 				if ref == "" {
 					data := h.loadCfgData(r.Context(), b, "tree")
-					data.Error = fmt.Sprintf("Поле «%s.%s»: выберите объект для ссылки", tpName, name)
+					kind := "объект для ссылки"
+					if typ == "enum" {
+						kind = "перечисление"
+					}
+					data.Error = fmt.Sprintf("Поле «%s.%s»: выберите %s", tpName, name, kind)
 					renderCfg(w, data)
 					return
 				}
-				typ = "reference:" + ref
+				typ = typ + ":" + ref
 			}
 			f = append(f, saveField{Name: name, Type: typ})
 		}
@@ -1421,14 +1465,18 @@ func (h *handler) configuratorSaveFields(w http.ResponseWriter, r *http.Request)
 			}
 			typ := r.FormValue(fmt.Sprintf("new_tp.%d.field.%d.type", ntp, i))
 			ref := r.FormValue(fmt.Sprintf("new_tp.%d.field.%d.ref", ntp, i))
-			if typ == "reference" {
+			if typ == "reference" || typ == "enum" {
 				if ref == "" {
 					data := h.loadCfgData(r.Context(), b, "tree")
-					data.Error = fmt.Sprintf("Поле «%s.%s»: выберите объект для ссылки", tpKey, name)
+					kind := "объект для ссылки"
+					if typ == "enum" {
+						kind = "перечисление"
+					}
+					data.Error = fmt.Sprintf("Поле «%s.%s»: выберите %s", tpKey, name, kind)
 					renderCfg(w, data)
 					return
 				}
-				typ = "reference:" + ref
+				typ = typ + ":" + ref
 			}
 			f = append(f, saveField{Name: name, Type: typ})
 		}

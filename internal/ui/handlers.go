@@ -949,6 +949,14 @@ func (s *Server) saveMovements(ctx context.Context, docType string, docID uuid.U
 			if err := s.store.WriteAccountMovements(ctx, regName, docType, docID, rows, ar, mc.Period); err != nil {
 				return err
 			}
+			continue
+		}
+		// try info register (замечание #23)
+		ir := s.reg.GetInfoRegister(regName)
+		if ir != nil {
+			if err := s.store.WriteInfoMovements(ctx, regName, docType, docID, rows, ir, mc.Period); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -1452,6 +1460,7 @@ func (s *Server) buildDSLVars(ctx context.Context, mc *runtime.MovementsCollecto
 	}
 	queryFactory := interpreter.NewQueryFactory(ctx, s.store, s.reg)
 	predefined := interpreter.NewPredefinedRoot(ctx, s.store)
+	catalogs := interpreter.NewCatalogsRoot(ctx, s.store, s.reg)
 	vars := map[string]any{
 		"Движения":                  mc,
 		"Перечисления":              &interpreter.MapThis{M: enumsMap},
@@ -1460,6 +1469,8 @@ func (s *Server) buildDSLVars(ctx context.Context, mc *runtime.MovementsCollecto
 		"__factory_Query":           queryFactory,
 		"ПредопределённыеЗначения": predefined,
 		"PredefinedValues":          predefined,
+		"Справочники":               catalogs,
+		"Catalogs":                  catalogs,
 	}
 	for k, v := range interpreter.NewHTTPFunctions() {
 		vars[k] = v
