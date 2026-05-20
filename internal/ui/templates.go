@@ -30,10 +30,22 @@ var tmpl = template.Must(template.New("root").Funcs(template.FuncMap{
 	"isRef":  func(t any) bool { return strings.HasPrefix(fmt.Sprintf("%v", t), "reference:") },
 	"isEnum": func(t any) bool { return strings.HasPrefix(fmt.Sprintf("%v", t), "enum:") },
 	"fmtDate": func(v any) string {
+		fmtT := func(t time.Time) string {
+			lt := t.In(time.Local)
+			h, m, sec := lt.Clock()
+			if h != 0 || m != 0 || sec != 0 {
+				return lt.Format("02.01.2006 15:04:05")
+			}
+			return lt.Format("02.01.2006")
+		}
 		if t, ok := v.(time.Time); ok {
-			return t.In(time.Local).Format("02.01.2006")
+			return fmtT(t)
 		}
 		if s, ok := v.(string); ok && len(s) >= 10 {
+			// Strip Go monotonic clock suffix " m=+..."
+			if i := strings.Index(s, " m=+"); i >= 0 {
+				s = s[:i]
+			}
 			for _, layout := range []string{
 				time.RFC3339, time.RFC3339Nano,
 				"2006-01-02 15:04:05 -0700 MST",
@@ -42,13 +54,12 @@ var tmpl = template.Must(template.New("root").Funcs(template.FuncMap{
 				"2006-01-02T15:04", "2006-01-02",
 			} {
 				if t, err := time.Parse(layout, s); err == nil {
-					return t.In(time.Local).Format("02.01.2006")
+					return fmtT(t)
 				}
 			}
-			// Last resort: try just the date prefix
 			if len(s) >= 10 {
 				if t, err := time.ParseInLocation("2006-01-02", s[:10], time.Local); err == nil {
-					return t.Format("02.01.2006")
+					return fmtT(t)
 				}
 			}
 		}
@@ -558,6 +569,7 @@ const tplList = `
 {{if .TreeView}}
 {{/* ===== TREE VIEW ===== */}}
 {{if .TreeRows}}
+<div style="overflow-x:auto">
 <table><thead><tr>
   {{range .Entity.Fields}}<th>{{.Name}}</th>{{end}}
   <th style="width:90px"></th>
@@ -598,12 +610,14 @@ const tplList = `
   </td>
 </tr>{{end}}
 </tbody></table>
+</div>
 {{else}}
 <p class="empty">Записей нет — <a href="/ui/{{lower (str .Entity.Kind)}}/{{lower .Entity.Name}}/new">создать первую</a></p>
 {{end}}
 {{else}}
 {{/* ===== LIST VIEW (default) ===== */}}
 {{if .Rows}}
+<div style="overflow-x:auto">
 <table><thead><tr>
   {{if eq (str .Entity.Kind) "document"}}<th style="width:36px">✓</th>{{end}}
   {{range .Entity.Fields}}
@@ -632,8 +646,8 @@ const tplList = `
     </td>
   {{end}}
   {{range $.Entity.Fields}}
-    {{if eq (str .Type) "date"}}<td>{{fmtDate (index $row .Name)}}</td>
-    {{else}}<td>{{if and (eq .Name "Наименование") $.Entity.Hierarchical}}{{if $isFolder}}📁 {{else}}📄 {{end}}{{end}}{{index $row .Name}}{{if and (eq .Name "Наименование") (index $row "_is_predefined")}} <span title="Предопределённый элемент" style="color:#f59e0b;font-size:11px">★</span>{{end}}</td>{{end}}
+    {{if eq (str .Type) "date"}}<td style="white-space:nowrap">{{fmtDate (index $row .Name)}}</td>
+    {{else}}<td style="white-space:nowrap">{{if and (eq .Name "Наименование") $.Entity.Hierarchical}}{{if $isFolder}}📁 {{else}}📄 {{end}}{{end}}{{index $row .Name}}{{if and (eq .Name "Наименование") (index $row "_is_predefined")}} <span title="Предопределённый элемент" style="color:#f59e0b;font-size:11px">★</span>{{end}}</td>{{end}}
   {{end}}
   <td>
     {{if and $isFolder $.Entity.Hierarchical}}
@@ -644,6 +658,7 @@ const tplList = `
   </td>
 </tr>{{end}}
 </tbody></table>
+</div>
 {{else}}
 <p class="empty">{{if .Params.Search}}Ничего не найдено по запросу «{{.Params.Search}}» — <a href="?">сбросить поиск</a>{{else}}Записей нет — <a href="/ui/{{lower (str .Entity.Kind)}}/{{lower .Entity.Name}}/new">создать первую</a>{{end}}</p>
 {{end}}
