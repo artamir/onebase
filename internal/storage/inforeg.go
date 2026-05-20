@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/ivantit66/onebase/internal/metadata"
 )
 
@@ -170,6 +171,114 @@ func (db *DB) InfoRegDelete(ctx context.Context, ir *metadata.InfoRegister, dimK
 	}
 	sql := fmt.Sprintf("DELETE FROM %s WHERE %s", table, strings.Join(conds, " AND "))
 	return db.exec(ctx, sql, args...)
+}
+
+// WriteInfoMovements заменяет все строки info-регистра, ранее записанные
+// данным документом (recorder). Затем INSERT новых строк. Замечание #23:
+// до этого «Движения.X.Добавить()» для info-регистров тихо терялся —
+// saveMovements не обрабатывал InfoRegister'ы, и pending-строки никто
+// не материализовывал в БД.
+//
+// Каждая строка должна содержать значения измерений и ресурсов; если
+// регистр periodic — то либо row["Период"], либо общий period из mc.Period.
+// recorder/recorder_type заполняются автоматически из аргументов.
+//
+// При перезаписи строк используется ON CONFLICT по PK — это безопасно
+// для регистров, чья primary key включает (period, dims) и где нет
+// конфликта с другими источниками (например, ручной ввод того же набора).
+func (db *DB) WriteInfoMovements(ctx context.Context, regName, recorderType string, recorderID uuid.UUID, rows []map[string]any, ir *metadata.InfoRegister, period *time.Time) error {
+	d := db.dialect
+	table := metadata.InfoRegTableName(ir.Name)
+
+	if err := db.exec(ctx,
+		fmt.Sprintf("DELETE FROM %s WHERE recorder = %s AND recorder_type = %s",
+			table, d.Placeholder(1), d.Placeholder(2)),
+		idArg(d, recorderID), recorderType,
+	); err != nil {
+		return fmt.Errorf("clear info movements %s: %w", regName, err)
+	}
+
+	for i, row := range rows {
+		cols := []string{}
+		phs := []string{}
+		args := []any{}
+		idx := 1
+
+		if ir.Periodic {
+			// Период: явно в row либо общий период документа.
+			var p time.Time
+			switch v := ciGet(row, "Период").(type) {
+			case time.Time:
+				p = v
+			default:
+				if period != nil {
+					p = *period
+				} else {
+					return fmt.Errorf("info register %s: row %d has no Период and document has no period", regName, i+1)
+				}
+			}
+			cols = append(cols, "period")
+			phs = append(phs, d.Placeholder(idx))
+			args = append(args, p)
+			idx++
+		}
+
+		for _, f := range ir.Dimensions {
+			col := metadata.ColumnName(f)
+			cols = append(cols, col)
+			phs = append(phs, d.Placeholder(idx))
+			v := ciGet(row, f.Name)
+			v = normalizeRegArg(d, v, f.RefEntity != "")
+			args = append(args, v)
+			idx++
+		}
+		for _, f := range ir.Resources {
+			col := metadata.ColumnName(f)
+			cols = append(cols, col)
+			phs = append(phs, d.Placeholder(idx))
+			v := ciGet(row, f.Name)
+			v = normalizeRegArg(d, v, f.RefEntity != "")
+			args = append(args, v)
+			idx++
+		}
+		cols = append(cols, "recorder", "recorder_type", "updated_at")
+		phs = append(phs, d.Placeholder(idx), d.Placeholder(idx+1), d.Placeholder(idx+2))
+		args = append(args, idArg(d, recorderID), recorderType, time.Now())
+
+		// ON CONFLICT update: переписываем не-PK колонки. Без OR REPLACE,
+		// чтобы PG/SQLite одинаково отработали (PG не понимает OR REPLACE,
+		// а SQLite понимает оба).
+		var updates []string
+		for _, f := range ir.Resources {
+			c := metadata.ColumnName(f)
+			updates = append(updates, fmt.Sprintf("%s = EXCLUDED.%s", c, c))
+		}
+		updates = append(updates,
+			"recorder = EXCLUDED.recorder",
+			"recorder_type = EXCLUDED.recorder_type",
+			"updated_at = EXCLUDED.updated_at",
+		)
+
+		pk := pkCols(ir)
+		var sql string
+		if len(pk) > 0 {
+			sql = fmt.Sprintf(
+				"INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO UPDATE SET %s",
+				table,
+				strings.Join(cols, ", "),
+				strings.Join(phs, ", "),
+				strings.Join(pk, ", "),
+				strings.Join(updates, ", "),
+			)
+		} else {
+			sql = fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
+				table, strings.Join(cols, ", "), strings.Join(phs, ", "))
+		}
+		if err := db.exec(ctx, sql, args...); err != nil {
+			return fmt.Errorf("write info movement %s row %d: %w", regName, i+1, err)
+		}
+	}
+	return nil
 }
 
 // pkCols returns the primary key column names for an info register.

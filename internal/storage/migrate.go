@@ -112,6 +112,13 @@ func (db *DB) MigrateInfoRegisters(ctx context.Context, regs []*metadata.InfoReg
 		if err := db.AddColumnIfMissing(ctx, table, "updated_at", d.TypeTimestamp()); err != nil {
 			return fmt.Errorf("migrate info register %s.updated_at: %w", ir.Name, err)
 		}
+		// Замечание #23: recorder/recorder_type для записи из документа.
+		if err := db.AddColumnIfMissing(ctx, table, "recorder", d.TypeUUID()); err != nil {
+			return fmt.Errorf("migrate info register %s.recorder: %w", ir.Name, err)
+		}
+		if err := db.AddColumnIfMissing(ctx, table, "recorder_type", d.TypeText()); err != nil {
+			return fmt.Errorf("migrate info register %s.recorder_type: %w", ir.Name, err)
+		}
 		for _, f := range ir.Resources {
 			if err := db.AddColumnIfMissing(ctx, table, metadata.ColumnName(f), fieldType(d, f)); err != nil {
 				return fmt.Errorf("migrate info register %s.%s: %w", ir.Name, f.Name, err)

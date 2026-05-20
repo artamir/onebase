@@ -949,6 +949,14 @@ func (s *Server) saveMovements(ctx context.Context, docType string, docID uuid.U
 			if err := s.store.WriteAccountMovements(ctx, regName, docType, docID, rows, ar, mc.Period); err != nil {
 				return err
 			}
+			continue
+		}
+		// try info register (замечание #23)
+		ir := s.reg.GetInfoRegister(regName)
+		if ir != nil {
+			if err := s.store.WriteInfoMovements(ctx, regName, docType, docID, rows, ir, mc.Period); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
