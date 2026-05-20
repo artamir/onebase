@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ivantit66/onebase/internal/dsl/ast"
 	"github.com/ivantit66/onebase/internal/dsl/lexer"
@@ -447,6 +448,17 @@ func (i *Interpreter) evalBinary(b *ast.BinaryExpr, e *env) any {
 	case token.GTE:
 		return compare(l, r) >= 0
 	case token.PLUS:
+		// Дата + Число → сдвиг на N секунд (семантика 1С/OneScript).
+		if lt, ok := l.(time.Time); ok {
+			if sec, ok2 := toFloat(r); ok2 {
+				return dateAddSeconds(lt, sec)
+			}
+		}
+		if rt, ok := r.(time.Time); ok {
+			if sec, ok2 := toFloat(l); ok2 {
+				return dateAddSeconds(rt, sec)
+			}
+		}
 		lf, lok := toFloat(l)
 		rf, rok := toFloat(r)
 		if lok && rok {
@@ -454,6 +466,15 @@ func (i *Interpreter) evalBinary(b *ast.BinaryExpr, e *env) any {
 		}
 		return fmt.Sprintf("%v", l) + fmt.Sprintf("%v", r)
 	case token.MINUS:
+		// Дата - Дата → разница в секундах; Дата - Число → сдвиг назад.
+		if lt, ok := l.(time.Time); ok {
+			if rt, ok2 := r.(time.Time); ok2 {
+				return lt.Sub(rt).Seconds()
+			}
+			if sec, ok2 := toFloat(r); ok2 {
+				return dateAddSeconds(lt, -sec)
+			}
+		}
 		lf, lok := toFloat(l)
 		rf, rok := toFloat(r)
 		if lok && rok {
@@ -595,7 +616,25 @@ func equal(a, b any) bool {
 	return refKey(a) == refKey(b)
 }
 
+// dateAddSeconds сдвигает дату на sec секунд (семантика арифметики дат 1С).
+func dateAddSeconds(t time.Time, sec float64) time.Time {
+	return t.Add(time.Duration(int64(sec)) * time.Second)
+}
+
 func compare(a, b any) int {
+	// Даты сравниваем хронологически, а не как строки.
+	if at, ok := a.(time.Time); ok {
+		if bt, ok2 := b.(time.Time); ok2 {
+			switch {
+			case at.Before(bt):
+				return -1
+			case at.After(bt):
+				return 1
+			default:
+				return 0
+			}
+		}
+	}
 	af, aok := toFloat(a)
 	bf, bok := toFloat(b)
 	if aok && bok {

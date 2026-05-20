@@ -46,8 +46,14 @@ func init() {
 	builtins["endday"] = endDay
 	builtins["добавитьмесяц"] = addMonthBuiltin
 	builtins["addmonth"] = addMonthBuiltin
+	builtins["добавитьдень"] = addDayBuiltin
+	builtins["addday"] = addDayBuiltin
+	builtins["добавитьгод"] = addYearBuiltin
+	builtins["addyear"] = addYearBuiltin
 	builtins["разностьдат"] = dateDiffBuiltin
 	builtins["datediff"] = dateDiffBuiltin
+	builtins["дата"] = dateConstructor
+	builtins["date"] = dateConstructor
 
 	// ─── B2: Час / Минута / Секунда / ДеньНедели ──────────────────────────
 	hourFn := dateBuiltin(func(t time.Time) any { return float64(t.Hour()) })
