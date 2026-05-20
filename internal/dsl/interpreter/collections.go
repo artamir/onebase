@@ -7,16 +7,55 @@ import (
 
 // ─── Ref (ссылка на объект метаданных) ───────────────────────────────────────
 
+// RefManager — менеджер объекта (справочника/документа), к которому привязана
+// ссылка. Реализуется CatalogProxy и docProxy; позволяет методам ссылки
+// Удалить()/ПолучитьОбъект() работать без явного указания менеджера.
+type RefManager interface {
+	DeleteRef(uuidStr string) error
+}
+
 // Ref represents a DSL reference value: UUID for identity/SQL, Name for display.
 // Строка(ref) returns Name; SQL parameter expansion uses UUID.
 type Ref struct {
 	UUID string
 	Name string
+	// Type — имя типа объекта (справочника/документа). Может быть пустым,
+	// если ссылка создана вне менеджера.
+	Type string
+	// Manager — менеджер объекта; задаётся при создании ссылки и позволяет
+	// Ссылка.Удалить() работать. nil → метод поднимет понятную ошибку.
+	Manager RefManager
 }
 
 func (r *Ref) String() string     { return r.Name }
 func (r *Ref) GetRefUUID() string { return r.UUID }
 func (r *Ref) TypeName() string   { return "Ссылка" }
+
+// CallMethod реализует MethodCallable для ссылки. Без этого вызов любого
+// метода на ссылке молча возвращал nil.
+func (r *Ref) CallMethod(method string, args []any) any {
+	switch strings.ToLower(method) {
+	case "удалить", "delete":
+		if r.Manager == nil {
+			RaiseUserError("Удалить(): ссылка не привязана к менеджеру объекта — " +
+				"используйте Документы.Тип.Удалить(Ссылка) или Справочники.Тип.Удалить(Ссылка)")
+		}
+		if err := r.Manager.DeleteRef(r.UUID); err != nil {
+			RaiseUserError("Удалить(" + r.Name + "): " + err.Error())
+		}
+		return nil
+	case "получитьобъект", "getobject":
+		// Ссылка уже является рабочим дескриптором объекта: поддерживает
+		// Удалить() и доступ к Наименование/УникальныйИдентификатор.
+		return r
+	case "пустая", "isempty":
+		return r.UUID == ""
+	case "уникальныйидентификатор", "uuid":
+		return r.UUID
+	}
+	RaiseUserError("Ссылка не имеет метода «" + method + "»")
+	return nil
+}
 
 // Get обеспечивает доступ к полям ссылки: ссылка.Наименование / ссылка.Имя
 // возвращают наименование объекта, ссылка.УникальныйИдентификатор — UUID.

@@ -149,6 +149,72 @@ func TestDocsRoot_CreateWritePost(t *testing.T) {
 	}
 }
 
+// Документы.X.НайтиПоНомеру() находит документ по номеру и возвращает
+// ссылку, по которой работает Удалить() (и через менеджер, и напрямую).
+func TestDocsRoot_FindByNumberAndDelete(t *testing.T) {
+	ctx := context.Background()
+	db, err := storage.ConnectSQLite(ctx, filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	doc := &metadata.Entity{
+		Name: "ЗаказПокупателя",
+		Kind: metadata.KindDocument,
+		Fields: []metadata.Field{
+			{Name: "Номер", Type: metadata.FieldTypeString},
+		},
+	}
+	if err := db.Migrate(ctx, []*metadata.Entity{doc}); err != nil {
+		t.Fatal(err)
+	}
+
+	registry := runtime.NewRegistry()
+	registry.Load([]*metadata.Entity{doc}, nil, nil, nil, nil, nil, nil)
+	s := &Server{store: db, reg: registry, lockMgr: runtime.NewLockManager(), messages: NewMessageStore()}
+	root := newDocsRoot(s, interpreter.NewTxState(ctx))
+	dp := root.Get("ЗаказПокупателя").(*docProxy)
+
+	// Создаём два документа.
+	for _, num := range []string{"ЗП-001", "ЗП-002"} {
+		w := dp.CallMethod("создать", nil).(*docWriter)
+		w.Set("Номер", num)
+		w.CallMethod("записать", nil)
+	}
+
+	// НайтиПоНомеру: существующий номер.
+	res := dp.CallMethod("найтипономеру", []any{"ЗП-001"})
+	ref, ok := res.(*interpreter.Ref)
+	if !ok {
+		t.Fatalf("НайтиПоНомеру → %T, ожидался *interpreter.Ref", res)
+	}
+	if ref.Name != "ЗП-001" || ref.Type != "ЗаказПокупателя" {
+		t.Errorf("неверная ссылка: name=%q type=%q", ref.Name, ref.Type)
+	}
+
+	// НайтиПоНомеру: несуществующий номер → nil.
+	if v := dp.CallMethod("найтипономеру", []any{"НЕТ"}); v != nil {
+		t.Errorf("НайтиПоНомеру(несуществующий) → %v, ожидался nil", v)
+	}
+
+	// Ссылка.Удалить() — удаление через привязанный менеджер.
+	ref.CallMethod("удалить", nil)
+	var cnt int
+	db.QueryRow(ctx, "SELECT COUNT(*) FROM заказпокупателя").Scan(&cnt)
+	if cnt != 1 {
+		t.Errorf("после Ссылка.Удалить() ожидался 1 документ, получили %d", cnt)
+	}
+
+	// Менеджерный вариант: Документы.X.Удалить(Ссылка).
+	ref2 := dp.CallMethod("найтипономеру", []any{"ЗП-002"}).(*interpreter.Ref)
+	dp.CallMethod("удалить", []any{ref2})
+	db.QueryRow(ctx, "SELECT COUNT(*) FROM заказпокупателя").Scan(&cnt)
+	if cnt != 0 {
+		t.Errorf("после Документы.X.Удалить() ожидалось 0 документов, получили %d", cnt)
+	}
+}
+
 // Документы.X для несуществующего/несдокументного — nil.
 func TestDocsRoot_UnknownDocument(t *testing.T) {
 	s := &Server{reg: runtime.NewRegistry()}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/ivantit66/onebase/internal/metadata"
 )
 
@@ -16,6 +17,8 @@ type CatalogsDB interface {
 	// WriteCatalogRecord upserts a record. idStr пустой →
 	// генерируется новый UUID. Возвращает UUID записанной записи.
 	WriteCatalogRecord(ctx context.Context, entity *metadata.Entity, idStr string, fields map[string]any) (string, error)
+	// Delete удаляет запись справочника/документа по идентификатору.
+	Delete(ctx context.Context, entityName string, id uuid.UUID) error
 }
 
 // EntityLookup resolves an entity name (case-insensitive) to its metadata.
@@ -88,7 +91,7 @@ func (p *CatalogProxy) Get(itemName string) any {
 			if err != nil || id == "" {
 				return nil
 			}
-			return &Ref{UUID: id, Name: item.Name}
+			return &Ref{UUID: id, Name: item.Name, Type: p.entity.Name, Manager: p}
 		}
 	}
 	return nil
@@ -110,8 +113,29 @@ func (p *CatalogProxy) CallMethod(method string, args []any) any {
 			ctxSrc: p.ctxSrc,
 			fields: map[string]any{},
 		}
+	case "удалить", "delete":
+		if len(args) == 0 {
+			RaiseUserError("Удалить(" + p.entity.Name + "): не передана ссылка")
+		}
+		ref, ok := args[0].(*Ref)
+		if !ok {
+			RaiseUserError(fmt.Sprintf("Удалить(%s): ожидается ссылка, получено %T", p.entity.Name, args[0]))
+		}
+		if err := p.DeleteRef(ref.UUID); err != nil {
+			RaiseUserError("Удалить(" + p.entity.Name + "): " + err.Error())
+		}
+		return nil
 	}
 	return nil
+}
+
+// DeleteRef реализует RefManager — удаление записи справочника по UUID.
+func (p *CatalogProxy) DeleteRef(uuidStr string) error {
+	id, err := uuid.Parse(uuidStr)
+	if err != nil {
+		return fmt.Errorf("неверный идентификатор ссылки: %q", uuidStr)
+	}
+	return p.db.Delete(p.ctx(), p.entity.Name, id)
 }
 
 func (p *CatalogProxy) findByField(field string, args []any) any {
@@ -130,7 +154,7 @@ func (p *CatalogProxy) findByField(field string, args []any) any {
 	if err != nil || !found {
 		return nil
 	}
-	return &Ref{UUID: idStr, Name: display}
+	return &Ref{UUID: idStr, Name: display, Type: p.entity.Name, Manager: p}
 }
 
 // CatalogRecordWriter — записываемый объект справочника/документа,
@@ -184,7 +208,10 @@ func (w *CatalogRecordWriter) CallMethod(method string, args []any) any {
 		if v := w.Get("Наименование"); v != nil {
 			name = fmt.Sprintf("%v", v)
 		}
-		return &Ref{UUID: id, Name: name}
+		return &Ref{
+			UUID: id, Name: name, Type: w.entity.Name,
+			Manager: &CatalogProxy{entity: w.entity, db: w.db, ctxSrc: w.ctxSrc},
+		}
 	case "установитьзначение", "setvalue":
 		if len(args) >= 2 {
 			if n, ok := args[0].(string); ok {

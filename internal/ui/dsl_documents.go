@@ -49,6 +49,13 @@ type docProxy struct {
 func (p *docProxy) Get(_ string) any  { return nil }
 func (p *docProxy) Set(_ string, _ any) {}
 
+func (p *docProxy) ctx() context.Context {
+	if p.ctxSrc != nil {
+		return p.ctxSrc.Ctx()
+	}
+	return context.Background()
+}
+
 func (p *docProxy) CallMethod(method string, args []any) any {
 	switch strings.ToLower(method) {
 	case "создать", "create":
@@ -64,8 +71,45 @@ func (p *docProxy) CallMethod(method string, args []any) any {
 				TablePartRows: map[string][]map[string]any{},
 			},
 		}
+	case "найтипономеру", "findbynumber":
+		if len(args) == 0 {
+			return nil
+		}
+		value := fmt.Sprint(args[0])
+		if r, ok := args[0].(*interpreter.Ref); ok {
+			value = r.Name
+		}
+		idStr, display, found, err := p.s.store.FindCatalogByField(p.ctx(), p.entity, "Номер", value)
+		if err != nil {
+			interpreter.RaiseUserError("НайтиПоНомеру(" + p.entity.Name + "): " + err.Error())
+		}
+		if !found {
+			return nil
+		}
+		return &interpreter.Ref{UUID: idStr, Name: display, Type: p.entity.Name, Manager: p}
+	case "удалить", "delete":
+		if len(args) == 0 {
+			interpreter.RaiseUserError("Удалить(" + p.entity.Name + "): не передана ссылка")
+		}
+		ref, ok := args[0].(*interpreter.Ref)
+		if !ok {
+			interpreter.RaiseUserError(fmt.Sprintf("Удалить(%s): ожидается ссылка, получено %T", p.entity.Name, args[0]))
+		}
+		if err := p.DeleteRef(ref.UUID); err != nil {
+			interpreter.RaiseUserError("Удалить(" + p.entity.Name + "): " + err.Error())
+		}
+		return nil
 	}
 	return nil
+}
+
+// DeleteRef реализует interpreter.RefManager — удаление документа по UUID.
+func (p *docProxy) DeleteRef(uuidStr string) error {
+	id, err := uuid.Parse(uuidStr)
+	if err != nil {
+		return fmt.Errorf("неверный идентификатор ссылки: %q", uuidStr)
+	}
+	return p.s.store.Delete(p.ctx(), p.entity.Name, id)
 }
 
 // docWriter — записываемый/проводимый документ.
@@ -110,7 +154,7 @@ func (w *docWriter) CallMethod(method string, args []any) any {
 		if err := w.write(); err != nil {
 			interpreter.RaiseUserError("Записать(" + w.entity.Name + "): " + err.Error())
 		}
-		return &interpreter.Ref{UUID: w.obj.ID.String(), Name: w.displayName()}
+		return w.ref()
 	case "провести", "post":
 		if err := w.write(); err != nil {
 			interpreter.RaiseUserError("Провести/Записать(" + w.entity.Name + "): " + err.Error())
@@ -118,7 +162,7 @@ func (w *docWriter) CallMethod(method string, args []any) any {
 		if err := w.post(); err != nil {
 			interpreter.RaiseUserError("Провести(" + w.entity.Name + "): " + err.Error())
 		}
-		return &interpreter.Ref{UUID: w.obj.ID.String(), Name: w.displayName()}
+		return w.ref()
 	case "установитьзначение", "setvalue":
 		if len(args) >= 2 {
 			if n, ok := args[0].(string); ok {
@@ -152,6 +196,17 @@ func (w *docWriter) post() error {
 		return err
 	}
 	return w.s.store.SetPosted(ctx, w.entity.Name, w.obj.ID, true)
+}
+
+// ref строит ссылку на записанный документ с привязкой к менеджеру,
+// чтобы Ссылка.Удалить() работала.
+func (w *docWriter) ref() *interpreter.Ref {
+	return &interpreter.Ref{
+		UUID: w.obj.ID.String(),
+		Name: w.displayName(),
+		Type: w.entity.Name,
+		Manager: &docProxy{s: w.s, ctxSrc: w.ctxSrc, entity: w.entity},
+	}
 }
 
 func (w *docWriter) displayName() string {

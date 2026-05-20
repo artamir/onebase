@@ -2096,7 +2096,7 @@ func (s *Server) enrichTPRowsWithRefs(ctx context.Context, tp metadata.TablePart
 			if v := row[f.Name]; v != nil {
 				idStr := fmt.Sprintf("%v", v)
 				if name, ok := labels[idStr]; ok {
-					row[f.Name] = &interpreter.Ref{UUID: idStr, Name: name}
+					row[f.Name] = &interpreter.Ref{UUID: idStr, Name: name, Type: refEntity.Name}
 				}
 			}
 		}

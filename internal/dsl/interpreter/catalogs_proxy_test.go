@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/ivantit66/onebase/internal/metadata"
 )
 
@@ -13,6 +14,12 @@ type fakeCatalogsDB struct {
 	predefinedID map[string]string // "Entity/Name" → uuid
 	byField      map[string]map[string]struct{ ID, Display string }
 	written      []map[string]any // запись через WriteCatalogRecord
+	deleted      []string         // UUID, удалённые через Delete
+}
+
+func (f *fakeCatalogsDB) Delete(_ context.Context, _ string, id uuid.UUID) error {
+	f.deleted = append(f.deleted, id.String())
+	return nil
 }
 
 func (f *fakeCatalogsDB) GetPredefinedIDStr(_ context.Context, entityName, name string) (string, error) {
@@ -186,4 +193,55 @@ func TestCatalogProxy_UnknownEntity(t *testing.T) {
 	if v := root.Get("НетТакогоСправочника"); v != nil {
 		t.Errorf("Справочники.НетТакого → %v, ожидался nil", v)
 	}
+}
+
+// Ссылка, найденная через НайтиПоНаименованию, привязана к менеджеру —
+// Ссылка.Удалить() удаляет запись.
+func TestRef_DeleteViaManager(t *testing.T) {
+	root, db, _ := newCatalogsTestEnv()
+	cp := root.Get("ТипЦен").(*CatalogProxy)
+	ref := cp.CallMethod("найтипонаименованию", []any{"Розничная"}).(*Ref)
+	ref.CallMethod("удалить", nil)
+	if len(db.deleted) != 1 || db.deleted[0] != "22222222-2222-2222-2222-222222222222" {
+		t.Errorf("ожидалось удаление одной записи, deleted=%v", db.deleted)
+	}
+}
+
+// Менеджерный вариант: Справочники.X.Удалить(Ссылка).
+func TestCatalogProxy_DeleteByRef(t *testing.T) {
+	root, db, _ := newCatalogsTestEnv()
+	cp := root.Get("ТипЦен").(*CatalogProxy)
+	ref := cp.Get("Закупочная").(*Ref)
+	cp.CallMethod("удалить", []any{ref})
+	if len(db.deleted) != 1 || db.deleted[0] != "11111111-1111-1111-1111-111111111111" {
+		t.Errorf("ожидалось удаление, deleted=%v", db.deleted)
+	}
+}
+
+// ПолучитьОбъект() возвращает рабочий дескриптор (саму ссылку).
+func TestRef_GetObject(t *testing.T) {
+	ref := &Ref{UUID: "x", Name: "Тест"}
+	if got := ref.CallMethod("получитьобъект", nil); got != ref {
+		t.Errorf("ПолучитьОбъект вернул %v, ожидалась сама ссылка", got)
+	}
+}
+
+// Вызов неизвестного метода на ссылке поднимает ошибку, а не молча nil.
+func TestRef_UnknownMethodRaises(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("ожидалась ошибка для неизвестного метода ссылки")
+		}
+	}()
+	(&Ref{UUID: "x", Name: "Тест"}).CallMethod("чегоизволите", nil)
+}
+
+// Удалить() на ссылке без менеджера — понятная ошибка, а не паника nil.
+func TestRef_DeleteWithoutManager(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("ожидалась ошибка: ссылка без менеджера")
+		}
+	}()
+	(&Ref{UUID: "x", Name: "Тест"}).CallMethod("удалить", nil)
 }
