@@ -2,7 +2,9 @@
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/ivantit66/onebase/internal/dsl/ast"
@@ -212,6 +214,160 @@ func TestDocsRoot_FindByNumberAndDelete(t *testing.T) {
 	db.QueryRow(ctx, "SELECT COUNT(*) FROM заказпокупателя").Scan(&cnt)
 	if cnt != 0 {
 		t.Errorf("после Документы.X.Удалить() ожидалось 0 документов, получили %d", cnt)
+	}
+}
+
+// ПриЗаписи (OnWrite) вызывается при Записать() из обработки (docWriter):
+// расчётные реквизиты документа вычисляются перед сохранением.
+func TestDocsRoot_OnWriteRunsOnSave(t *testing.T) {
+	ctx := context.Background()
+	db, err := storage.ConnectSQLite(ctx, filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	doc := &metadata.Entity{
+		Name: "Счёт",
+		Kind: metadata.KindDocument,
+		Fields: []metadata.Field{
+			{Name: "Номер", Type: metadata.FieldTypeString},
+			{Name: "СуммаДокумента", Type: metadata.FieldTypeNumber},
+		},
+		TableParts: []metadata.TablePart{
+			{Name: "Товары", Fields: []metadata.Field{
+				{Name: "Количество", Type: metadata.FieldTypeNumber},
+				{Name: "Цена", Type: metadata.FieldTypeNumber},
+				{Name: "Сумма", Type: metadata.FieldTypeNumber},
+			}},
+		},
+	}
+	if err := db.Migrate(ctx, []*metadata.Entity{doc}); err != nil {
+		t.Fatal(err)
+	}
+
+	// ПриЗаписи считает Сумму строк и итог документа.
+	onWriteSrc := `Процедура ПриЗаписи()
+  Итого = 0;
+  Для Каждого Стр Из ЭтотОбъект.Товары Цикл
+    Стр.Сумма = Стр.Количество * Стр.Цена;
+    Итого = Итого + Стр.Сумма;
+  КонецЦикла;
+  ЭтотОбъект.СуммаДокумента = Итого;
+КонецПроцедуры`
+	prog := mustParse(t, onWriteSrc)
+
+	registry := runtime.NewRegistry()
+	registry.Load([]*metadata.Entity{doc}, map[string]*ast.Program{"Счёт": prog}, nil, nil, nil, nil, nil)
+
+	interp := interpreter.New()
+	interp.LookupProc = registry.GetModuleProc
+	s := &Server{store: db, reg: registry, interp: interp, lockMgr: runtime.NewLockManager(), messages: NewMessageStore()}
+
+	root := newDocsRoot(s, interpreter.NewTxState(ctx))
+	dp := root.Get("Счёт").(*docProxy)
+	w := dp.CallMethod("создать", nil).(*docWriter)
+	w.Set("Номер", "С-1")
+	tp := w.Get("Товары").(*tpProxy)
+	r1 := tp.CallMethod("добавить", nil).(*interpreter.MapThis)
+	r1.Set("Количество", float64(3))
+	r1.Set("Цена", float64(100))
+	r2 := tp.CallMethod("добавить", nil).(*interpreter.MapThis)
+	r2.Set("Количество", float64(2))
+	r2.Set("Цена", float64(50))
+
+	// Записать() — без явного вызова ПриЗаписи; хук должен сработать сам.
+	w.CallMethod("записать", nil)
+
+	var total float64
+	db.QueryRow(ctx, "SELECT суммадокумента FROM счёт LIMIT 1").Scan(&total)
+	if total != 400 {
+		t.Errorf("СуммаДокумента = %v, ожидалось 400 (ПриЗаписи не отработала)", total)
+	}
+	// Сумма строк табличной части тоже вычислена в ПриЗаписи и сохранена.
+	rows, err := db.QueryAll(ctx, "SELECT строка, сумма FROM счёт_товары ORDER BY строка")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("ожидалось 2 строки ТЧ, получено %d", len(rows))
+	}
+	want := map[int]float64{1: 300, 2: 100}
+	for _, row := range rows {
+		line := int(parseNum(row["строка"]))
+		if got := parseNum(row["сумма"]); got != want[line] {
+			t.Errorf("строка %d: Сумма = %v, ожидалось %v", line, row["сумма"], want[line])
+		}
+	}
+}
+
+// parseNum приводит значение из БД (число или строка вида "300.0") к float64.
+func parseNum(v any) float64 {
+	switch n := v.(type) {
+	case float64:
+		return n
+	case int64:
+		return float64(n)
+	case int:
+		return float64(n)
+	case string:
+		f, _ := strconv.ParseFloat(n, 64)
+		return f
+	}
+	return 0
+}
+
+// При записи документа из обработки (docWriter) срабатывает автонумерация:
+// пустой реквизит Номер заполняется нумератором, явно заданный — сохраняется.
+func TestDocsRoot_AutoNumberOnWrite(t *testing.T) {
+	ctx := context.Background()
+	db, err := storage.ConnectSQLite(ctx, filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	doc := &metadata.Entity{
+		Name:      "Заявка",
+		Kind:      metadata.KindDocument,
+		Numerator: &metadata.Numerator{Prefix: "ЗВ-", Length: 4, Period: "none"},
+		Fields: []metadata.Field{
+			{Name: "Номер", Type: metadata.FieldTypeString},
+		},
+	}
+	if err := db.Migrate(ctx, []*metadata.Entity{doc}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.EnsureNumeratorSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	registry := runtime.NewRegistry()
+	registry.Load([]*metadata.Entity{doc}, nil, nil, nil, nil, nil, nil)
+	s := &Server{store: db, reg: registry, lockMgr: runtime.NewLockManager(), messages: NewMessageStore()}
+	root := newDocsRoot(s, interpreter.NewTxState(ctx))
+	dp := root.Get("Заявка").(*docProxy)
+
+	// Два документа без явного номера → автонумерация.
+	dp.CallMethod("создать", nil).(*docWriter).CallMethod("записать", nil)
+	dp.CallMethod("создать", nil).(*docWriter).CallMethod("записать", nil)
+	// Третий — с явно заданным номером, он должен сохраниться без изменений.
+	w3 := dp.CallMethod("создать", nil).(*docWriter)
+	w3.Set("Номер", "РУЧНОЙ-1")
+	w3.CallMethod("записать", nil)
+
+	rows, err := db.QueryAll(ctx, "SELECT номер FROM заявка")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, row := range rows {
+		got[fmt.Sprint(row["номер"])] = true
+	}
+	for _, want := range []string{"ЗВ-0001", "ЗВ-0002", "РУЧНОЙ-1"} {
+		if !got[want] {
+			t.Errorf("ожидался номер %q, получены: %v", want, got)
+		}
 	}
 }
 

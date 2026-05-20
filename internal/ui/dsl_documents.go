@@ -173,14 +173,52 @@ func (w *docWriter) CallMethod(method string, args []any) any {
 	return nil
 }
 
-// write сохраняет шапку + табличные части. Использует живой ctx, поэтому
-// при открытой DSL-транзакции запись участвует в ней; иначе автокоммит.
+// autoNumber заполняет реквизит Номер очередным номером нумератора, если
+// у документа есть строковый реквизит Номер и он ещё не задан. Повторяет
+// поведение веб-хендлера: документ, записанный из обработки, нумеруется
+// так же, как созданный через форму. Явно заданный Док.Номер сохраняется.
+func (w *docWriter) autoNumber() {
+	if w.entity.Kind != metadata.KindDocument {
+		return
+	}
+	for _, f := range w.entity.Fields {
+		if !strings.EqualFold(f.Name, "Номер") || f.Type != metadata.FieldTypeString {
+			continue
+		}
+		if cur := w.obj.Get("Номер"); cur == nil || fmt.Sprint(cur) == "" {
+			w.obj.Set("Номер", w.s.generateNumber(w.ctx(), w.entity, w.obj.Fields))
+		}
+		return
+	}
+}
+
+// write проставляет номер документа, вызывает ПриЗаписи (OnWrite), затем
+// сохраняет шапку + табличные части. Автонумерация и вызов ПриЗаписи
+// повторяют поведение веб-хендлера при обычной записи: без них номер и
+// расчётные реквизиты (СуммаНДС, итоги) остались бы незаполненными при
+// записи документа из обработки.
+// Использует живой ctx, поэтому при открытой DSL-транзакции запись
+// участвует в ней; иначе автокоммит.
 func (w *docWriter) write() error {
 	ctx := w.ctx()
+	w.autoNumber()
+	mc := runtime.NewMovementsCollector(w.entity.Name, w.obj.ID)
+	setPeriodFromFields(mc, w.entity, w.obj.Fields)
+	if errMsg, _ := w.s.runOnWriteCtx(ctx, w.obj, mc); errMsg != "" {
+		return fmt.Errorf("%s", errMsg)
+	}
 	if err := w.s.store.Upsert(ctx, w.entity.Name, w.obj.ID, w.obj.Fields, w.entity); err != nil {
 		return err
 	}
-	return w.s.saveTablePartsDirect(ctx, w.entity, w.obj.ID, w.obj.TablePartRows)
+	if err := w.s.saveTablePartsDirect(ctx, w.entity, w.obj.ID, w.obj.TablePartRows); err != nil {
+		return err
+	}
+	// Для непроводимых документов движения, записанные в ПриЗаписи, фиксируем.
+	// У проводимых документов движения формирует проведение (post).
+	if !w.entity.Posting {
+		return w.s.saveMovements(ctx, w.entity.Name, w.obj.ID, mc)
+	}
+	return nil
 }
 
 // post запускает OnPost, собирает движения и фиксирует проведение —
