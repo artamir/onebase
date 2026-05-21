@@ -1474,19 +1474,31 @@ function repAddParam(tableId) {
 // ── Editor context menu — наше меню для textarea, pre и Monaco ──
 // Monaco создан с contextmenu:false, поэтому его внутренний обработчик не глотает событие.
 (function(){
-var _cTA=null,_cMonacoName=null,_cM=null;
+var _cTA=null,_cMonacoName=null,_cM=null,_cSelText='';
 document.addEventListener('contextmenu',function(e){
   var ta=e.target.closest('.os-edit');
   var pre=e.target.closest('pre.os-code');
   var mon=e.target.closest('.monaco-target');
   if(!ta&&!pre&&!mon){hideC();return;}
   e.preventDefault();
-  _cMonacoName=null; _cTA=null;
+  _cMonacoName=null; _cTA=null; _cSelText='';
+  // Выделение фиксируем СРАЗУ, в момент ПКМ: Monaco сбрасывает его на
+  // mousedown, а startEdit переключает pre→textarea (выделение было в pre).
   if(mon){
     _cMonacoName=mon._editorId||null;
-  } else {
-    if(pre&&!ta){var nm=pre.id.replace('pre-','');startEdit(nm);ta=document.getElementById('ta-'+nm);}
+    var ed=_cMonacoName?monacoEditors[_cMonacoName]:null;
+    if(ed){
+      var mt=ed.getModel().getValueInRange(ed.getSelection());
+      _cSelText=(mt&&mt.trim())?mt:(ed._lastSelText||'');
+    }
+  } else if(pre&&!ta){
+    // выделение сейчас в <pre> — забираем DOM-selection ДО startEdit
+    _cSelText=(window.getSelection?String(window.getSelection()):'')||'';
+    var nm=pre.id.replace('pre-','');startEdit(nm);ta=document.getElementById('ta-'+nm);
     _cTA=ta;
+  } else {
+    _cTA=ta;
+    if(ta)_cSelText=ta.value.substring(ta.selectionStart,ta.selectionEnd);
   }
   showC(e.clientX,e.clientY);
 });
@@ -1502,8 +1514,8 @@ function hideC(){if(_cM)_cM.style.display='none';}
 document.addEventListener('click',hideC);
 window.cfgOpenQB=function(){
   hideC();
-  if(_cMonacoName && monacoEditors[_cMonacoName]) openQBModalMonaco(_cMonacoName);
-  else if(_cTA) openQBModal(_cTA);
+  if(_cMonacoName && monacoEditors[_cMonacoName]) openQBModalMonaco(_cMonacoName,_cSelText);
+  else if(_cTA) openQBModal(_cTA,_cSelText);
 };
 })();
 
@@ -1547,7 +1559,7 @@ document.getElementById('qb-insert').onclick=function(){
 document.getElementById('qb-overlay').addEventListener('click',function(e){if(e.target===this)this.classList.remove('active');});
 })();
 
-function openQBModal(ta){
+function openQBModal(ta,presetSel){
   _mqbTA=ta;
   // reset state
   _mqbSel={};_mqbJoins=[];_mqbCurFields=[];
@@ -1560,15 +1572,17 @@ function openQBModal(ta){
   document.getElementById('mqb-fields').innerHTML='';
   document.getElementById('mqb-dsl').value='';
   document.getElementById('mqb-qry').value='';
-  // parse selected text
-  var sel=ta.value.substring(ta.selectionStart,ta.selectionEnd).trim();
+  // parse selected text — приоритет у выделения, снятого в момент ПКМ
+  var sel=(presetSel!=null&&String(presetSel).trim())
+    ?String(presetSel).trim()
+    :ta.value.substring(ta.selectionStart,ta.selectionEnd).trim();
   if(sel){
     var q=qbExtractQuery(sel);
     if(q){document.getElementById('mqb-qry').value=q;qbParseToFields(q);}
   }
   document.getElementById('qb-overlay').classList.add('active');
 }
-function openQBModalMonaco(editorId){
+function openQBModalMonaco(editorId,presetSel){
   var editor = monacoEditors[editorId];
   if (!editor) return;
   _mqbTA = null;
@@ -1583,8 +1597,10 @@ function openQBModalMonaco(editorId){
   document.getElementById('mqb-fields').innerHTML='';
   document.getElementById('mqb-dsl').value='';
   document.getElementById('mqb-qry').value='';
-  var sel = editor.getModel().getValueInRange(editor.getSelection()).trim();
-  // Правый клик мог сбросить выделение — берём последнее запомненное.
+  // Приоритет — выделение, снятое в момент ПКМ; затем текущее; затем
+  // последнее запомненное (правый клик мог сбросить selection).
+  var sel = (presetSel!=null&&String(presetSel).trim())?String(presetSel).trim():'';
+  if(!sel) sel = editor.getModel().getValueInRange(editor.getSelection()).trim();
   if(!sel && editor._lastSelText) sel = editor._lastSelText.trim();
   if(sel){
     var q=qbExtractQuery(sel);
@@ -1596,9 +1612,11 @@ function qbExtractQuery(text){
   // 1С-style: Запрос.Текст = "ВЫБРАТЬ ... |..."
   var m=text.match(/Текст\s*=\s*\n?\s*"([\s\S]*?)"/i);
   if(m)return m[1].replace(/\n\s*\|/g,'\n').trim();
-  // прямой текст запроса
-  if(/\bВЫБРАТЬ\b/i.test(text)){
-    var i=text.search(/\bВЫБРАТЬ\b/i);
+  // прямой текст запроса. \b в JS не учитывает кириллицу (\w = [A-Za-z0-9_]),
+  // поэтому границу слова проверяем явным символьным классом.
+  var sm=text.match(/(^|[^A-Za-zА-Яа-яЁё0-9_])ВЫБРАТЬ(?=[^A-Za-zА-Яа-яЁё0-9_]|$)/i);
+  if(sm){
+    var i=sm.index+sm[1].length;
     return text.substring(i).replace(/\n\s*\|/g,'\n').replace(/^"|"$/g,'').trim();
   }
   return null;
