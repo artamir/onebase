@@ -110,10 +110,8 @@ func runDeploy(cmd *cobra.Command, _ []string) error {
 	if err := db.MigrateAccountRegisters(ctx, proj.AccountRegisters); err != nil {
 		return fmt.Errorf("migrate account registers: %w", err)
 	}
-	for _, e := range proj.Entities {
-		if err := db.SyncPredefined(ctx, e); err != nil {
-			return fmt.Errorf("sync predefined (%s): %w", e.Name, err)
-		}
+	if err := db.SyncAllPredefined(ctx, proj.Entities); err != nil {
+		return fmt.Errorf("sync predefined: %w", err)
 	}
 
 	appCfg, _ := project.LoadConfig(dir)

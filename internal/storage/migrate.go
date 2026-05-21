@@ -320,10 +320,8 @@ func (db *DB) Migrate(ctx context.Context, entities []*metadata.Entity) error {
 			}
 		}
 	}
-	for _, e := range ordered {
-		if err := db.SyncPredefined(ctx, e); err != nil {
-			return fmt.Errorf("migrate: sync predefined %s: %w", e.Name, err)
-		}
+	if err := db.SyncAllPredefined(ctx, entities); err != nil {
+		return fmt.Errorf("migrate: %w", err)
 	}
 	return nil
 }

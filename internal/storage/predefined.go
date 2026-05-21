@@ -41,16 +41,36 @@ func (db *DB) EnsurePredefinedColumns(ctx context.Context, entities []*metadata.
 	return nil
 }
 
+// SyncAllPredefined синхронизирует predefined-элементы всех справочников в
+// порядке зависимостей (orderByDependency): справочник, на predefined которого
+// ссылаются cross-ref поля, синхронизируется раньше ссылающегося — иначе
+// GetPredefinedID не нашёл бы целевую запись.
+func (db *DB) SyncAllPredefined(ctx context.Context, entities []*metadata.Entity) error {
+	for _, e := range orderByDependency(entities) {
+		if err := db.SyncPredefined(ctx, e); err != nil {
+			return fmt.Errorf("sync predefined %s: %w", e.Name, err)
+		}
+	}
+	return nil
+}
+
 // SyncPredefined upserts all predefined items declared in the entity YAML into
 // the database. The _predefined_name is used as the conflict target so the UUID
 // never changes on subsequent syncs — only field values are updated.
 //
-// поддерживаются cross-ref внутри одного справочника
-// (Розничная.БазовыйТип: Закупочная). Алгоритм:
+// Поддерживаются ссылки между predefined-элементами:
+//   - self-ref — на predefined ТОГО ЖЕ справочника (Розничная.БазовыйТип:
+//     Закупочная): резолвятся через локальную карту nameToUUID;
+//   - cross-ref — на predefined ДРУГОГО справочника (Склад.Организация:
+//     ГоловнойОфис): резолвятся через GetPredefinedID. Корректность порядка
+//     обеспечивает SyncAllPredefined.
+//
+// Алгоритм:
 //   1. Пре-аллоцировать UUID для каждого item (переиспользуя из БД при upsert).
 //   2. Топологическая сортировка по self-reference полям.
-//   3. INSERT в порядке зависимостей, заменяя имя на UUID для self-ref полей.
-// При цикле в зависимостях возвращается ошибка.
+//   3. INSERT в порядке зависимостей, заменяя имя на UUID для ref-полей.
+//
+// При цикле в self-ref зависимостях возвращается ошибка.
 func (db *DB) SyncPredefined(ctx context.Context, e *metadata.Entity) error {
 	if len(e.Predefined) == 0 {
 		return nil
@@ -114,11 +134,27 @@ func (db *DB) SyncPredefined(ctx context.Context, e *metadata.Entity) error {
 			if !ok {
 				continue
 			}
-			// Self-ref поле: если значение — имя другого predefined,
-			// подменяем на его UUID.
+			// Self-ref поле: значение — имя другого predefined ТОГО ЖЕ
+			// справочника, подменяем на его UUID из локальной карты.
 			if selfRefFields[strings.ToLower(f.Name)] {
 				if refName, ok := val.(string); ok {
 					if refUUID, found := nameToUUID[refName]; found {
+						val = idArg(d, refUUID)
+					}
+				}
+			} else if f.RefEntity != "" && f.RefEntity != e.Name {
+				// Cross-ref (#14): значение — имя predefined ДРУГОГО
+				// справочника. Уже-UUID оставляем как есть; иначе трактуем
+				// как имя предопределённого и резолвим. Целевой справочник
+				// синхронизирован раньше (см. SyncAllPredefined).
+				if refName, ok := val.(string); ok && refName != "" {
+					if _, err := uuid.Parse(refName); err != nil {
+						refUUID, perr := db.GetPredefinedID(ctx, f.RefEntity, refName)
+						if perr != nil {
+							return fmt.Errorf(
+								"sync predefined %s.%s: поле %q ссылается на предопределённый %s.%s — не найден: %w",
+								e.Name, item.Name, f.Name, f.RefEntity, refName, perr)
+						}
 						val = idArg(d, refUUID)
 					}
 				}
