@@ -965,22 +965,23 @@ func (s *Server) saveMovements(ctx context.Context, docType string, docID uuid.U
 // setPeriodFromFields sets the movements period from the first date field of the document.
 func setPeriodFromFields(mc *runtime.MovementsCollector, entity *metadata.Entity, fields map[string]any) {
 	for _, f := range entity.Fields {
-		if f.Type == metadata.FieldTypeDate {
-			if v, ok := fields[f.Name]; ok && v != nil {
-				switch tv := v.(type) {
-				case time.Time:
-					mc.SetPeriod(tv)
-				case string:
-					for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05", "2006-01-02T15:04", "2006-01-02"} {
-						if t, err := time.ParseInLocation(layout, tv, time.Local); err == nil {
-							mc.SetPeriod(t)
-							break
-						}
-					}
-				}
-			}
-			return
+		if f.Type != metadata.FieldTypeDate {
+			continue
 		}
+		// Регистронезависимый поиск: ключи Fields бывают и в PascalCase
+		// (formToFields / GetByID), и в lower-case (после Object.Set).
+		// Прямой fields[f.Name] промахивался на пути submit → period = time.Now().
+		low := strings.ToLower(f.Name)
+		for k, v := range fields {
+			if strings.ToLower(k) != low {
+				continue
+			}
+			if t := runtime.AsTime(v); !t.IsZero() {
+				mc.SetPeriod(t)
+			}
+			break
+		}
+		return
 	}
 }
 

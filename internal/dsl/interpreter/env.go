@@ -78,6 +78,34 @@ func (e *env) set(name string, v any) {
 	e.vars[name] = v
 }
 
+// publishTemp временно записывает значения прямо в e.vars и возвращает
+// функцию, восстанавливающую прежнее состояние этих ключей. Используется
+// для служебных имён (ОписаниеОшибки), которые должны быть видны только
+// внутри блока, но не должны протекать наружу как пользовательские
+// переменные.
+func publishTemp(e *env, vals map[string]any) func() {
+	type prev struct {
+		v       any
+		existed bool
+	}
+	saved := make(map[string]prev, len(vals))
+	for k, v := range vals {
+		k = strings.ToLower(k)
+		old, ok := e.vars[k]
+		saved[k] = prev{old, ok}
+		e.vars[k] = v
+	}
+	return func() {
+		for k, p := range saved {
+			if p.existed {
+				e.vars[k] = p.v
+			} else {
+				delete(e.vars, k)
+			}
+		}
+	}
+}
+
 func (e *env) has(name string) bool {
 	name = strings.ToLower(name)
 	if _, ok := e.vars[name]; ok {

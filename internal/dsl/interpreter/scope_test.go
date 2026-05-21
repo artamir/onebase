@@ -198,3 +198,87 @@ func TestIfElseScope_ElseIfAssignmentPropagates(t *testing.T) {
 		t.Errorf("expected \"вторая\", got %v", got)
 	}
 }
+
+// П.39: переменная, ВПЕРВЫЕ присвоенная внутри блока (без предобъявления),
+// должна быть видна после блока — scope = процедура, как в 1С.
+
+func TestScope_FirstAssignInIfVisibleOutside(t *testing.T) {
+	code := `Функция Тест()
+  Если 1 = 1 Тогда
+    Результат = 42;
+  КонецЕсли;
+  Возврат Результат;
+КонецФункции`
+	if got := runScopeFunc(t, code); got != float64(42) {
+		t.Errorf("expected 42, got %v", got)
+	}
+}
+
+func TestScope_FirstAssignInElseVisibleOutside(t *testing.T) {
+	code := `Функция Тест()
+  Если 1 = 2 Тогда
+    Результат = 1;
+  Иначе
+    Результат = 99;
+  КонецЕсли;
+  Возврат Результат;
+КонецФункции`
+	if got := runScopeFunc(t, code); got != float64(99) {
+		t.Errorf("expected 99, got %v", got)
+	}
+}
+
+func TestScope_FirstAssignInForEachVisibleOutside(t *testing.T) {
+	code := `Функция Тест()
+  М = Новый Массив;
+  М.Добавить(3);
+  М.Добавить(4);
+  Для Каждого Э Из М Цикл
+    Сумма = ?(Сумма = Неопределено, 0, Сумма) + Э;
+  КонецЦикла;
+  Возврат Сумма;
+КонецФункции`
+	if got := runScopeFunc(t, code); got != float64(7) {
+		t.Errorf("expected 7, got %v", got)
+	}
+}
+
+func TestScope_FirstAssignInNumericForVisibleOutside(t *testing.T) {
+	code := `Функция Тест()
+  Для Сч = 1 По 5 Цикл
+    Итог = Сч;
+  КонецЦикла;
+  Возврат Итог;
+КонецФункции`
+	if got := runScopeFunc(t, code); got != float64(5) {
+		t.Errorf("expected 5, got %v", got)
+	}
+}
+
+func TestScope_FirstAssignInWhileVisibleOutside(t *testing.T) {
+	code := `Функция Тест()
+  Сч = 0;
+  Пока Сч < 3 Цикл
+    Сч = Сч + 1;
+    Последний = Сч;
+  КонецЦикла;
+  Возврат Последний;
+КонецФункции`
+	if got := runScopeFunc(t, code); got != float64(3) {
+		t.Errorf("expected 3, got %v", got)
+	}
+}
+
+func TestScope_FirstAssignInExceptVisibleOutside(t *testing.T) {
+	code := `Функция Тест()
+  Попытка
+    Error("сбой");
+  Исключение
+    Результат = "поймано";
+  КонецПопытки;
+  Возврат Результат;
+КонецФункции`
+	if got := runScopeFunc(t, code); got != "поймано" {
+		t.Errorf("expected \"поймано\", got %v", got)
+	}
+}

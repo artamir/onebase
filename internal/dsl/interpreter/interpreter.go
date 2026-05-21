@@ -204,20 +204,24 @@ func (i *Interpreter) evaluateExprString(expr string, e *env) (any, error) {
 func (i *Interpreter) execStmt(s ast.Stmt, e *env) {
 	switch v := s.(type) {
 	case *ast.IfStmt:
+		// Управляющие блоки НЕ создают дочерний scope: областью видимости
+		// переменной в DSL onebase является процедура/функция целиком (как
+		// в 1С), а не блок. См. П.39 — иначе переменная, впервые присвоенная
+		// внутри Если/цикла, была бы локальной к блоку и тихо терялась.
 		cond := i.evalExpr(v.Cond, e)
 		if truthy(cond) {
-			i.execBlock(v.Then, e.child())
+			i.execBlock(v.Then, e)
 		} else {
 			matched := false
 			for _, elif := range v.ElseIfs {
 				if truthy(i.evalExpr(elif.Cond, e)) {
-					i.execBlock(elif.Body, e.child())
+					i.execBlock(elif.Body, e)
 					matched = true
 					break
 				}
 			}
 			if !matched && len(v.Else) > 0 {
-				i.execBlock(v.Else, e.child())
+				i.execBlock(v.Else, e)
 			}
 		}
 	case *ast.ForEachStmt:
@@ -225,33 +229,29 @@ func (i *Interpreter) execStmt(s ast.Stmt, e *env) {
 		switch items := coll.(type) {
 		case []map[string]any:
 			for _, row := range items {
-				child := e.child()
-				child.set(v.Var.Literal, &MapThis{M: row})
-				if !i.execLoopBody(v.Body, child) {
+				e.set(v.Var.Literal, &MapThis{M: row})
+				if !i.execLoopBody(v.Body, e) {
 					break
 				}
 			}
 		case []any:
 			for _, item := range items {
-				child := e.child()
-				child.set(v.Var.Literal, item)
-				if !i.execLoopBody(v.Body, child) {
+				e.set(v.Var.Literal, item)
+				if !i.execLoopBody(v.Body, e) {
 					break
 				}
 			}
 		case *Array:
 			for _, item := range items.Iterate() {
-				child := e.child()
-				child.set(v.Var.Literal, item)
-				if !i.execLoopBody(v.Body, child) {
+				e.set(v.Var.Literal, item)
+				if !i.execLoopBody(v.Body, e) {
 					break
 				}
 			}
 		case *Map:
 			for idx, key := range items.keys {
-				child := e.child()
-				child.set(v.Var.Literal, &KeyValue{Key: key, Value: items.vals[idx]})
-				if !i.execLoopBody(v.Body, child) {
+				e.set(v.Var.Literal, &KeyValue{Key: key, Value: items.vals[idx]})
+				if !i.execLoopBody(v.Body, e) {
 					break
 				}
 			}
@@ -271,9 +271,8 @@ func (i *Interpreter) execStmt(s ast.Stmt, e *env) {
 		start := toFloatOr0(i.evalExpr(v.Start, e))
 		end := toFloatOr0(i.evalExpr(v.End, e))
 		for counter := start; counter <= end; counter++ {
-			child := e.child()
-			child.set(v.Var.Literal, counter)
-			if !i.execLoopBody(v.Body, child) {
+			e.set(v.Var.Literal, counter)
+			if !i.execLoopBody(v.Body, e) {
 				break
 			}
 		}
@@ -287,7 +286,7 @@ func (i *Interpreter) execStmt(s ast.Stmt, e *env) {
 			if iter > maxWhileIter {
 				RaiseUserError("Цикл «Пока»: превышено максимальное число итераций — вероятно, бесконечный цикл")
 			}
-			if !i.execLoopBody(v.Body, e.child()) {
+			if !i.execLoopBody(v.Body, e) {
 				break
 			}
 		}
@@ -684,13 +683,19 @@ func (i *Interpreter) execTry(t *ast.TryStmt, e *env) {
 			panic(*caught)
 		}
 		msg := caught.Msg
-		exceptEnv := e.child()
 		descFn := BuiltinFunc(func(args []any, file string, line int) (any, error) {
 			return msg, nil
 		})
-		exceptEnv.set("ОписаниеОшибки", descFn)
-		exceptEnv.set("ErrorDescription", descFn)
-		i.execBlock(t.Except, exceptEnv)
+		// ОписаниеОшибки доступна только внутри блока Исключение, поэтому
+		// публикуется временно. Сам блок исполняется в текущем scope (не в
+		// child) — чтобы переменные, впервые присвоенные в Исключение, были
+		// видны после КонецПопытки, как в 1С (см. П.39).
+		restore := publishTemp(e, map[string]any{
+			"ОписаниеОшибки":   descFn,
+			"ErrorDescription": descFn,
+		})
+		i.execBlock(t.Except, e)
+		restore()
 	}
 }
 

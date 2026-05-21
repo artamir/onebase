@@ -89,18 +89,40 @@ func (o *Object) CallMethod(method string, args []any) any {
 	switch method {
 	case "моментвремени", "pointintime":
 		var p time.Time
-		// первое непустое date-поле
+		// первое непустое date-поле. o.Get — регистронезависимый поиск:
+		// ключи Fields приходят то в PascalCase (из БД/формы), то в lower-case
+		// (после Object.Set), поэтому прямой o.Fields[k] промахивался.
 		for _, k := range []string{"дата", "date", "период", "period"} {
-			if v, ok := o.Fields[k]; ok && v != nil {
-				if t, ok := v.(time.Time); ok && !t.IsZero() {
-					p = t
-					break
-				}
+			if t := AsTime(o.Get(k)); !t.IsZero() {
+				p = t
+				break
 			}
 		}
 		return &MomentTime{Period: p, DocID: o.ID, DocType: o.Type}
 	}
 	return nil
+}
+
+// AsTime приводит значение date-поля к time.Time. Значение может быть
+// time.Time (PostgreSQL / распарсенная форма) либо строкой RFC3339
+// (SQLite хранит дату как text — см. storage.crud). Возвращает нулевое
+// время, если значение пустое или нераспознано.
+func AsTime(v any) time.Time {
+	switch t := v.(type) {
+	case time.Time:
+		return t
+	case *time.Time:
+		if t != nil {
+			return *t
+		}
+	case string:
+		for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05", "2006-01-02T15:04", "2006-01-02 15:04:05", "2006-01-02"} {
+			if parsed, err := time.ParseInLocation(layout, t, time.Local); err == nil {
+				return parsed
+			}
+		}
+	}
+	return time.Time{}
 }
 
 // String — display-имя объекта для записи в string-колонки регистра
