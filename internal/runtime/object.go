@@ -91,11 +91,33 @@ func (o *Object) CallMethod(method string, args []any) any {
 		var p time.Time
 		// первое непустое date-поле
 		for _, k := range []string{"дата", "date", "период", "period"} {
-			if v, ok := o.Fields[k]; ok && v != nil {
-				if t, ok := v.(time.Time); ok && !t.IsZero() {
-					p = t
-					break
+			v, ok := o.Fields[k]
+			if !ok || v == nil {
+				continue
+			}
+			switch tv := v.(type) {
+			case time.Time:
+				if !tv.IsZero() {
+					p = tv
 				}
+			case string:
+				// При загрузке документа из БД/формы дата приходит строкой.
+				// Без разбора Period остался бы нулевым и moment-фильтр
+				// (period < @) отсёк бы все движения → ФИФО «доступно 0».
+				// Layout'ы те же, что в setPeriodFromFields, плюс формат
+				// SQLite datetime с пробелом.
+				for _, layout := range []string{
+					time.RFC3339, "2006-01-02T15:04:05", "2006-01-02T15:04",
+					"2006-01-02 15:04:05", "2006-01-02",
+				} {
+					if t, err := time.ParseInLocation(layout, tv, time.Local); err == nil {
+						p = t
+						break
+					}
+				}
+			}
+			if !p.IsZero() {
+				break
 			}
 		}
 		return &MomentTime{Period: p, DocID: o.ID, DocType: o.Type}
