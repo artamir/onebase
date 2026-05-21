@@ -557,7 +557,8 @@ func (db *DB) Delete(ctx context.Context, entityName string, id uuid.UUID) error
 	err := db.exec(ctx,
 		fmt.Sprintf("DELETE FROM %s WHERE id = %s", tbl, d.Placeholder(1)), idArg(d, id))
 	if err == nil {
-		if u, ok := auditUserFromCtx(ctx); ok {
+		if s := db.GetAuditSettings(ctx); s.Enabled && s.Delete {
+			u, _ := auditUserFromCtx(ctx)
 			_ = db.Log(ctx, &AuditEntry{
 				UserID:     u.UserID,
 				UserLogin:  u.UserLogin,
@@ -578,7 +579,8 @@ func (db *DB) SetPosted(ctx context.Context, entityName string, id uuid.UUID, po
 			metadata.TableName(entityName), d.Placeholder(1), d.Placeholder(2)),
 		posted, idArg(d, id))
 	if err == nil {
-		if u, ok := auditUserFromCtx(ctx); ok {
+		if s := db.GetAuditSettings(ctx); s.Enabled && s.Post {
+			u, _ := auditUserFromCtx(ctx)
 			action := "post"
 			if !posted {
 				action = "unpost"

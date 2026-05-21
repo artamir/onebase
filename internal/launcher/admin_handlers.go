@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/ivantit66/onebase/internal/auth"
+	"github.com/ivantit66/onebase/internal/storage"
 	"github.com/ivantit66/onebase/internal/version"
 	"gopkg.in/yaml.v3"
 )
@@ -352,42 +353,123 @@ func (h *handler) cfgAdminAudit(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`<div style="padding:16px;color:#c00">Нет подключения к БД</div>`))
 		return
 	}
-	rows, err := db.Query(r.Context(), `
-		SELECT user_login, action, entity_kind, entity_name, at
-		FROM _audit ORDER BY at DESC LIMIT 100`)
-	if err != nil {
-		w.Write([]byte(`<div style="padding:16px;color:#999">Журнал регистрации пуст или таблица не создана</div>`))
-		return
+	s := db.GetAuditSettings(r.Context())
+	ck := func(on bool) string {
+		if on {
+			return " checked"
+		}
+		return ""
 	}
-	defer rows.Close()
 
+	// ── Блок настроек журнала ──
 	html := `<div style="padding:16px">
 	<h3 style="margin:0 0 14px;font-size:15px">Журнал регистрации</h3>
+	<div style="margin-bottom:18px;padding:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:4px">
+	  <label style="font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px">
+	    <input type="checkbox" id="au-enabled"` + ck(s.Enabled) + `> Вести журнал регистрации</label>
+	  <div style="margin:10px 0 0 22px;display:flex;flex-direction:column;gap:5px">
+	    <div style="font-size:11px;color:#666;margin-bottom:2px">Регистрировать события:</div>
+	    <label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" id="au-create"` + ck(s.Create) + `> Создание объектов</label>
+	    <label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" id="au-update"` + ck(s.Update) + `> Изменение объектов</label>
+	    <label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" id="au-delete"` + ck(s.Delete) + `> Удаление объектов</label>
+	    <label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" id="au-post"` + ck(s.Post) + `> Проведение / отмена</label>
+	    <label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" id="au-login"` + ck(s.Login) + `> Вход / выход пользователей</label>
+	  </div>
+	  <button onclick="cfgAuditSave()" style="margin-top:10px;background:#16a34a;color:#fff;border:none;padding:5px 14px;border-radius:3px;cursor:pointer;font-size:12px">Сохранить</button>
+	  <span id="au-msg" style="font-size:11px;margin-left:8px"></span>
+	</div>
+	<div style="font-size:12px;color:#666;margin-bottom:8px">Последние записи:</div>
 	<table style="width:100%;border-collapse:collapse;font-size:12px">
 	<tr style="background:#f1f5f9"><th style="text-align:left;padding:6px 8px;font-weight:600">Время</th><th style="text-align:left;padding:6px 8px;font-weight:600">Пользователь</th><th style="text-align:left;padding:6px 8px;font-weight:600">Действие</th><th style="text-align:left;padding:6px 8px;font-weight:600">Объект</th></tr>`
+
 	i := 0
-	for rows.Next() {
-		var userLogin, action, kind, entityName string
-		var at time.Time
-		rows.Scan(&userLogin, &action, &kind, &entityName, &at)
-		bg := ""
-		if i%2 == 1 {
-			bg = ` style="background:#f9fafb"`
+	rows, qErr := db.Query(r.Context(), `
+		SELECT user_login, action, entity_kind, entity_name, at
+		FROM _audit ORDER BY at DESC LIMIT 100`)
+	if qErr == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var userLogin, action, kind, entityName string
+			var at time.Time
+			rows.Scan(&userLogin, &action, &kind, &entityName, &at)
+			bg := ""
+			if i%2 == 1 {
+				bg = ` style="background:#f9fafb"`
+			}
+			obj := escHTML(entityName)
+			if kind != "" {
+				obj = escHTML(kind) + ": " + obj
+			}
+			who := escHTML(userLogin)
+			if who == "" {
+				who = `<span style="color:#999">(анонимно)</span>`
+			}
+			html += fmt.Sprintf(`<tr%s><td style="padding:5px 8px;color:#888;white-space:nowrap">%s</td><td style="padding:5px 8px">%s</td><td style="padding:5px 8px">%s</td><td style="padding:5px 8px">%s</td></tr>`,
+				bg, at.Format("02.01.2006 15:04:05"), who, escHTML(action), obj)
+			i++
 		}
-		obj := escHTML(entityName)
-		if kind != "" {
-			obj = escHTML(kind) + ": " + obj
-		}
-		html += fmt.Sprintf(`<tr%s><td style="padding:5px 8px;color:#888;white-space:nowrap">%s</td><td style="padding:5px 8px">%s</td><td style="padding:5px 8px">%s</td><td style="padding:5px 8px">%s</td></tr>`,
-			bg, at.Format("02.01.2006 15:04:05"), escHTML(userLogin), escHTML(action), obj)
-		i++
 	}
 	if i == 0 {
 		html += `<tr><td colspan="4" style="padding:20px;text-align:center;color:#999">Журнал пуст</td></tr>`
 	}
-	html += `</table></div>`
+	html += `</table></div>
+<script>
+function cfgAuditSave(){
+  var body={
+    enabled:document.getElementById('au-enabled').checked,
+    create:document.getElementById('au-create').checked,
+    update:document.getElementById('au-update').checked,
+    "delete":document.getElementById('au-delete').checked,
+    post:document.getElementById('au-post').checked,
+    login:document.getElementById('au-login').checked
+  };
+  fetch('/bases/` + b.ID + `/configurator/admin/audit/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+    .then(function(r){return r.json()})
+    .then(function(d){
+      var m=document.getElementById('au-msg');
+      if(d.ok){m.textContent='Сохранено';m.style.color='#16a34a';}
+      else{m.textContent=(d.error||'Ошибка');m.style.color='#c00';}
+    })
+    .catch(function(){var m=document.getElementById('au-msg');m.textContent='Ошибка сети';m.style.color='#c00';});
+}
+</script>`
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(html))
+}
+
+// cfgAdminAuditSave сохраняет настройки журнала регистрации.
+func (h *handler) cfgAdminAuditSave(w http.ResponseWriter, r *http.Request) {
+	b, err := h.store.Get(chi.URLParam(r, "id"))
+	if err != nil {
+		writeJSON(w, 404, map[string]any{"error": "not found"})
+		return
+	}
+	var req struct {
+		Enabled bool `json:"enabled"`
+		Create  bool `json:"create"`
+		Update  bool `json:"update"`
+		Delete  bool `json:"delete"`
+		Post    bool `json:"post"`
+		Login   bool `json:"login"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, 400, map[string]any{"error": err.Error()})
+		return
+	}
+	db, err := getAuthDB(r.Context(), b)
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
+	s := storage.AuditSettings{
+		Enabled: req.Enabled, Create: req.Create, Update: req.Update,
+		Delete: req.Delete, Post: req.Post, Login: req.Login,
+	}
+	if err := db.SaveAuditSettings(r.Context(), s); err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
 func (h *handler) cfgAdminAbout(w http.ResponseWriter, r *http.Request) {

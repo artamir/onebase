@@ -81,7 +81,8 @@ func (db *DB) EnsureAuditSchema(ctx context.Context) error {
 	_, _ = db.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_audit_record ON _audit (entity_name, record_id)`)
 	_, _ = db.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_audit_user ON _audit (user_id, at DESC)`)
 	_, _ = db.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_audit_at ON _audit (at DESC)`)
-	return nil
+	// Настройки журнала регистрации живут рядом — создаём заодно.
+	return db.EnsureSettingsSchema(ctx)
 }
 
 // Log writes a single audit entry.
@@ -213,12 +214,15 @@ type FieldChange struct {
 	New   any
 }
 
-// logCreate writes a "create" audit entry from context.
+// logCreate writes a "create" audit entry. Пишется, если журнал включён и
+// тип события «создание» разрешён в настройках; пользователь берётся из
+// контекста, а при его отсутствии (фоновые операции, анонимный режим без
+// пользователей) запись делается с пустым логином.
 func (db *DB) logCreate(ctx context.Context, kind, entityName string, id uuid.UUID) {
-	u, ok := auditUserFromCtx(ctx)
-	if !ok {
+	if s := db.GetAuditSettings(ctx); !s.Enabled || !s.Create {
 		return
 	}
+	u, _ := auditUserFromCtx(ctx)
 	_ = db.Log(ctx, &AuditEntry{
 		UserID:     u.UserID,
 		UserLogin:  u.UserLogin,
@@ -229,12 +233,12 @@ func (db *DB) logCreate(ctx context.Context, kind, entityName string, id uuid.UU
 	})
 }
 
-// logUpdate writes "update" audit entries (one per changed field) from context.
+// logUpdate writes "update" audit entries (one per changed field).
 func (db *DB) logUpdate(ctx context.Context, kind, entityName string, id uuid.UUID, changes []FieldChange) {
-	u, ok := auditUserFromCtx(ctx)
-	if !ok {
+	if s := db.GetAuditSettings(ctx); !s.Enabled || !s.Update {
 		return
 	}
+	u, _ := auditUserFromCtx(ctx)
 	for _, ch := range changes {
 		_ = db.Log(ctx, &AuditEntry{
 			UserID:     u.UserID,
@@ -251,7 +255,16 @@ func (db *DB) logUpdate(ctx context.Context, kind, entityName string, id uuid.UU
 }
 
 // LogAction writes an arbitrary audit action (post, unpost, delete, login, logout).
+// Уважает настройки журнала: вход/выход пишется только при включённом
+// audit.login, остальные действия — при включённом журнале.
 func (db *DB) LogAction(ctx context.Context, action, kind, entityName, recordID, userID, userLogin, ip string) {
+	s := db.GetAuditSettings(ctx)
+	if !s.Enabled {
+		return
+	}
+	if (action == "login" || action == "logout") && !s.Login {
+		return
+	}
 	_ = db.Log(ctx, &AuditEntry{
 		UserID:     userID,
 		UserLogin:  userLogin,

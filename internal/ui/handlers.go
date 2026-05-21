@@ -1824,10 +1824,13 @@ func (s *Server) loadTPRefOptions(ctx context.Context, entity *metadata.Entity) 
 // resolveRegisterRows enriches register movement rows with human-readable values:
 // recorder_label = "TypeName №Num от Date", dimension UUID values → catalog names.
 func (s *Server) resolveRegisterRows(ctx context.Context, rows []map[string]any, reg *metadata.Register) {
-	// collect all UUID-looking strings in dimension fields
+	// Резолвим UUID и в измерениях, и в атрибутах: reference-атрибут
+	// (например Организация) тоже хранит UUID и должен показываться именем.
+	refFields := append(append([]metadata.Field{}, reg.Dimensions...), reg.Attributes...)
+	// collect all UUID-looking strings in dimension/attribute fields
 	uuidToLabel := make(map[string]string)
 	for _, row := range rows {
-		for _, f := range reg.Dimensions {
+		for _, f := range refFields {
 			if v, ok := row[f.Name].(string); ok {
 				if _, err := uuid.Parse(v); err == nil {
 					uuidToLabel[v] = "" // mark for lookup
@@ -1866,8 +1869,8 @@ func (s *Server) resolveRegisterRows(ctx context.Context, rows []map[string]any,
 				}
 			}
 		}
-		// dimension UUID → name
-		for _, f := range reg.Dimensions {
+		// dimension/attribute UUID → name
+		for _, f := range refFields {
 			if v, ok := row[f.Name].(string); ok {
 				if label, found := uuidToLabel[v]; found && label != "" {
 					row[f.Name] = label
