@@ -247,7 +247,6 @@ chart_proc: СформироватьДиаграмму
 ```
 
 Данные запроса доступны через переменную `Результат` (Массив из Структура).
-```
 
 - **Типы диаграмм:** `Гистограмма` (bar), `Линейная` (line), `Круговая` (pie)
 - **Свойства:** `Заголовок`, `Тип`, `Легенда`, `Подписи`, `Подсказки`
@@ -265,6 +264,8 @@ chart_proc: СформироватьДиаграмму
 
 ---
 
+## Публикации
+
 [**Этот репозиторий использован в статье на Инфостарт**](https://infostart.ru/1c/articles/2694204/)
 
-![Инфостарт](https://infostart.ru/bitrix/templates/sandbox_empty/assets/tpl/abo/img/logo.svg)
+<img src="https://infostart.ru/bitrix/templates/sandbox_empty/assets/tpl/abo/img/logo.svg" alt="Инфостарт" width="120">
