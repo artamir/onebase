@@ -2,6 +2,7 @@ package launcher
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"html"
 	"html/template"
@@ -19,6 +20,17 @@ import (
 //   - "forms-list"   — список managed-форм проекта (минимальный)
 var formsTmpl = template.Must(template.New("forms").Funcs(template.FuncMap{
 	"esc": func(s string) string { return html.EscapeString(s) },
+	// jsString — встраивание произвольной строки как JS-литерала через
+	// json.Marshal. Возвращает с обрамляющими кавычками: `"...escaped..."`.
+	// Корректно работает с кириллицей, переносами строк, кавычками,
+	// бэкслешами — пригоден для прямой подстановки в JS-выражение без
+	// дополнительных манипуляций (replace-цепочки и т.п.).
+	// Возвращаемое значение помечается template.JS, чтобы html/template
+	// не применил автоматический JS-escape поверх готового литерала.
+	"jsString": func(s string) template.JS {
+		b, _ := json.Marshal(s)
+		return template.JS(b)
+	},
 }).Parse(tplFormsBase + tplFormsList + tplFormsEditor))
 
 // renderFormsEditor — рендер страницы редактора одной формы.
@@ -249,11 +261,11 @@ const tplFormsEditor = `
 require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs' }});
 require(['vs/editor/editor.main'], function () {
   window.yamlEditor = monaco.editor.create(document.getElementById('yaml-editor'), {
-    value: {{.EditingForm.YAML | esc}}.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'"),
+    value: {{jsString .EditingForm.YAML}},
     language: 'yaml', theme: 'vs-light', automaticLayout: true, minimap: { enabled: false }, fontSize: 12
   });
   window.osEditor = monaco.editor.create(document.getElementById('os-editor'), {
-    value: {{.EditingForm.OS | esc}}.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'"),
+    value: {{jsString .EditingForm.OS}},
     language: 'plaintext', theme: 'vs-light', automaticLayout: true, minimap: { enabled: false }, fontSize: 12
   });
   refreshPreview();

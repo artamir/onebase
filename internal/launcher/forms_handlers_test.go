@@ -1,6 +1,7 @@
 package launcher
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -153,6 +154,80 @@ func TestPreviewErrorHTML(t *testing.T) {
 	if !strings.Contains(html, "&lt;token&gt;") {
 		t.Error("XML-токены не экранированы")
 	}
+}
+
+// Регрессия (issue #31 в /tmp): при создании новой формы Monaco-editor
+// получал значение через цепочку html.EscapeString + JS replace, что
+// ломалось на кириллице и переносах строк — preview-handler ругался
+// `did not find expected alphabetic or numeric character`.
+// Исправлено через json.Marshal helper jsString — возвращает обрамлённый
+// в кавычки JS-литерал, валидный в любых сценариях.
+func TestFormsEditor_YAMLEmbeddedAsValidJSLiteral(t *testing.T) {
+	data := &configuratorData{
+		Base: &Base{ID: "test-base"},
+		EditingForm: &cfgManagedForm{
+			Entity: "Контрагент",
+			Name:   "ФормаОбъекта",
+			Kind:   "object",
+			YAML: `schema: onebase.form/v1
+form:
+  name: ФормаОбъекта
+  kind: object
+  entity: Контрагент
+  title:
+    ru: "Карточка"
+`,
+			OS: "// @directive=&НаСервере\nПроцедура X()\nКонецПроцедуры\n",
+		},
+	}
+	var buf bytes.Buffer
+	if err := formsTmpl.ExecuteTemplate(&buf, "forms-editor", data); err != nil {
+		t.Fatalf("ExecuteTemplate: %v", err)
+	}
+	html := buf.String()
+
+	// YAML должен быть встроен как корректный JS-литерал в одну строку
+	// с экранированными переносами и сохранением кириллицы.
+	if !strings.Contains(html, `"schema: onebase.form/v1\nform:\n  name: ФормаОбъекта\n`) {
+		t.Errorf("YAML не встроен как валидный JS-литерал (кириллица или \\n не экранированы корректно).\n"+
+			"Фрагмент HTML вокруг yamlEditor:\n%s", extractContext(html, "yamlEditor", 300))
+	}
+
+	// OS-модуль с символом & (директива) — критический случай.
+	// json.Marshal по умолчанию SetEscapeHTML=true, превращает & в &
+	// (это HTML-safe escape, валиден как JS-литерал — браузер декодирует обратно).
+	// Прежний баг давал именно `&` в неэкранированном виде, ломая JS-парсинг.
+	// json.Marshal с дефолтным SetEscapeHTML=true превращает & в &
+	// (это валидный JS-литерал, браузер при парсинге восстановит &).
+	// Принимаем оба варианта: и литеральный &, и &.
+	hasLiteralAmp := strings.Contains(html, `"// @directive=&НаСервере\n`)
+	hasUnicodeAmp := strings.Contains(html, "\"// @directive=\\u0026НаСервере\\n")
+	if !hasLiteralAmp && !hasUnicodeAmp {
+		t.Errorf("OS-модуль с &НаСервере не встроен корректно.\n"+
+			"Фрагмент HTML вокруг osEditor:\n%s", extractContext(html, "osEditor", 300))
+	}
+
+	// Прежний баг: HTML-escape-цепочки .replace(/&lt;/g,'<') не должно быть.
+	if strings.Contains(html, ".replace(/&lt;/g,'<')") {
+		t.Error("в шаблоне всё ещё используется старая цепочка HTML-escape replace — JS-escape должен идти через jsString")
+	}
+}
+
+// extractContext возвращает кусок строки вокруг указанного маркера.
+func extractContext(s, marker string, span int) string {
+	i := strings.Index(s, marker)
+	if i < 0 {
+		return "(маркер не найден)"
+	}
+	start := i - span
+	if start < 0 {
+		start = 0
+	}
+	end := i + span
+	if end > len(s) {
+		end = len(s)
+	}
+	return s[start:end]
 }
 
 // formFiles генерирует пути в lowercase.
