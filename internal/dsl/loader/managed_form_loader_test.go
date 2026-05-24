@@ -41,7 +41,7 @@ commands:
 elements:
   - kind: ГруппаФормы
     name: Шапка
-    title: ""
+    title: { ru: "Шапка" }
     children:
       - kind: ПолеВвода
         name: ПолеКонтрагент

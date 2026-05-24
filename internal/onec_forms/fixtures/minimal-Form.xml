@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Form xmlns="http://v8.1c.ru/8.3/xcf/logform" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" version="2.20">
+  <AutoSaveDataInSettings>Use</AutoSaveDataInSettings>
+  <VerticalScroll>useIfNecessary</VerticalScroll>
+  <AutoCommandBar name="ФормаКоманднаяПанель" id="-1">
+    <ChildItems>
+      <Button name="КнПровести" id="100">
+        <Type>CommandBarButton</Type>
+        <Representation>PictureAndText</Representation>
+        <CommandName>Form.Command.Провести</CommandName>
+        <Title>
+          <v8:item><v8:lang>ru</v8:lang><v8:content>Провести</v8:content></v8:item>
+        </Title>
+      </Button>
+    </ChildItems>
+  </AutoCommandBar>
+  <Events>
+    <Event name="OnOpen">ПриОткрытии</Event>
+    <Event name="OnCreateAtServer">ПриСозданииНаСервере</Event>
+  </Events>
+  <ChildItems>
+    <UsualGroup name="Шапка" id="200">
+      <Title>
+        <v8:item><v8:lang>ru</v8:lang><v8:content>Шапка</v8:content></v8:item>
+      </Title>
+      <Group>Vertical</Group>
+      <ChildItems>
+        <InputField name="ПолеНомер" id="201">
+          <DataPath>Объект.Номер</DataPath>
+          <Title>
+            <v8:item><v8:lang>ru</v8:lang><v8:content>Номер</v8:content></v8:item>
+          </Title>
+          <TitleLocation>Left</TitleLocation>
+          <Events>
+            <Event name="OnChange">НомерПриИзменении</Event>
+          </Events>
+        </InputField>
+        <CheckBoxField name="ПолеПроведен" id="202">
+          <DataPath>Объект.Проведен</DataPath>
+          <Title>
+            <v8:item><v8:lang>ru</v8:lang><v8:content>Проведен</v8:content></v8:item>
+          </Title>
+        </CheckBoxField>
+      </ChildItems>
+    </UsualGroup>
+  </ChildItems>
+  <Attributes>
+    <Attribute name="Объект" id="1">
+      <Type>
+        <v8:Type>cfg:DocumentRef.РеализацияТоваров</v8:Type>
+      </Type>
+      <MainAttribute>true</MainAttribute>
+      <Save>
+        <Field>Объект.Номер</Field>
+        <Field>Объект.Проведен</Field>
+      </Save>
+    </Attribute>
+    <Attribute name="Товары" id="2">
+      <Type>
+        <v8:Type>v8:ValueTable</v8:Type>
+      </Type>
+      <Columns>
+        <Column name="Номенклатура" id="3">
+          <Type>
+            <v8:Type>cfg:CatalogRef.Номенклатура</v8:Type>
+          </Type>
+        </Column>
+        <Column name="Цена" id="4">
+          <Type>
+            <v8:Type>xs:decimal</v8:Type>
+            <NumberQualifiers>
+              <Digits>15</Digits>
+              <FractionDigits>2</FractionDigits>
+            </NumberQualifiers>
+          </Type>
+        </Column>
+      </Columns>
+    </Attribute>
+  </Attributes>
+  <Commands>
+    <Command name="Провести" id="500">
+      <Title>
+        <v8:item><v8:lang>ru</v8:lang><v8:content>Провести</v8:content></v8:item>
+      </Title>
+      <Action>ПровестиКоманда</Action>
+    </Command>
+  </Commands>
+  <Parameters/>
+</Form>

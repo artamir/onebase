@@ -1,0 +1,72 @@
+schema: onebase.form/v1
+form:
+    name: ФормаОбъекта
+    kind: object
+    entity: РеализацияТоваров
+    auto_save_settings: true
+    vertical_scroll: useIfNecessary
+attributes:
+    - name: Объект
+      type: DocumentRef.РеализацияТоваров
+      original_id: "1"
+      save: true
+      main: true
+    - name: Товары
+      type: ValueTable
+      original_id: "2"
+      columns:
+        - name: Номенклатура
+          type: CatalogRef.Номенклатура
+          original_id: "3"
+        - name: Цена
+          type: decimal(15,2)
+          original_id: "4"
+          length: 15
+          precision: 2
+commands:
+    - name: Провести
+      title:
+        ru: Провести
+      action: ПровестиКоманда
+      original_id: "500"
+command_bar:
+    name: ФормаКоманднаяПанель
+    visible: true
+    original_id: "-1"
+    buttons:
+        - name: КнПровести
+          command: Form.Command.Провести
+          title:
+            ru: Провести
+          representation: PictureAndText
+          original_id: "100"
+elements:
+    - kind: ГруппаФормы
+      name: Шапка
+      title:
+        ru: Шапка
+      original_id: "200"
+      props:
+        Group: Vertical
+      children:
+        - kind: ПолеВвода
+          name: ПолеНомер
+          title:
+            ru: Номер
+          data_path: Объект.Номер
+          original_id: "201"
+          events:
+            ПриИзменении: НомерПриИзменении
+          props:
+            TitleLocation: Left
+        - kind: Флажок
+          name: ПолеПроведен
+          title:
+            ru: Проведен
+          data_path: Объект.Проведен
+          original_id: "202"
+events:
+    ПриОткрытии: ПриОткрытии
+    ПриСоздании: ПриСозданииНаСервере
+oneC_meta:
+    version: "2.20"

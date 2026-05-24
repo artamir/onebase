@@ -78,11 +78,15 @@ const (
 
 // FormElement represents a single form element (field, button, etc.)
 type FormElement struct {
-	ID        string                   `yaml:"id,omitempty"`
-	Name      string                   `yaml:"name,omitempty"`
-	Kind      FormElementType          `yaml:"kind,omitempty"`
-	Title     string                   `yaml:"title,omitempty"`
-	FieldName string                   `yaml:"field,omitempty"`
+	ID   string          `yaml:"id,omitempty"`
+	Name string          `yaml:"name,omitempty"`
+	Kind FormElementType `yaml:"kind,omitempty"`
+	// Title — legacy строковый заголовок. В managed-формах используется
+	// TitleMap (поле yaml:"title"); это поле не сериализуется в YAML
+	// (тег "-"), и заполняется ToFormModule из TitleMap.Get("ru") как
+	// fallback для legacy-рендерера.
+	Title     string `yaml:"-"`
+	FieldName string `yaml:"field,omitempty"`
 	TablePart string                   `yaml:"table_part,omitempty"`
 	Visible   bool                     `yaml:"visible,omitempty"`
 	Enabled   bool                     `yaml:"enabled,omitempty"`
@@ -94,8 +98,8 @@ type FormElement struct {
 	// Поля, добавленные планом 37. Все опциональны; YAML-загрузчик
 	// заполняет их при чтении managed-формы, конвертер 1С использует
 	// для round-trip, рендерер — для отрисовки HTML.
-	OriginalID      string            `yaml:"original_id,omitempty"`       // id из Form.xml для round-trip
-	TitleMap        map[string]string `yaml:"title_map,omitempty"`         // локализованный заголовок (ru, en, ...)
+	OriginalID string            `yaml:"original_id,omitempty"` // id из Form.xml для round-trip
+	TitleMap   map[string]string `yaml:"title,omitempty"`       // локализованный заголовок (ru, en, ...) — основной источник в managed-YAML
 	DataPath        string            `yaml:"data_path,omitempty"`         // "Объект.Контрагент", "Список.Цена"
 	Picture         string            `yaml:"picture,omitempty"`           // "_resources/.../Picture.png" или "stdpic:Post"
 	ValuesPicture   string            `yaml:"values_picture,omitempty"`    // палитра выбора (для PictureField/InputField)

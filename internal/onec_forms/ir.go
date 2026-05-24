@@ -25,7 +25,7 @@ type IRForm struct {
 	Parameters             []*IRParameter
 	Elements               []*IRElement // дерево ChildItems
 	Events                 map[string]string // form-level events (1С имя → процедура)
-	Resources              []*IRResource     // бинарные файлы из Items/
+	Resources              []IRResource      // бинарные файлы из Items/
 	// UnknownTopLevel — XML-узлы верхнего уровня, не имеющие IR-семантики
 	// (ДКС, Conditional Appearance, расширения). Хранятся «как есть» для
 	// round-trip; сериализуются в oneC_meta.unknown_xml в YAML.
