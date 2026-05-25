@@ -3703,6 +3703,19 @@ const cfgTabTree = `{{define "tab-tree"}}
 </div>
 {{end}}
 
+{{if eq $e.Kind "Справочник"}}
+<div class="section-hd">Свойства</div>
+<div style="margin-bottom:10px">
+  <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+    <input type="checkbox" name="hierarchical" value="true" {{if $e.Hierarchical}}checked{{end}}>
+    <span>Иерархический — поддержка групп (папок) и режима «Дерево / Список»</span>
+  </label>
+  <div style="color:#94a3b8;font-size:11px;margin-left:24px;margin-top:2px">
+    После включения требуется миграция БД: появятся колонки <code>is_folder</code> и <code>parent_id</code>.
+  </div>
+</div>
+{{end}}
+
 {{if $e.Fields}}
 <details open><summary class="section-hd" style="cursor:pointer">Реквизиты ({{len $e.Fields}})</summary>
 <table class="fields-tbl" id="ft-{{$e.Name}}">

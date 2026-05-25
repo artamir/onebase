@@ -41,11 +41,42 @@ type saveTP struct {
 	Fields []saveField `yaml:"fields"`
 }
 
+// saveNumerator зеркалирует metadata.rawNumerator, чтобы при roundtrip
+// (Unmarshal через saveEntity → Marshal обратно) не терялась авто-нумерация
+// документов после редактирования полей в UI конфигуратора.
+type saveNumerator struct {
+	Prefix string `yaml:"prefix,omitempty"`
+	Length int    `yaml:"length,omitempty"`
+	Period string `yaml:"period,omitempty"`
+	Scope  string `yaml:"scope,omitempty"`
+}
+
+// savePredefined — предопределённые элементы справочника. inline map нужен,
+// чтобы поля произвольных типов не терялись (yaml v3 не сохранит interface{}
+// через явный тип map, но сохранит через any).
+type savePredefined struct {
+	Name   string         `yaml:"name"`
+	Fields map[string]any `yaml:"fields,omitempty"`
+}
+
+// saveEntity отражает все верхнеуровневые ключи rawEntity (см.
+// metadata/yaml.go). Раньше структура содержала только Name/Posting/Fields/
+// TableParts — поэтому редактирование полей справочника через UI ВЫТИРАЛО
+// hierarchical, numerator, predefined и др. Бага: «куда-то исчезли кнопки
+// Список/Дерево, Группа» после добавления поля «Поставщик» в Номенклатуру
+// (2026-05-25). Теперь поля сохраняются полностью.
 type saveEntity struct {
-	Name       string      `yaml:"name"`
-	Posting    bool        `yaml:"posting,omitempty"`
-	Fields     []saveField `yaml:"fields"`
-	TableParts []saveTP    `yaml:"tableparts,omitempty"`
+	Name          string           `yaml:"name"`
+	Title         string           `yaml:"title,omitempty"`
+	Hierarchical  bool             `yaml:"hierarchical,omitempty"`
+	HierarchyKind string           `yaml:"hierarchy_kind,omitempty"`
+	Posting       bool             `yaml:"posting,omitempty"`
+	Numerator     *saveNumerator   `yaml:"numerator,omitempty"`
+	Predefined    []savePredefined `yaml:"predefined,omitempty"`
+	ListForm      []string         `yaml:"list_form,omitempty"`
+	ItemForm      []string         `yaml:"item_form,omitempty"`
+	Fields        []saveField      `yaml:"fields"`
+	TableParts    []saveTP         `yaml:"tableparts,omitempty"`
 }
 
 type saveRegister struct {
@@ -1205,7 +1236,7 @@ func findEntityFilePath(dir, entityName string) (string, error) {
 	return "", fmt.Errorf("entity %q not found", entityName)
 }
 
-func applyFieldEdits(ent *saveEntity, fields []saveField, tpFields map[string][]saveField, posting *bool) {
+func applyFieldEdits(ent *saveEntity, fields []saveField, tpFields map[string][]saveField, posting *bool, hierarchical *bool) {
 	ent.Fields = fields
 	for i, tp := range ent.TableParts {
 		if f, ok := tpFields[tp.Name]; ok {
@@ -1215,9 +1246,17 @@ func applyFieldEdits(ent *saveEntity, fields []saveField, tpFields map[string][]
 	if posting != nil {
 		ent.Posting = *posting
 	}
+	if hierarchical != nil {
+		ent.Hierarchical = *hierarchical
+		// При сбросе иерархии — стираем и hierarchy_kind, чтобы в YAML
+		// не оставался «фантомный» ключ без эффекта.
+		if !*hierarchical {
+			ent.HierarchyKind = ""
+		}
+	}
 }
 
-func saveEntityFieldsToFile(dir, entityName string, fields []saveField, tpFields map[string][]saveField, posting *bool) error {
+func saveEntityFieldsToFile(dir, entityName string, fields []saveField, tpFields map[string][]saveField, posting *bool, hierarchical *bool) error {
 	filePath, err := findEntityFilePath(dir, entityName)
 	if err != nil {
 		return err
@@ -1230,7 +1269,7 @@ func saveEntityFieldsToFile(dir, entityName string, fields []saveField, tpFields
 	if err := yaml.Unmarshal(raw, &ent); err != nil {
 		return err
 	}
-	applyFieldEdits(&ent, fields, tpFields, posting)
+	applyFieldEdits(&ent, fields, tpFields, posting, hierarchical)
 	out, err := yaml.Marshal(&ent)
 	if err != nil {
 		return err
@@ -1238,7 +1277,7 @@ func saveEntityFieldsToFile(dir, entityName string, fields []saveField, tpFields
 	return os.WriteFile(filePath, out, 0o644)
 }
 
-func (h *handler) saveEntityFieldsToDB(ctx context.Context, b *Base, entityName string, fields []saveField, tpFields map[string][]saveField, posting *bool) error {
+func (h *handler) saveEntityFieldsToDB(ctx context.Context, b *Base, entityName string, fields []saveField, tpFields map[string][]saveField, posting *bool, hierarchical *bool) error {
 	db, err := OpenDB(ctx, b)
 	if err != nil {
 		return fmt.Errorf("connect: %w", err)
@@ -1275,7 +1314,7 @@ func (h *handler) saveEntityFieldsToDB(ctx context.Context, b *Base, entityName 
 		return fmt.Errorf("entity %q not found in DB config", entityName)
 	}
 
-	applyFieldEdits(&ent, fields, tpFields, posting)
+	applyFieldEdits(&ent, fields, tpFields, posting, hierarchical)
 	out, err := yaml.Marshal(&ent)
 	if err != nil {
 		return err
@@ -1445,6 +1484,14 @@ func (h *handler) configuratorSaveFields(w http.ResponseWriter, r *http.Request)
 		v := r.FormValue("posting") == "true"
 		posting = &v
 	}
+	// «Иерархический» имеет смысл только для справочников. Передаём
+	// указатель — nil означает «не трогать поле в YAML», иначе
+	// applyFieldEdits перепишет ent.Hierarchical явным значением.
+	var hierarchical *bool
+	if entityKind == "Справочник" {
+		v := r.FormValue("hierarchical") == "true"
+		hierarchical = &v
+	}
 
 	var fields []saveField
 	for i := 0; i < 500; i++ {
@@ -1561,9 +1608,9 @@ func (h *handler) configuratorSaveFields(w http.ResponseWriter, r *http.Request)
 
 	var saveErr error
 	if b.ConfigSource == "database" {
-		saveErr = h.saveEntityFieldsToDB(r.Context(), b, entityName, fields, tpFields, posting)
+		saveErr = h.saveEntityFieldsToDB(r.Context(), b, entityName, fields, tpFields, posting, hierarchical)
 	} else {
-		saveErr = saveEntityFieldsToFile(b.Path, entityName, fields, tpFields, posting)
+		saveErr = saveEntityFieldsToFile(b.Path, entityName, fields, tpFields, posting, hierarchical)
 	}
 
 	data := h.loadCfgData(r.Context(), b, "tree")
