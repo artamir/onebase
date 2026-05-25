@@ -110,10 +110,12 @@ const tplManagedForm = `
 {{else if eq (str $el.Kind) "ТабличнаяЧасть"}}
   {{/* Табличная часть в managed-форме (план 37, этап 8). Имена name= совпадают
        с парсером parseTablePartRows: "tp.<TPName>.<idx>.<field>". obFire-JS
-       перерисовывает tbody#mtp-body-<TPName> при изменении tableparts. */}}
+       перерисовывает tbody#mtp-body-<TPName> при изменении tableparts.
+       Ссылочные колонки — select с TPRefOptions, иначе UUID без имени. */}}
   {{$tpName := dpField $el.DataPath}}
   {{$tpMeta := tablePartByName $ctx.Entity $tpName}}
   {{$tpRows := index $ctx.TablePartRows $tpName}}
+  {{$tpRef := index $ctx.TPRefOptions $tpName}}
   <h3 style="margin:18px 0 8px;font-size:14px">{{fieldTitleRU $el.TitleMap $tpName}}</h3>
   {{if $tpMeta}}
   <table class="mtp" data-tp="{{$tpName}}" style="width:100%;border-collapse:collapse;font-size:13px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
@@ -130,7 +132,15 @@ const tplManagedForm = `
         <td style="padding:4px 8px;border-bottom:1px solid #f1f5f9">
           {{$v := index $row $f.Name}}
           {{if isRef (str $f.Type)}}
-            <input type="text" name="tp.{{$tpName}}.{{$i}}.{{$f.Name}}" value="{{refID $v}}" placeholder="UUID" style="width:100%;padding:4px 6px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px">
+            <div style="display:flex;gap:4px;align-items:center">
+              <select name="tp.{{$tpName}}.{{$i}}.{{$f.Name}}" style="flex:1;padding:4px 6px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px">
+                <option value="">— выбрать —</option>
+                {{range index $tpRef $f.Name}}
+                <option value="{{index . "id"}}" {{if eq (str (index . "id")) (refID $v)}}selected{{end}}>{{index . "_label"}}</option>
+                {{end}}
+              </select>
+              <button type="button" onclick="openRefCreate(this.parentElement.querySelector('select'), '{{$f.RefEntity}}')" style="padding:2px 6px;border:1px solid #e2e8f0;border-radius:4px;background:#f8fafc;cursor:pointer;font-size:11px;flex-shrink:0;font-weight:600;color:#16a34a" title="Создать новый">+</button>
+            </div>
           {{else if eq (str $f.Type) "number"}}
             <input type="number" step="any" name="tp.{{$tpName}}.{{$i}}.{{$f.Name}}" value="{{$v}}" style="width:100%;padding:4px 6px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px">
           {{else}}
@@ -234,6 +244,10 @@ const tplManagedForm = `
 
 {{/* ── Рантайм событий managed-формы (план 37, этап 8) ────────────────── */}}
 <script>
+// Опции справочников для ТЧ — используются при JS-перерисовке после
+// событий obFire, чтобы ссылочные колонки рендерились как select, а не
+// как text input с UUID. Структура: {tpName: {fieldName: [{id, _label}, ...]}}.
+window._tpRefOpts = {{jsJSON .TPRefOptions}};
 // obFire — общая JS-обвязка для onclick/onchange элементов формы.
 // Отправляет текущие form-values + имя элемента/события в /ui/.../form-event,
 // получает JSON с новыми значениями и сообщениями от Сообщить(), применяет их.
@@ -298,29 +312,49 @@ const tplManagedForm = `
         return { name: name, type: rest, ref: '' };
       });
       const rows = tps[tpName] || [];
+      const refOpts = (window._tpRefOpts && window._tpRefOpts[tpName]) || {};
       tbody.innerHTML = '';
       rows.forEach(function(row, idx){
         const tr = document.createElement('tr');
         fieldsMeta.forEach(function(f){
           const td = document.createElement('td');
           td.style.cssText = 'padding:4px 8px;border-bottom:1px solid #f1f5f9';
-          const inp = document.createElement('input');
-          inp.name = 'tp.' + tpName + '.' + idx + '.' + f.name;
           const v = row[f.name];
-          if (f.type === 'reference' || f.type.indexOf('reference') === 0) {
-            inp.type = 'text';
-            inp.placeholder = 'UUID';
-            inp.value = (v && typeof v === 'object' && v.GetRefUUID) ? v.GetRefUUID() : (v == null ? '' : String(v));
-          } else if (f.type === 'number') {
-            inp.type = 'number';
-            inp.step = 'any';
-            inp.value = (v == null ? '' : v);
+          const isRef = f.type === 'reference' || f.type.indexOf('reference') === 0;
+          if (isRef && refOpts[f.name]) {
+            const sel = document.createElement('select');
+            sel.name = 'tp.' + tpName + '.' + idx + '.' + f.name;
+            sel.style.cssText = 'width:100%;padding:4px 6px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px';
+            const empty = document.createElement('option');
+            empty.value = ''; empty.textContent = '— выбрать —';
+            sel.appendChild(empty);
+            const cur = (v && typeof v === 'object' && v.GetRefUUID) ? v.GetRefUUID() : (v == null ? '' : String(v));
+            refOpts[f.name].forEach(function(opt){
+              const o = document.createElement('option');
+              o.value = opt.id;
+              o.textContent = opt._label;
+              if (String(opt.id) === cur) o.selected = true;
+              sel.appendChild(o);
+            });
+            td.appendChild(sel);
           } else {
-            inp.type = 'text';
-            inp.value = (v == null ? '' : v);
+            const inp = document.createElement('input');
+            inp.name = 'tp.' + tpName + '.' + idx + '.' + f.name;
+            if (isRef) {
+              inp.type = 'text';
+              inp.placeholder = 'UUID';
+              inp.value = (v && typeof v === 'object' && v.GetRefUUID) ? v.GetRefUUID() : (v == null ? '' : String(v));
+            } else if (f.type === 'number') {
+              inp.type = 'number';
+              inp.step = 'any';
+              inp.value = (v == null ? '' : v);
+            } else {
+              inp.type = 'text';
+              inp.value = (v == null ? '' : v);
+            }
+            inp.style.cssText = 'width:100%;padding:4px 6px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px';
+            td.appendChild(inp);
           }
-          inp.style.cssText = 'width:100%;padding:4px 6px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px';
-          td.appendChild(inp);
           tr.appendChild(td);
         });
         const tdDel = document.createElement('td');
