@@ -233,9 +233,9 @@ func (s *Server) adminUserCard(w http.ResponseWriter, r *http.Request) {
 		case "passwd":
 			newPwd := r.FormValue("new_password")
 			confirm := r.FormValue("confirm_password")
-			if len(newPwd) < 4 {
-				data["Error"] = "Пароль должен содержать минимум 4 символа"
-			} else if newPwd != confirm {
+			// Пустой пароль допустим — для kiosk/тестового режима.
+			// bcrypt и Authenticate с "" работают корректно.
+			if newPwd != confirm {
 				data["Error"] = "Пароли не совпадают"
 			} else if err := s.authRepo.UpdatePassword(r.Context(), userID, newPwd); err != nil {
 				data["Error"] = err.Error()
@@ -330,12 +330,8 @@ func (s *Server) adminUserPasswd(w http.ResponseWriter, r *http.Request) {
 		r.ParseForm()
 		newPwd := r.FormValue("new_password")
 		confirm := r.FormValue("confirm_password")
-		if newPwd == "" || len(newPwd) < 4 {
-			data["Error"] = "Пароль должен содержать минимум 4 символа"
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			adminTmpl.ExecuteTemplate(w, "admin-passwd", data)
-			return
-		}
+		// Пустой пароль допустим (kiosk/тестовый режим); проверяем
+		// только совпадение с подтверждением.
 		if newPwd != confirm {
 			data["Error"] = "Пароли не совпадают"
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -382,12 +378,7 @@ func (s *Server) selfPasswd(w http.ResponseWriter, r *http.Request) {
 			adminTmpl.ExecuteTemplate(w, "admin-passwd", data)
 			return
 		}
-		if newPwd == "" || len(newPwd) < 4 {
-			data["Error"] = "Пароль должен содержать минимум 4 символа"
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			adminTmpl.ExecuteTemplate(w, "admin-passwd", data)
-			return
-		}
+		// Пустой пароль допустим, поэтому валидируем только совпадение.
 		if newPwd != confirm {
 			data["Error"] = "Пароли не совпадают"
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")

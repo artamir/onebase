@@ -203,10 +203,13 @@ func (h *handler) cfgAdminUserPasswd(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]any{"error": err.Error()})
 		return
 	}
-	if req.ID == "" || len(req.Password) < 4 {
-		writeJSON(w, 400, map[string]any{"error": "Пароль должен содержать минимум 4 символа"})
+	if req.ID == "" {
+		writeJSON(w, 400, map[string]any{"error": "id обязателен"})
 		return
 	}
+	// Пустой пароль разрешён сознательно (kiosk/dev/тестовый аккаунт);
+	// bcrypt с "" хеширует валидно, Authenticate тоже принимает пустую
+	// строку — пользователь сможет войти, оставив поле пароля пустым.
 	db, err := getAuthDB(r.Context(), b)
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
