@@ -222,6 +222,33 @@ const tplManagedForm = `
 </div>
 {{end}}{{/* end if not .IsPopup */}}
 
+{{/* Движения регистров: свёрнутые «таблеточки» по каждому регистру с
+     количеством строк. Симметрично page-form, чтобы пользователь видел
+     результат проведения и в managed-форме. */}}
+{{if and (not .IsNew) .DocMovements}}
+<div style="margin-bottom:12px;display:flex;gap:6px;flex-wrap:wrap">
+  {{range $regName, $rows := .DocMovements}}
+  <details style="display:inline">
+    <summary style="display:inline;cursor:pointer;font-size:12px;padding:4px 10px;background:#f0f4ff;color:#1a4a80;border-radius:4px;font-weight:600;list-style:none">
+      {{$regName}} ({{len $rows}}) ▾
+    </summary>
+    <div style="position:absolute;z-index:100;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.12);margin-top:4px;min-width:300px;max-height:300px;overflow:auto">
+      <table class="list-tbl" style="font-size:12px;margin:0">
+        <tr><th>№</th><th>Вид</th>{{$first := index $rows 0}}{{range $k, $v := $first}}{{if and (ne $k "line_number") (ne $k "вид_движения")}}<th>{{$k}}</th>{{end}}{{end}}</tr>
+        {{range $i, $row := $rows}}
+        <tr>
+          <td>{{add $i 1}}</td>
+          <td>{{if eq (index $row "вид_движения") "Приход"}}<span style="color:#16a34a">▲</span>{{else if eq (index $row "вид_движения") "Расход"}}<span style="color:#dc2626">▼</span>{{else}}—{{end}}</td>
+          {{range $k, $v := $row}}{{if and (ne $k "line_number") (ne $k "вид_движения")}}<td>{{$v}}</td>{{end}}{{end}}
+        </tr>
+        {{end}}
+      </table>
+    </div>
+  </details>
+  {{end}}
+</div>
+{{end}}
+
 <div class="card">
 <form id="main-form" method="POST">
 {{if and (not .IsNew) (index .Values "_version")}}<input type="hidden" name="_version" value="{{index .Values "_version"}}">{{end}}
