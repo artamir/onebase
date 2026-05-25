@@ -50,6 +50,21 @@ var cfgTmpl = template.Must(template.New("cfg").Funcs(template.FuncMap{
 			return "ft-str"
 		}
 	},
+	// filterFormsByEntity — фильтрует срез cfgManagedForm по имени сущности
+	// (без учёта регистра). Возвращает новый срез; в шаблоне используется
+	// {{$mine := filterFormsByEntity .ManagedForms $e.Name}} вместо
+	// присваивания флага внутри {{range}} (которое в Go templates не
+	// «вытекает» из цикла), что устраняет ложный «нет управляемых форм».
+	"filterFormsByEntity": func(forms []cfgManagedForm, entity string) []cfgManagedForm {
+		entLower := strings.ToLower(entity)
+		out := make([]cfgManagedForm, 0, len(forms))
+		for _, f := range forms {
+			if strings.ToLower(f.Entity) == entLower {
+				out = append(out, f)
+			}
+		}
+		return out
+	},
 }).Parse(cfgCSS + cfgHead + cfgMain + cfgTabTree + cfgRegDetail + cfgTabConvert + cfgTabFiles + cfgTabBackup + cfgFoot))
 
 // ── CSS ───────────────────────────────────────────────────────────────────────
@@ -2966,7 +2981,7 @@ const cfgTabTree = `{{define "tab-tree"}}
   <div class="cfg-panel" id="e-{{.Name}}">
     <div class="panel-title">📄 {{.Name}}</div>
     <div class="panel-kind">Справочник</div>
-    {{template "entity-detail" (dict "Entity" . "BaseID" $.Base.ID "ConfigSource" $.Base.ConfigSource "ModuleSaved" $.ModuleSaved "ModuleSavedEntity" $.ModuleSavedEntity "AllEntityNames" $.AllEntityNames "AllEnumNames" $.AllEnumNames "FieldsSaved" $.FieldsSaved "FieldsSavedEntity" $.FieldsSavedEntity)}}
+    {{template "entity-detail" (dict "Entity" . "BaseID" $.Base.ID "ConfigSource" $.Base.ConfigSource "ModuleSaved" $.ModuleSaved "ModuleSavedEntity" $.ModuleSavedEntity "AllEntityNames" $.AllEntityNames "AllEnumNames" $.AllEnumNames "FieldsSaved" $.FieldsSaved "FieldsSavedEntity" $.FieldsSavedEntity "ManagedForms" $.ManagedForms)}}
   </div>
   {{end}}
 
@@ -2978,7 +2993,7 @@ const cfgTabTree = `{{define "tab-tree"}}
       {{if .Posting}}<span style="background:#dbeafe;color:#1d4ed8;font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px">проводится</span>{{end}}
     </div>
     <div class="panel-kind">Документ</div>
-    {{template "entity-detail" (dict "Entity" . "BaseID" $.Base.ID "ConfigSource" $.Base.ConfigSource "ModuleSaved" $.ModuleSaved "ModuleSavedEntity" $.ModuleSavedEntity "AllEntityNames" $.AllEntityNames "AllEnumNames" $.AllEnumNames "FieldsSaved" $.FieldsSaved "FieldsSavedEntity" $.FieldsSavedEntity)}}
+    {{template "entity-detail" (dict "Entity" . "BaseID" $.Base.ID "ConfigSource" $.Base.ConfigSource "ModuleSaved" $.ModuleSaved "ModuleSavedEntity" $.ModuleSavedEntity "AllEntityNames" $.AllEntityNames "AllEnumNames" $.AllEnumNames "FieldsSaved" $.FieldsSaved "FieldsSavedEntity" $.FieldsSavedEntity "ManagedForms" $.ManagedForms)}}
   </div>
   {{end}}
 
@@ -3879,10 +3894,8 @@ const cfgTabTree = `{{define "tab-tree"}}
     авто-форму выше. Поддерживает группы, страницы-закладки, реквизиты формы,
     события и обработчики на DSL OneBase. Подробнее: <a href="https://github.com/ivanarama/onebase/blob/main/docs/forms.md" target="_blank" style="color:#1a4a80">docs/forms.md</a>.
   </p>
-  {{$hasManaged := false}}
-  {{$entityLower := lower $e.Name}}
-  {{range $.ManagedForms}}{{if eq (lower .Entity) $entityLower}}{{$hasManaged = true}}{{end}}{{end}}
-  {{if $hasManaged}}
+  {{$mine := filterFormsByEntity $.ManagedForms $e.Name}}
+  {{if $mine}}
   <table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:12px">
     <thead><tr style="background:#fff;border-bottom:1px solid #e2e8f0">
       <th style="text-align:left;padding:4px 8px">Имя</th>
@@ -3891,7 +3904,7 @@ const cfgTabTree = `{{define "tab-tree"}}
       <th></th>
     </tr></thead>
     <tbody>
-    {{range $.ManagedForms}}{{if eq (lower .Entity) $entityLower}}
+    {{range $mine}}
     <tr style="border-bottom:1px solid #eef0f5">
       <td style="padding:6px 8px">◇ {{.Name}}</td>
       <td style="padding:6px 8px">{{if .Kind}}{{.Kind}}{{else}}—{{end}}</td>
@@ -3903,7 +3916,7 @@ const cfgTabTree = `{{define "tab-tree"}}
         </a>
       </td>
     </tr>
-    {{end}}{{end}}
+    {{end}}
     </tbody>
   </table>
   <p style="margin:4px 0 0;color:#64748b;font-size:11px">

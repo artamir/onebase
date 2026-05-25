@@ -93,6 +93,11 @@ func (fl *FormLoader) LoadFormModuleFromSource(source, entityName, formName, kin
 		Kind:       kind,
 		Handlers:   make(map[metadata.FormEventType]string),
 		Procedures: make(map[string]*metadata.FormProcedure),
+		// Сохраняем полный AST модуля — рантайм событий формы достаёт
+		// отсюда *ast.ProcedureDecl по имени для запуска через interp.Run.
+		// Без этого FormProcedure.Body пустой (astToFormProcedure его не
+		// заполняет), и события формы выполнить нельзя.
+		ProgramAST: program,
 	}
 
 	// Parse procedures and extract handlers

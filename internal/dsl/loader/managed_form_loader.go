@@ -183,6 +183,11 @@ func (mfl *ManagedFormLoader) attachProcedures(form *metadata.FormModule, osPath
 			form.Handlers[evt] = proc
 		}
 	}
+	// AST модуля — нужен рантайму событий формы (этап 8 плана 37) для
+	// извлечения *ast.ProcedureDecl по имени и запуска через interp.Run.
+	if parsed.ProgramAST != nil {
+		form.ProgramAST = parsed.ProgramAST
+	}
 	return nil
 }
 

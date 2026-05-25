@@ -136,6 +136,15 @@ type FormModule struct {
 	// рантайм его игнорирует. Может содержать version, unknown_xml и т.п.
 	OneCMeta map[string]any `yaml:"oneC_meta,omitempty"`
 
+	// ProgramAST — распарсенный AST модуля .form.os (тип *dsl/ast.Program).
+	// Хранится через any, чтобы пакет metadata не зависел от пакета ast
+	// (избегаем циклической зависимости). Заполняется FormLoader при
+	// загрузке модуля; рантайм событий формы достаёт отсюда конкретные
+	// *ast.ProcedureDecl по имени для запуска через interp.Run(...).
+	// Если поле nil — обработчики событий не запускаются (loader не
+	// сохранил AST или модуль не загружен).
+	ProgramAST any `yaml:"-"`
+
 	// idCounter — приватный счётчик для GenerateID. Стартует с 10000,
 	// чтобы новые id из редактора не пересекались с диапазоном 1С.
 	idCounter int        `yaml:"-"`

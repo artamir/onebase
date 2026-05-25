@@ -358,9 +358,13 @@ h2{margin:0 0 14px;color:#1a4a80;font-size:16px;display:flex;align-items:center;
 .tag{font-size:11px;background:#d1fae5;color:#059669;padding:2px 8px;border-radius:10px}
 fieldset{border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;margin-bottom:12px}
 legend{font-weight:600;color:#475569;padding:0 6px;font-size:12px}
-.tabs-hd{display:flex;border-bottom:2px solid #e2e8f0;margin-bottom:10px;gap:2px}
-.tab{padding:6px 12px;font-size:12px;color:#64748b;border-bottom:2px solid transparent;margin-bottom:-2px}
-.tab.active{color:#1a4a80;border-bottom-color:#1a4a80;font-weight:600}
+.tabs{margin-bottom:10px}
+.tabs-hd{display:flex;border-bottom:2px solid #e2e8f0;margin-bottom:10px;gap:2px;flex-wrap:wrap}
+.tab{padding:6px 12px;font-size:12px;color:#64748b;border-bottom:2px solid transparent;margin-bottom:-2px;cursor:pointer;user-select:none;background:none;border-left:none;border-right:none;border-top:none;font-family:inherit}
+.tab:hover{color:#1a4a80;background:#f5f8ff}
+.tab.active{color:#1a4a80;border-bottom-color:#1a4a80;font-weight:600;background:#fff}
+.tab-page{display:none}
+.tab-page.active{display:block}
 .fg{margin-bottom:10px}
 .fg label{display:block;color:#475569;margin-bottom:4px;font-size:12px}
 .fg input,.fg select{width:100%;padding:6px 10px;border:1px solid #d0d7e3;border-radius:5px;font-size:13px;background:#fff}
@@ -380,15 +384,34 @@ legend{font-weight:600;color:#475569;padding:0 6px;font-size:12px}
 	}
 	fmt.Fprintf(&buf, `<h2>%s <span class="tag">◇ managed</span></h2>`, html.EscapeString(title))
 
+	tabsCounter := 0
 	for _, el := range fm.Elements {
-		renderPreviewElement(&buf, el)
+		renderPreviewElement(&buf, el, &tabsCounter)
 	}
 
+	// Inline-JS для переключения вкладок. Работает в iframe sandbox
+	// allow-scripts; вложенные tabset-ы изолированы по data-tabset-id.
+	buf.WriteString(`<script>
+(function(){
+  function activate(setId, idx){
+    var hdr = document.querySelector('[data-tabset-hdr="'+setId+'"]');
+    var body = document.querySelector('[data-tabset-body="'+setId+'"]');
+    if(!hdr||!body) return;
+    hdr.querySelectorAll('.tab').forEach(function(b,i){ b.classList.toggle('active', i===idx); });
+    body.querySelectorAll(':scope > .tab-page').forEach(function(p,i){ p.classList.toggle('active', i===idx); });
+  }
+  document.querySelectorAll('.tab[data-tabset]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      activate(btn.dataset.tabset, parseInt(btn.dataset.idx,10));
+    });
+  });
+})();
+</script>`)
 	buf.WriteString(`</body></html>`)
 	return buf.String()
 }
 
-func renderPreviewElement(buf *bytes.Buffer, el *metadata.FormElement) {
+func renderPreviewElement(buf *bytes.Buffer, el *metadata.FormElement, tabsCounter *int) {
 	if el == nil {
 		return
 	}
@@ -402,40 +425,53 @@ func renderPreviewElement(buf *bytes.Buffer, el *metadata.FormElement) {
 	case metadata.FormElementGroupBox:
 		fmt.Fprintf(buf, `<fieldset><legend>%s</legend>`, html.EscapeString(title))
 		for _, c := range el.Children {
-			renderPreviewElement(buf, c)
+			renderPreviewElement(buf, c, tabsCounter)
 		}
 		buf.WriteString(`</fieldset>`)
 	case metadata.FormElementPages:
-		buf.WriteString(`<div class="tabs">`)
-		buf.WriteString(`<div class="tabs-hd">`)
-		first := true
+		// Уникальный id текущего tabset, чтобы вложенные СтраницыФормы
+		// не конфликтовали при переключении.
+		setID := *tabsCounter
+		*tabsCounter++
+		// Заголовки вкладок.
+		fmt.Fprintf(buf, `<div class="tabs"><div class="tabs-hd" data-tabset-hdr="%d">`, setID)
+		pageIdx := 0
 		for _, p := range el.Children {
 			if p.Kind != metadata.FormElementPage {
 				continue
 			}
 			cls := "tab"
-			if first {
+			if pageIdx == 0 {
 				cls += " active"
-				first = false
 			}
 			ptitle := p.Name
 			if p.TitleMap != nil && p.TitleMap["ru"] != "" {
 				ptitle = p.TitleMap["ru"]
 			}
-			fmt.Fprintf(buf, `<div class="%s">%s</div>`, cls, html.EscapeString(ptitle))
+			fmt.Fprintf(buf, `<button type="button" class="%s" data-tabset="%d" data-idx="%d">%s</button>`,
+				cls, setID, pageIdx, html.EscapeString(ptitle))
+			pageIdx++
 		}
 		buf.WriteString(`</div>`)
-		// рендерим содержимое первой страницы как «активной»
+		// Содержимое всех страниц; неактивные — display:none через CSS.
+		fmt.Fprintf(buf, `<div data-tabset-body="%d">`, setID)
+		pageIdx = 0
 		for _, p := range el.Children {
 			if p.Kind != metadata.FormElementPage {
 				continue
 			}
-			for _, c := range p.Children {
-				renderPreviewElement(buf, c)
+			cls := "tab-page"
+			if pageIdx == 0 {
+				cls += " active"
 			}
-			break
+			fmt.Fprintf(buf, `<div class="%s">`, cls)
+			for _, c := range p.Children {
+				renderPreviewElement(buf, c, tabsCounter)
+			}
+			buf.WriteString(`</div>`)
+			pageIdx++
 		}
-		buf.WriteString(`</div>`)
+		buf.WriteString(`</div></div>`)
 	case metadata.FormElementField:
 		req := ""
 		if el.Required {
@@ -475,7 +511,7 @@ func renderPreviewElement(buf *bytes.Buffer, el *metadata.FormElement) {
 		// командная панель — обычно рендерится в toolbar над формой;
 		// в preview просто рисуем кнопки в ряд.
 		for _, c := range el.Children {
-			renderPreviewElement(buf, c)
+			renderPreviewElement(buf, c, tabsCounter)
 		}
 	default:
 		fmt.Fprintf(buf, `<div class="unknown">Элемент «%s» типа «%s»: предпросмотр не реализован.</div>`,

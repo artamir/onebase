@@ -80,6 +80,10 @@ func (s *Server) Mount(r chi.Router) {
 	r.Get("/ui/_ref-create/{entity}", s.refCreateRedirect)
 	r.Get("/ui/{kind}/{entity}/{id}", s.formEdit)
 	r.Post("/ui/{kind}/{entity}/{id}", s.submitEdit)
+	// Рантайм событий управляемых форм (план 37, этап 8): обработчики
+	// кнопок (Нажатие) и полей (ПриИзменении). Возвращает JSON с
+	// обновлёнными values и сообщениями от Сообщить().
+	r.Post("/ui/{kind}/{entity}/form-event", s.handleManagedFormEvent)
 	r.Get("/ui/register/{name}", s.registerMovements)
 	r.Get("/ui/register/{name}/balances", s.registerBalances)
 	r.Get("/ui/inforeg/{name}", s.infoRegList)

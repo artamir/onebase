@@ -75,6 +75,30 @@ var tmpl = template.Must(template.New("root").Funcs(template.FuncMap{
 	"hasChildren": func(el *metadata.FormElement) bool {
 		return el != nil && len(el.Children) > 0
 	},
+	// hasHandler — есть ли у элемента обработчик указанного события
+	// (план 37, этап 8). Если есть — шаблон управляемой формы навешивает
+	// onclick/onchange="obFire(...)" вызывающий /ui/{kind}/{entity}/form-event.
+	"hasHandler": func(el *metadata.FormElement, eventName string) bool {
+		if el == nil || el.Handlers == nil {
+			return false
+		}
+		_, ok := el.Handlers[metadata.FormEventType(eventName)]
+		return ok
+	},
+	// tablePartByName ищет metadata.TablePart в Entity по имени.
+	// Возвращает указатель на копию (или nil) — нужно managed-шаблону
+	// для рендера ТабличнойЧасти с реальными колонками.
+	"tablePartByName": func(entity *metadata.Entity, name string) *metadata.TablePart {
+		if entity == nil {
+			return nil
+		}
+		for i := range entity.TableParts {
+			if entity.TableParts[i].Name == name {
+				return &entity.TableParts[i]
+			}
+		}
+		return nil
+	},
 	// dict собирает map[string]any из чередующихся ключей и значений —
 	// стандартный приём передать несколько аргументов в подшаблон
 	// (Go template принимает только один параметр).
