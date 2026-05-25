@@ -1126,6 +1126,14 @@ const tplForm = `
 </script>
 {{end}}
 </div>
+{{template "form-shared-js" .}}
+</main></div></body></html>
+{{end}}
+
+{{/* form-shared-js — общий <script> блок, используется page-form и
+     page-managed-form. Внутри: глобалы window._tpRefOpts/_tpRefMeta,
+     функции addTpRow / recalcTpRow / openRefPicker / openRefCreate. */}}
+{{define "form-shared-js"}}
 <script>
 window._tpRefOpts = {{jsJSON .TPRefOptions}};
 window._tpRefMeta = {{jsJSON .TPRefMeta}};
@@ -1301,7 +1309,6 @@ function openRefCreate(targetSelect, refEntity) {
   modal.addEventListener('click', function(e) { if (e.target === modal) cleanup(); });
 }
 </script>
-</main></div></body></html>
 {{end}}
 `
 

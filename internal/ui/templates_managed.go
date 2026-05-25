@@ -23,13 +23,14 @@ const tplManagedForm = `
     {{range $el.Children}}{{template "managed-element" (dict "El" . "Ctx" $ctx)}}{{end}}
   </fieldset>
 {{else if eq (str $el.Kind) "СтраницыФормы"}}
+  {{/* CSS активной вкладки вынесен в стиль managed-форм (см. в конце шаблона)
+       чтобы inline-style не побеждал .active по приоритету. */}}
   <div class="managed-tabs" data-tabs="{{$el.Name}}">
     <div class="managed-tab-headers" style="display:flex;gap:2px;border-bottom:2px solid #e2e8f0;margin-bottom:12px">
       {{range $i, $page := $el.Children}}
         {{if eq (str $page.Kind) "Страница"}}
-        <button type="button" class="managed-tab-btn" data-tab-idx="{{$i}}"
-          onclick="this.closest('.managed-tabs').querySelectorAll('.managed-tab-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');this.closest('.managed-tabs').querySelectorAll('.managed-tab-content').forEach(c=>c.style.display='none');this.closest('.managed-tabs').querySelectorAll('.managed-tab-content')[{{$i}}].style.display='block'"
-          style="padding:8px 14px;border:none;background:none;cursor:pointer;font-size:13px;color:#64748b;border-bottom:2px solid transparent;margin-bottom:-2px">
+        <button type="button" class="managed-tab-btn{{if eq $i 0}} active{{end}}" data-tab-idx="{{$i}}"
+          onclick="this.closest('.managed-tabs').querySelectorAll('.managed-tab-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');this.closest('.managed-tabs').querySelectorAll('.managed-tab-content').forEach(c=>c.style.display='none');this.closest('.managed-tabs').querySelectorAll('.managed-tab-content')[{{$i}}].style.display='block'">
           {{fieldTitleRU $page.TitleMap $page.Name}}
         </button>
         {{end}}
@@ -42,7 +43,6 @@ const tplManagedForm = `
       </div>
       {{end}}
     {{end}}
-    <script>(function(){var t=document.querySelector('[data-tabs={{$el.Name}}]');if(t){t.querySelectorAll('.managed-tab-btn')[0].classList.add('active');}})();</script>
   </div>
 {{else if eq (str $el.Kind) "ПолеВвода"}}
   {{$fn := dpField $el.DataPath}}
@@ -125,7 +125,7 @@ const tplManagedForm = `
         <th style="width:32px;border-bottom:1px solid #e2e8f0"></th>
       </tr>
     </thead>
-    <tbody id="mtp-body-{{$tpName}}" data-tp-fields="{{range $i, $f := $tpMeta.Fields}}{{if $i}},{{end}}{{$f.Name}}|{{$f.Type}}{{if $f.RefEntity}}:{{$f.RefEntity}}{{end}}{{end}}">
+    <tbody id="tp-body-{{$tpName}}" data-tp-fields="{{range $i, $f := $tpMeta.Fields}}{{if $i}},{{end}}{{$f.Name}}|{{$f.Type}}{{if $f.RefEntity}}:{{$f.RefEntity}}{{end}}{{end}}">
     {{range $i, $row := $tpRows}}
       <tr>
         {{range $f := $tpMeta.Fields}}
@@ -155,7 +155,10 @@ const tplManagedForm = `
     {{end}}
     </tbody>
   </table>
-  <div style="margin-top:6px;color:#94a3b8;font-size:11px">Строки добавляются через кнопки управляемой формы (события Нажатие → DSL).</div>
+  <button type="button" class="btn btn-sm" style="background:#e2e8f0;color:#475569;margin:6px 0 12px;padding:6px 12px;border:none;border-radius:5px;cursor:pointer;font-size:12px"
+    onclick="addTpRow('{{$tpName}}', [{{range $tpMeta.Fields}}'{{.Name}}',{{end}}], [{{range $tpMeta.Fields}}{{if eq (str .Type) "number"}}'{{.Name}}',{{end}}{{end}}], document.getElementById('tp-body-{{$tpName}}').rows.length)">
+    + Добавить строку
+  </button>
   {{else}}
   <div style="background:#fef9c3;padding:8px;border-radius:6px;font-size:12px;color:#92400e">
     Табличная часть «{{$tpName}}» не найдена в метаданных сущности.
@@ -300,7 +303,7 @@ window._tpRefOpts = {{jsJSON .TPRefOptions}};
   function applyTableParts(tps){
     if (!tps) return;
     Object.keys(tps).forEach(function(tpName){
-      const tbody = document.getElementById('mtp-body-' + tpName);
+      const tbody = document.getElementById('tp-body-' + tpName);
       if (!tbody) return;
       const fieldsMeta = (tbody.getAttribute('data-tp-fields') || '').split(',').map(function(s){
         const idx = s.indexOf('|');
@@ -399,6 +402,20 @@ window._tpRefOpts = {{jsJSON .TPRefOptions}};
   };
 })();
 </script>
+
+{{/* Общие JS-функции addTpRow / openRefCreate / openRefPicker — те же,
+     что в обычной auto-форме, чтобы "+" рядом со ссылкой и "Добавить
+     строку" в ТЧ работали и в managed-форме. */}}
+{{template "form-shared-js" .}}
+
+{{/* Стиль активной вкладки. Inline-style на кнопке управляет базовым
+     видом, а .active переопределяет цвет/border (выше по специфичности
+     не получается без !important — поэтому используем именно класс). */}}
+<style>
+.managed-tab-btn{padding:8px 14px;border:none;background:none;cursor:pointer;font-size:13px;color:#64748b;border-bottom:2px solid transparent;margin-bottom:-2px;font-family:inherit}
+.managed-tab-btn:hover{color:#1a4a80;background:#f5f8ff}
+.managed-tab-btn.active{color:#1a4a80;border-bottom-color:#1a4a80;font-weight:600}
+</style>
 
 </main>
 </body></html>
