@@ -2564,12 +2564,13 @@ func (s *Server) enrichTPRowsWithRefs(ctx context.Context, tp metadata.TablePart
 			}
 			labels[idStr] = firstStringField(refRow, refEntity)
 		}
-		// replace plain UUID strings with *interpreter.Ref{UUID, Name}
+		// replace plain UUID strings with *interpreter.Ref{UUID, Name, Manager}
+		mgr := s.refManagerFor(refEntity, ctx)
 		for _, row := range rows {
 			if v := row[f.Name]; v != nil {
 				idStr := fmt.Sprintf("%v", v)
 				if name, ok := labels[idStr]; ok {
-					row[f.Name] = &interpreter.Ref{UUID: idStr, Name: name, Type: refEntity.Name}
+					row[f.Name] = &interpreter.Ref{UUID: idStr, Name: name, Type: refEntity.Name, Manager: mgr}
 				}
 			}
 		}
@@ -2620,9 +2621,10 @@ func (s *Server) enrichHeaderRefs(ctx context.Context, entity *metadata.Entity, 
 			continue
 		}
 		obj.Fields[matchKey] = &interpreter.Ref{
-			UUID: idStr,
-			Name: firstStringField(refRow, refEntity),
-			Type: refEntity.Name,
+			UUID:    idStr,
+			Name:    firstStringField(refRow, refEntity),
+			Type:    refEntity.Name,
+			Manager: s.refManagerFor(refEntity, ctx),
 		}
 	}
 }

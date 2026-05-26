@@ -82,14 +82,20 @@ func (s *Server) refFromValue(ctx context.Context, refEntityName string, raw any
 		return nil
 	}
 	name := idStr
-	if refEntity := s.reg.GetEntity(refEntityName); refEntity != nil {
+	var refEntity = s.reg.GetEntity(refEntityName)
+	if refEntity != nil {
 		if id, err := uuid.Parse(idStr); err == nil {
 			if rr, err := s.store.GetByID(ctx, refEntity.Name, id, refEntity); err == nil && rr != nil {
 				name = firstStringField(rr, refEntity)
 			}
 		}
 	}
-	return &interpreter.Ref{UUID: idStr, Name: name, Type: refEntityName}
+	return &interpreter.Ref{
+		UUID:    idStr,
+		Name:    name,
+		Type:    refEntityName,
+		Manager: s.refManagerFor(refEntity, ctx),
+	}
 }
 
 // normalizeAttrValue приводит значение реквизита к типу DSL независимо от

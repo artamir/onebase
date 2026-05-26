@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/ivantit66/onebase/internal/dsl/ast"
 	"github.com/ivantit66/onebase/internal/dsl/interpreter"
 	"github.com/ivantit66/onebase/internal/dsl/lexer"
@@ -299,6 +300,99 @@ func TestDocsRoot_GetObject_UpdateExisting(t *testing.T) {
 	db.QueryRow(ctx, "SELECT COUNT(*) FROM входящееписьмо").Scan(&cnt)
 	if cnt != 1 {
 		t.Errorf("после Записать() через ПолучитьОбъект — записей %d, want 1", cnt)
+	}
+}
+
+// Сценарий из issue #8: документ-исходящий ссылается на документ-входящий
+// через реквизит ОснованиеВходящее. При проведении исходящего нужно дёрнуть
+// ИсходящийОбъект.ОснованиеВходящее.ПолучитьОбъект() — ссылка пришла из БД
+// через enrichHeaderRefs, без Manager она бы дала «не привязана к менеджеру».
+// Тест проверяет что обогащение проставляет Manager и сценарий проходит.
+func TestRefField_FromHeader_GetObjectWorks(t *testing.T) {
+	ctx := context.Background()
+	db, err := storage.ConnectSQLite(ctx, filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	inbox := &metadata.Entity{
+		Name: "ВходящееПисьмо",
+		Kind: metadata.KindDocument,
+		Fields: []metadata.Field{
+			{Name: "Номер", Type: metadata.FieldTypeString},
+			{Name: "Статус", Type: metadata.FieldTypeString},
+		},
+	}
+	outbox := &metadata.Entity{
+		Name: "ИсходящееПисьмо",
+		Kind: metadata.KindDocument,
+		Fields: []metadata.Field{
+			{Name: "Номер", Type: metadata.FieldTypeString},
+			{Name: "ОснованиеВходящее", RefEntity: "ВходящееПисьмо"},
+		},
+	}
+	if err := db.Migrate(ctx, []*metadata.Entity{inbox, outbox}); err != nil {
+		t.Fatal(err)
+	}
+	registry := runtime.NewRegistry()
+	registry.Load([]*metadata.Entity{inbox, outbox}, nil, nil, nil, nil, nil, nil)
+	s := &Server{store: db, reg: registry, lockMgr: runtime.NewLockManager(), messages: NewMessageStore()}
+
+	// Создаём ВходящееПисьмо.
+	docsRoot := newDocsRoot(s, interpreter.NewTxState(ctx))
+	inDp := docsRoot.Get("ВходящееПисьмо").(*docProxy)
+	inW := inDp.CallMethod("создать", nil).(*docWriter)
+	inW.Set("Номер", "ВП-001")
+	inW.Set("Статус", "Новое")
+	inRef := inW.CallMethod("записать", nil).(*interpreter.Ref)
+
+	// Создаём ИсходящееПисьмо, в шапке ОснованиеВходящее = inRef.
+	outDp := docsRoot.Get("ИсходящееПисьмо").(*docProxy)
+	outW := outDp.CallMethod("создать", nil).(*docWriter)
+	outW.Set("Номер", "ИП-001")
+	outW.Set("ОснованиеВходящее", inRef)
+	outRef := outW.CallMethod("записать", nil).(*interpreter.Ref)
+
+	// Загружаем исходящее так, как это делает обработка проведения:
+	// шапка обогащается через enrichHeaderRefs — ОснованиеВходящее становится
+	// *Ref{UUID, Name, Manager}, и .ПолучитьОбъект() должно работать.
+	outID := uuid.MustParse(outRef.UUID)
+	row, err := db.GetByID(ctx, "ИсходящееПисьмо", outID, outbox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	obj := &runtime.Object{
+		ID:     outID,
+		Type:   outbox.Name,
+		Kind:   outbox.Kind,
+		Fields: row,
+	}
+	s.enrichHeaderRefs(ctx, outbox, obj)
+
+	headerRef, ok := obj.Fields["ОснованиеВходящее"].(*interpreter.Ref)
+	if !ok {
+		t.Fatalf("после обогащения ОснованиеВходящее = %T, ожидался *Ref", obj.Fields["ОснованиеВходящее"])
+	}
+	if headerRef.Manager == nil {
+		t.Fatal("после обогащения у ссылки шапки нет Manager — ПолучитьОбъект упадёт")
+	}
+
+	// Тот самый сценарий из issue.
+	loaded := headerRef.CallMethod("получитьобъект", nil)
+	w, ok := loaded.(*docWriter)
+	if !ok {
+		t.Fatalf("ПолучитьОбъект → %T, ожидался *docWriter", loaded)
+	}
+	w.Set("Статус", "Исполнено")
+	w.CallMethod("записать", nil)
+
+	updated, err := db.GetByID(ctx, "ВходящееПисьмо", uuid.MustParse(inRef.UUID), inbox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fmt.Sprint(updated["Статус"]); got != "Исполнено" {
+		t.Errorf("Статус входящего после Записать через ПолучитьОбъект = %q, want \"Исполнено\"", got)
 	}
 }
 

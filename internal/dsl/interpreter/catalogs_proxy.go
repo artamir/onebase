@@ -30,32 +30,32 @@ type EntityLookup interface {
 	GetEntity(name string) *metadata.Entity
 }
 
-// ctxSource предоставляет «живой» контекст. Для обычного запуска это
+// CtxSource предоставляет «живой» контекст. Для обычного запуска это
 // статический контекст; при активной DSL-транзакции — *TxState, чей
 // Ctx() несёт открытую транзакцию — запись справочника
 // из обработки участвует в ней.
-type ctxSource interface {
+type CtxSource interface {
 	Ctx() context.Context
 }
 
-// staticCtx — ctxSource c фиксированным контекстом (нет транзакции).
+// staticCtx — CtxSource c фиксированным контекстом (нет транзакции).
 type staticCtx struct{ ctx context.Context }
 
 func (s staticCtx) Ctx() context.Context { return s.ctx }
 
-// NewStaticCtx wraps a plain context as a ctxSource.
-func NewStaticCtx(ctx context.Context) ctxSource { return staticCtx{ctx: ctx} }
+// NewStaticCtx wraps a plain context as a CtxSource.
+func NewStaticCtx(ctx context.Context) CtxSource { return staticCtx{ctx: ctx} }
 
 // CatalogsRoot is the DSL global Справочники / Catalogs.
 type CatalogsRoot struct {
 	db     CatalogsDB
 	lookup EntityLookup
-	ctxSrc ctxSource
+	ctxSrc CtxSource
 }
 
 // NewCatalogsRoot creates the root object for injection as DSL extraVar.
 // ctxSrc — источник живого контекста (staticCtx или *TxState).
-func NewCatalogsRoot(ctxSrc ctxSource, db CatalogsDB, lookup EntityLookup) *CatalogsRoot {
+func NewCatalogsRoot(ctxSrc CtxSource, db CatalogsDB, lookup EntityLookup) *CatalogsRoot {
 	return &CatalogsRoot{db: db, lookup: lookup, ctxSrc: ctxSrc}
 }
 
@@ -77,7 +77,15 @@ func (r *CatalogsRoot) Set(_ string, _ any) {}
 type CatalogProxy struct {
 	entity *metadata.Entity
 	db     CatalogsDB
-	ctxSrc ctxSource
+	ctxSrc CtxSource
+}
+
+// NewCatalogProxy создаёт менеджера справочника для привязки к ссылкам,
+// приходящим из БД (см. enrichHeaderRefs/enrichTPRowsWithRefs в ui).
+// Так Ссылка.Удалить()/ПолучитьОбъект() работают на ссылках реквизитов
+// шапки/ТЧ, а не только на ссылках, созданных через Справочники.X.НайтиПо…
+func NewCatalogProxy(entity *metadata.Entity, db CatalogsDB, ctxSrc CtxSource) *CatalogProxy {
+	return &CatalogProxy{entity: entity, db: db, ctxSrc: ctxSrc}
 }
 
 func (p *CatalogProxy) ctx() context.Context {
@@ -198,7 +206,7 @@ func (p *CatalogProxy) findByField(field string, args []any) any {
 type CatalogRecordWriter struct {
 	entity *metadata.Entity
 	db     CatalogsDB
-	ctxSrc ctxSource
+	ctxSrc CtxSource
 	idStr  string
 	fields map[string]any
 }

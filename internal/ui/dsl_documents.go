@@ -17,6 +17,25 @@ type docsCtxSource interface {
 	Ctx() context.Context
 }
 
+// refManagerFor строит менеджера для ссылки на сущность по её метаданным:
+// CatalogProxy для справочников, docProxy для документов. Используется в
+// enrichHeaderRefs/enrichTPRowsWithRefs и dsl_object_attr, чтобы ссылки,
+// собранные из значений колонок БД, несли менеджера — иначе у Удалить()
+// и ПолучитьОбъект() на них не было бы привязки к типу.
+func (s *Server) refManagerFor(entity *metadata.Entity, ctx context.Context) interpreter.RefManager {
+	if entity == nil {
+		return nil
+	}
+	ctxSrc := interpreter.NewStaticCtx(ctx)
+	switch entity.Kind {
+	case metadata.KindCatalog:
+		return interpreter.NewCatalogProxy(entity, s.store, ctxSrc)
+	case metadata.KindDocument:
+		return &docProxy{s: s, ctxSrc: ctxSrc, entity: entity}
+	}
+	return nil
+}
+
 // docsRoot — DSL-глобал Документы / Documents (
 // Документы.X.Создать() → пишущий объект документа с табличными частями
 // и методами Записать()/Провести().
