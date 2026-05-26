@@ -1075,7 +1075,7 @@ func (s *Server) reportForm(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "page-report", map[string]any{
 		"Report":       rep,
 		"ParamValues":  map[string]any{},
-		"ReportParams": s.buildReportParams(r.Context(), rep.Params),
+		"ReportParams": s.buildReportParams(r.Context(), s.resolveLang(r), rep.Params),
 	})
 }
 
@@ -1144,7 +1144,7 @@ func (s *Server) runReport(w http.ResponseWriter, r *http.Request, rep *reportpk
 		AccountRegs: s.reg.AccountRegisters(),
 		Dialect:     s.store.Dialect(),
 	})
-	reportParams := s.buildReportParams(r.Context(), rep.Params)
+	reportParams := s.buildReportParams(r.Context(), s.resolveLang(r), rep.Params)
 	if err != nil {
 		s.render(w, r, "page-report", map[string]any{
 			"Report":       rep,
@@ -1778,12 +1778,12 @@ type reportParamUI struct {
 }
 
 // buildReportParams builds UI-ready param descriptors, loading reference options inline.
-func (s *Server) buildReportParams(ctx context.Context, params []reportpkg.Param) []reportParamUI {
+func (s *Server) buildReportParams(ctx context.Context, lang string, params []reportpkg.Param) []reportParamUI {
 	out := make([]reportParamUI, 0, len(params))
 	for _, p := range params {
 		ui := reportParamUI{
 			Name:  p.Name,
-			Label: p.DisplayLabel(),
+			Label: p.DisplayLabel(lang),
 			Type:  p.Type,
 		}
 		switch {

@@ -106,10 +106,12 @@ func LoadFile(path string, kind Kind) (*Entity, error) {
 }
 
 type rawRegister struct {
-	Name       string     `yaml:"name"`
-	Dimensions []rawField `yaml:"dimensions"`
-	Resources  []rawField `yaml:"resources"`
-	Attributes []rawField `yaml:"attributes"`
+	Name       string            `yaml:"name"`
+	Title      string            `yaml:"title"`
+	Titles     map[string]string `yaml:"titles"`
+	Dimensions []rawField        `yaml:"dimensions"`
+	Resources  []rawField        `yaml:"resources"`
+	Attributes []rawField        `yaml:"attributes"`
 }
 
 func LoadRegisterFile(path string) (*Register, error) {
@@ -124,7 +126,7 @@ func LoadRegisterFile(path string) (*Register, error) {
 	if raw.Name == "" {
 		return nil, fmt.Errorf("%s: missing name", path)
 	}
-	reg := &Register{Name: raw.Name}
+	reg := &Register{Name: raw.Name, Title: raw.Title, Titles: raw.Titles}
 	for _, rf := range raw.Dimensions {
 		reg.Dimensions = append(reg.Dimensions, parseField(rf))
 	}
@@ -138,10 +140,12 @@ func LoadRegisterFile(path string) (*Register, error) {
 }
 
 type rawInfoRegister struct {
-	Name       string     `yaml:"name"`
-	Periodic   bool       `yaml:"periodic"`
-	Dimensions []rawField `yaml:"dimensions"`
-	Resources  []rawField `yaml:"resources"`
+	Name       string            `yaml:"name"`
+	Title      string            `yaml:"title"`
+	Titles     map[string]string `yaml:"titles"`
+	Periodic   bool              `yaml:"periodic"`
+	Dimensions []rawField        `yaml:"dimensions"`
+	Resources  []rawField        `yaml:"resources"`
 }
 
 func LoadInfoRegisterFile(path string) (*InfoRegister, error) {
@@ -156,7 +160,7 @@ func LoadInfoRegisterFile(path string) (*InfoRegister, error) {
 	if raw.Name == "" {
 		return nil, fmt.Errorf("%s: missing name", path)
 	}
-	ir := &InfoRegister{Name: raw.Name, Periodic: raw.Periodic}
+	ir := &InfoRegister{Name: raw.Name, Title: raw.Title, Titles: raw.Titles, Periodic: raw.Periodic}
 	for _, rf := range raw.Dimensions {
 		ir.Dimensions = append(ir.Dimensions, parseField(rf))
 	}

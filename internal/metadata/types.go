@@ -122,16 +122,46 @@ type Entity struct {
 
 type Register struct {
 	Name       string
+	Title      string
+	Titles     map[string]string
 	Dimensions []Field // form the grouping key for balances
 	Resources  []Field // accumulated (summed with sign based on movement type)
 	Attributes []Field // extra data, stored but not aggregated
 }
 
+// DisplayName возвращает заголовок регистра накопления с учётом языка.
+func (r *Register) DisplayName(lang string) string {
+	if lang != "" {
+		if v, ok := r.Titles[lang]; ok && v != "" {
+			return v
+		}
+	}
+	if r.Title != "" {
+		return r.Title
+	}
+	return r.Name
+}
+
 type InfoRegister struct {
 	Name       string
+	Title      string
+	Titles     map[string]string
 	Periodic   bool    // if true, (period, dim...) is PK; otherwise just (dim...)
 	Dimensions []Field // key fields
 	Resources  []Field // value fields
+}
+
+// DisplayName возвращает заголовок регистра сведений с учётом языка.
+func (ir *InfoRegister) DisplayName(lang string) string {
+	if lang != "" {
+		if v, ok := ir.Titles[lang]; ok && v != "" {
+			return v
+		}
+	}
+	if ir.Title != "" {
+		return ir.Title
+	}
+	return ir.Name
 }
 
 func RegisterTableName(regName string) string {

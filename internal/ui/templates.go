@@ -381,7 +381,7 @@ const tplNav = `
 {{end}}
 {{if .Subsystems}}
 <nav class="subsys-bar">
-  {{range .Subsystems}}<a href="/ui/?subsystem={{.Name}}" class="{{if eq .Name $.CurrentSubsystem}}active{{end}}">{{.Title}}</a>{{end}}
+  {{range .Subsystems}}<a href="/ui/?subsystem={{.Name}}" class="{{if eq .Name $.CurrentSubsystem}}active{{end}}">{{.DisplayName $.Lang}}</a>{{end}}
 </nav>
 {{end}}
 <div class="app-body">
@@ -1167,7 +1167,7 @@ const tplReport = `
 {{define "page-report"}}
 {{template "head" .}}{{template "nav" .}}
 <main>
-<h2>{{if .Report.Title}}{{.Report.Title}}{{else}}{{.Report.Name}}{{end}}</h2>
+<h2>{{.Report.DisplayName $.Lang}}</h2>
 {{if .ReportParams}}
 <div class="card" style="margin-bottom:16px">
 <form method="POST">
@@ -1251,7 +1251,7 @@ const tplRegister = `
 {{template "head" .}}{{template "nav" .}}
 <main>
 <div class="row-top">
-  <h2>{{.Register.Name}} — {{t $.Lang "движения"}}</h2>
+  <h2>{{.Register.DisplayName $.Lang}} — {{t $.Lang "движения"}}</h2>
   <a class="btn btn-sm" href="/ui/register/{{lower .Register.Name}}/balances" style="background:#e2e8f0;color:#475569">{{t $.Lang "Остатки →"}}</a>
 </div>
 <div class="card">
@@ -1279,7 +1279,7 @@ const tplRegister = `
 {{template "head" .}}{{template "nav" .}}
 <main>
 <div class="row-top">
-  <h2>{{.Register.Name}} — {{t $.Lang "остатки"}}</h2>
+  <h2>{{.Register.DisplayName $.Lang}} — {{t $.Lang "остатки"}}</h2>
   <a class="btn btn-sm" href="/ui/register/{{lower .Register.Name}}" style="background:#e2e8f0;color:#475569">{{t $.Lang "← Движения"}}</a>
 </div>
 <div class="card">
@@ -1336,7 +1336,7 @@ const tplProcessor = `
 {{define "page-processor"}}
 {{template "head" .}}{{template "nav" .}}
 <main>
-<h2>{{if .Processor.Title}}{{.Processor.Title}}{{else}}{{.Processor.Name}}{{end}}</h2>
+<h2>{{.Processor.DisplayName $.Lang}}</h2>
 {{if .Processor.Params}}
 <div class="card" style="margin-bottom:16px">
 <form method="POST">
@@ -1346,12 +1346,12 @@ const tplProcessor = `
     <div class="form-group" style="margin-bottom:0">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
         <input type="checkbox" name="{{$pname}}" value="true" {{if index $.ParamValues $pname}}checked{{end}}>
-        <span>{{.DisplayLabel}}</span>
+        <span>{{.DisplayLabel $.Lang}}</span>
       </label>
     </div>
     {{else}}
     <div class="form-group" style="margin-bottom:0">
-      <label>{{.DisplayLabel}}</label>
+      <label>{{.DisplayLabel $.Lang}}</label>
       {{if eq .Type "date"}}
         <input type="date" name="{{$pname}}" value="{{index $.ParamValues $pname}}">
       {{else if eq .Type "number"}}
@@ -1448,7 +1448,7 @@ const tplInfoReg = `
 {{template "head" .}}{{template "nav" .}}
 <main>
 <div class="row-top">
-  <h2>{{.InfoReg.Name}}{{if .InfoReg.Periodic}} <span style="font-size:13px;color:#64748b;font-weight:400">({{t $.Lang "периодический"}})</span>{{end}}</h2>
+  <h2>{{.InfoReg.DisplayName $.Lang}}{{if .InfoReg.Periodic}} <span style="font-size:13px;color:#64748b;font-weight:400">({{t $.Lang "периодический"}})</span>{{end}}</h2>
   {{if .CanWrite}}<a class="btn" href="/ui/inforeg/{{lower .InfoReg.Name}}/new">+ {{t $.Lang "Добавить запись"}}</a>{{end}}
 </div>
 <div class="card">
@@ -1480,7 +1480,7 @@ const tplInfoReg = `
 {{define "page-inforeg-form"}}
 {{template "head" .}}{{template "nav" .}}
 <main>
-<h2>{{.InfoReg.Name}} — {{t $.Lang "новая запись"}}</h2>
+<h2>{{.InfoReg.DisplayName $.Lang}} — {{t $.Lang "новая запись"}}</h2>
 {{if .Error}}<div style="background:#fef2f2;border:1px solid #fecaca;color:#dc2626;padding:12px 16px;border-radius:7px;margin-bottom:16px;font-size:14px">{{.Error}}</div>{{end}}
 <div class="card" style="max-width:560px">
 <form method="POST">

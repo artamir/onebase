@@ -296,11 +296,11 @@ func (s *Server) buildNavForSubsystem(r *http.Request, sub *metadata.Subsystem, 
 				continue
 			}
 			regItems = append(regItems, navItem{
-				Label: reg.Name + " (" + s.tr(lang, "движения") + ")",
+				Label: reg.DisplayName(lang) + " (" + s.tr(lang, "движения") + ")",
 				URL:   "/ui/register/" + strings.ToLower(reg.Name) + q,
 			})
 			regItems = append(regItems, navItem{
-				Label: reg.Name + " (" + s.tr(lang, "остатки") + ")",
+				Label: reg.DisplayName(lang) + " (" + s.tr(lang, "остатки") + ")",
 				URL:   "/ui/register/" + strings.ToLower(reg.Name) + "/balances" + q,
 			})
 		}
@@ -425,11 +425,11 @@ func (s *Server) buildFlatNav(r *http.Request) []navGroup {
 			continue
 		}
 		regItems = append(regItems, navItem{
-			Label: reg.Name + " (" + s.tr(lang, "движения") + ")",
+			Label: reg.DisplayName(lang) + " (" + s.tr(lang, "движения") + ")",
 			URL:   "/ui/register/" + strings.ToLower(reg.Name),
 		})
 		regItems = append(regItems, navItem{
-			Label: reg.Name + " (" + s.tr(lang, "остатки") + ")",
+			Label: reg.DisplayName(lang) + " (" + s.tr(lang, "остатки") + ")",
 			URL:   "/ui/register/" + strings.ToLower(reg.Name) + "/balances",
 		})
 	}
@@ -452,7 +452,7 @@ func (s *Server) buildFlatNav(r *http.Request) []navGroup {
 		if !s.can(r, "inforeg", ir.Name, "read") {
 			continue
 		}
-		label := ir.Name
+		label := ir.DisplayName(lang)
 		if ir.Periodic {
 			label += " (" + s.tr(lang, "периодический") + ")"
 		}
@@ -472,10 +472,7 @@ func (s *Server) buildFlatNav(r *http.Request) []navGroup {
 		if !s.can(r, "report", rep.Name, "run") {
 			continue
 		}
-		label := rep.Title
-		if label == "" {
-			label = rep.Name
-		}
+		label := rep.DisplayName(lang)
 		repItems = append(repItems, navItem{
 			Label: label,
 			URL:   "/ui/report/" + strings.ToLower(rep.Name),
@@ -489,10 +486,7 @@ func (s *Server) buildFlatNav(r *http.Request) []navGroup {
 	sort.Slice(procs, func(i, j int) bool { return procs[i].Name < procs[j].Name })
 	var procItems []navItem
 	for _, proc := range procs {
-		label := proc.Title
-		if label == "" {
-			label = proc.Name
-		}
+		label := proc.DisplayName(lang)
 		procItems = append(procItems, navItem{
 			Label: label,
 			URL:   "/ui/processor/" + strings.ToLower(proc.Name),
