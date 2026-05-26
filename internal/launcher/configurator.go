@@ -134,6 +134,7 @@ type cfgEntity struct {
 	Name             string
 	Kind             string // "Справочник" / "Документ"
 	Posting          bool
+	Hierarchical     bool
 	Fields           []cfgField
 	TableParts       []cfgTablePart
 	Source           string // raw .os content (object module)
@@ -505,6 +506,7 @@ func (h *handler) loadCfgData(ctx context.Context, b *Base, tab string, lang ...
 		ev := cfgEntity{
 			Name:          e.Name,
 			Posting:       e.Posting,
+			Hierarchical:  e.Hierarchical,
 			Source:        sources[strings.ToLower(e.Name)],
 			PostingSource: postingSources[strings.ToLower(e.Name)],
 		}
