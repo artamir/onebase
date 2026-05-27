@@ -148,7 +148,7 @@ jobs:
               CHANGES=$'\n\n'"## Изменения с ${PREV_TAG} (${COUNT} коммит(ов))"$'\n'"${COMMITS}"
 
               # Generate summary from first commit message (one line, stripped of conventional prefix)
-              FIRST=$(echo "$COMMITS" | head -1 | sed 's/([^)]*)$//' | sed 's/^[- ]*//')
+              FIRST=$(echo "$COMMITS" | head -1 | sed 's/([^)]*)$//' | sed 's/^[- ]*//' | sed 's/<!--//g; s/-->//g')
               SUMMARY="<!-- summary: ${FIRST} -->"$'\n\n'
             fi
           fi
