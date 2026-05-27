@@ -9,6 +9,7 @@ import (
 	"github.com/ivantit66/onebase/internal/auth"
 	"github.com/ivantit66/onebase/internal/debugger"
 	"github.com/ivantit66/onebase/internal/dsl/interpreter"
+	"github.com/ivantit66/onebase/internal/entityservice"
 	"github.com/ivantit66/onebase/internal/i18n"
 	"github.com/ivantit66/onebase/internal/mailer"
 	"github.com/ivantit66/onebase/internal/metadata"
@@ -46,7 +47,8 @@ type Server struct {
 	globalDebug      *debugger.GlobalDebugController
 	messages         *MessageStore
 	widgetCache      *widget.Cache
-	lockMgr          *runtime.LockManager // #2 managed locks
+	lockMgr          *runtime.LockManager   // #2 managed locks
+	entitySvc        *entityservice.Service // упсёрт + ТЧ + движения + проведение, разделяется с api
 }
 
 func New(reg *runtime.Registry, store *storage.DB, interp *interpreter.Interpreter, authRepo *auth.Repo, cfg Config, sched *scheduler.Scheduler) *Server {
@@ -55,6 +57,19 @@ func New(reg *runtime.Registry, store *storage.DB, interp *interpreter.Interpret
 		maxBytes = 50 * 1024 * 1024
 	}
 	s := &Server{reg: reg, store: store, interp: interp, authRepo: authRepo, cfg: cfg, sched: sched, mailer: cfg.Mailer, maxFileSizeBytes: maxBytes, globalDebug: debugger.NewGlobalDebugController(), messages: NewMessageStore(), widgetCache: widget.NewCache(60 * time.Second), lockMgr: runtime.NewLockManager()}
+	s.entitySvc = &entityservice.Service{
+		Store:  store,
+		Reg:    reg,
+		Interp: interp,
+		// PrepareHook/EnrichTPRows зовут уже существующие методы Server'а —
+		// enrichHeaderRefs (замена UUID → *Ref в шапке) и enrichTPRowsWithRefs
+		// (то же для строк ТЧ).
+		PrepareHook:  s.enrichHeaderRefs,
+		EnrichTPRows: s.enrichTPRowsWithRefs,
+		// BuildVars — полный набор с locks/users/документами + Сообщить с
+		// захватом и в message store, и в локальный slice msgs (для SaveResult).
+		BuildVars: s.buildDSLVarsWithMessages,
+	}
 	globalBundle = cfg.Bundle
 	if sched != nil {
 		sched.SetMessageSink(func(userID, text string) { s.messages.Push(userID, text) })

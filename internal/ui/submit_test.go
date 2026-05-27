@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/ivantit66/onebase/internal/dsl/interpreter"
+	"github.com/ivantit66/onebase/internal/entityservice"
 	"github.com/ivantit66/onebase/internal/metadata"
 	"github.com/ivantit66/onebase/internal/runtime"
 	"github.com/ivantit66/onebase/internal/storage"
@@ -51,6 +52,14 @@ func newSubmitTestServer(t *testing.T, entities []*metadata.Entity) (*Server, co
 		interp:   interp,
 		lockMgr:  runtime.NewLockManager(),
 		messages: NewMessageStore(),
+	}
+	s.entitySvc = &entityservice.Service{
+		Store:        db,
+		Reg:          registry,
+		Interp:       interp,
+		PrepareHook:  s.enrichHeaderRefs,
+		EnrichTPRows: s.enrichTPRowsWithRefs,
+		BuildVars:    s.buildDSLVarsWithMessages,
 	}
 	return s, ctx
 }

@@ -22,6 +22,7 @@ import (
 	"github.com/ivantit66/onebase/internal/dsl/lexer"
 	"github.com/ivantit66/onebase/internal/dsl/parser"
 	"github.com/ivantit66/onebase/internal/dslvars"
+	"github.com/ivantit66/onebase/internal/entityservice"
 	"github.com/ivantit66/onebase/internal/excel"
 	"github.com/ivantit66/onebase/internal/metadata"
 	"github.com/ivantit66/onebase/internal/printform"
@@ -361,9 +362,9 @@ func (s *Server) form(w http.ResponseWriter, r *http.Request) {
 }
 
 // parseSubmitForm — общая часть submit и submitEdit. Парсит форму, строит
-// объект, готовит коллектор движений, проверяет разрешение на проведение,
-// запускает обогащение TP-ссылок. Не делает сохранение и не вызывает DSL-хук —
-// это caller-specific (submit использует Upsert, submitEdit — UpsertVersioned).
+// объект, проверяет разрешения. Не строит коллектор движений и не вызывает
+// enrich/DSL-хук — этим занимается entityservice.Service.Save (вызывается
+// caller'ом ниже). Так избегается двойная работа (mc + enrich в двух местах).
 //
 // Если existingID == nil — создание нового объекта: id берётся из uuid.New,
 // для документов с полем "Номер" автогенерируется номер. Если existingID != nil —
@@ -372,7 +373,7 @@ func (s *Server) form(w http.ResponseWriter, r *http.Request) {
 // Возвращает (nil,...,false) если запрос отклонён (нет прав / ошибка парсинга);
 // в этом случае ответ уже записан в w.
 func (s *Server) parseSubmitForm(w http.ResponseWriter, r *http.Request, entity *metadata.Entity, existingID *uuid.UUID) (
-	obj *runtime.Object, mc *runtime.MovementsCollector, fields map[string]any, tpRows map[string][]map[string]any, action string, isPostingAct bool, ok bool,
+	obj *runtime.Object, fields map[string]any, tpRows map[string][]map[string]any, action string, ok bool,
 ) {
 	if !s.requirePerm(w, r, string(entity.Kind), entity.Name, "write") {
 		return
@@ -421,19 +422,10 @@ func (s *Server) parseSubmitForm(w http.ResponseWriter, r *http.Request, entity 
 		}
 	}
 
-	mc = runtime.NewMovementsCollector(entity.Name, obj.ID)
-	setPeriodFromFields(mc, entity, obj.Fields)
-
 	action = r.FormValue("_action")
-	isPostingAct = entity.Posting && (action == "post" || action == "post_and_close")
+	isPostingAct := entity.Posting && (action == "post" || action == "post_and_close")
 	if isPostingAct && !s.requirePerm(w, r, string(entity.Kind), entity.Name, "post") {
 		return
-	}
-
-	for _, tp := range entity.TableParts {
-		if rows, ok := obj.TablePartRows[tp.Name]; ok {
-			s.enrichTPRowsWithRefs(r.Context(), tp, rows)
-		}
 	}
 	ok = true
 	return
@@ -444,19 +436,24 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request) {
 	if entity == nil {
 		return
 	}
-	obj, mc, fields, tpRows, action, isPosting, ok := s.parseSubmitForm(w, r, entity, nil)
+	obj, fields, tpRows, action, ok := s.parseSubmitForm(w, r, entity, nil)
 	if !ok {
 		return
 	}
 
-	var dslErrMsg string
-	var dslMsgs []string
-	if isPosting {
-		dslErrMsg, dslMsgs = s.runOnPostCtx(r.Context(), obj, mc)
-	} else {
-		dslErrMsg, dslMsgs = s.runOnWriteCtx(r.Context(), obj, mc)
+	result, err := s.entitySvc.Save(r.Context(), entityservice.SaveRequest{
+		Entity:        entity,
+		ID:            obj.ID,
+		IsNew:         true,
+		Fields:        obj.Fields,
+		TablePartRows: obj.TablePartRows,
+		Action:        action,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
 	}
-	if dslErrMsg != "" {
+	if result.DSLError != "" {
 		refOptions, _ := s.loadRefOptions(r.Context(), entity)
 		tpRefOpts, _ := s.loadTPRefOptions(r.Context(), entity)
 		var fOpts []map[string]any
@@ -466,8 +463,8 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request) {
 		s.renderEntityForm(w, r, "object", map[string]any{
 			"Entity":        entity,
 			"IsNew":         true,
-			"Error":         dslErrMsg,
-			"Messages":      dslMsgs,
+			"Error":         result.DSLError,
+			"Messages":      result.DSLMessages,
 			"Values":        formValues(r, entity),
 			"RefOptions":    refOptions,
 			"EnumOptions":   s.loadEnumOptions(entity),
@@ -477,29 +474,6 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request) {
 			"FolderOptions": fOpts,
 			"IsPopup":       r.FormValue("_popup") == "1",
 		})
-		return
-	}
-
-	// Success path: redirect with messages via query param
-	if err := s.store.WithTx(r.Context(), func(ctx context.Context) error {
-		if err := s.store.Upsert(ctx, entity.Name, obj.ID, obj.Fields, entity); err != nil {
-			return err
-		}
-		if err := s.saveTablePartsDirect(ctx, entity, obj.ID, obj.TablePartRows); err != nil {
-			return err
-		}
-		if !entity.Posting {
-			return s.saveMovements(ctx, entity.Name, obj.ID, mc)
-		}
-		if action == "post_and_close" || action == "post" {
-			if err := s.saveMovements(ctx, entity.Name, obj.ID, mc); err != nil {
-				return err
-			}
-			return s.store.SetPosted(ctx, entity.Name, obj.ID, true)
-		}
-		return nil
-	}); err != nil {
-		http.Error(w, err.Error(), 500)
 		return
 	}
 
@@ -710,31 +684,8 @@ func (s *Server) submitEdit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", 400)
 		return
 	}
-	obj, mc, _, tpRows, action, isPostingAct, ok := s.parseSubmitForm(w, r, entity, &id)
+	obj, _, tpRows, action, ok := s.parseSubmitForm(w, r, entity, &id)
 	if !ok {
-		return
-	}
-
-	var dslErr2 string
-	if isPostingAct {
-		dslErr2, _ = s.runOnPostCtx(r.Context(), obj, mc)
-	} else {
-		dslErr2, _ = s.runOnWriteCtx(r.Context(), obj, mc)
-	}
-	if dslErr2 != "" {
-		refOptions, _ := s.loadRefOptions(r.Context(), entity)
-		tpRefOpts2, _ := s.loadTPRefOptions(r.Context(), entity)
-		s.renderEntityForm(w, r, "object", map[string]any{
-			"Entity":        entity,
-			"IsNew":         false,
-			"Error":         dslErr2,
-			"Values":        formValues(r, entity),
-			"RefOptions":    refOptions,
-			"EnumOptions":   s.loadEnumOptions(entity),
-			"TPRefOptions":  tpRefOpts2,
-			"TPRefMeta":     tpRefMeta(entity),
-			"TablePartRows": tpRows,
-		})
 		return
 	}
 
@@ -747,30 +698,16 @@ func (s *Server) submitEdit(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := s.store.WithTx(r.Context(), func(ctx context.Context) error {
-		if err := s.store.UpsertVersioned(ctx, entity.Name, obj.ID, obj.Fields, entity, expectedVersion); err != nil {
-			return err
-		}
-		if err := s.saveTablePartsDirect(ctx, entity, obj.ID, obj.TablePartRows); err != nil {
-			return err
-		}
-		if !entity.Posting {
-			return s.saveMovements(ctx, entity.Name, obj.ID, mc)
-		}
-		if action == "post_and_close" || action == "post" {
-			if err := s.saveMovements(ctx, entity.Name, obj.ID, mc); err != nil {
-				return err
-			}
-			return s.store.SetPosted(ctx, entity.Name, obj.ID, true)
-		}
-		// "Записать" для проводимого документа: сбрасываем проведение
-		for _, reg := range s.reg.Registers() {
-			if err := s.store.WriteMovements(ctx, reg.Name, entity.Name, obj.ID, nil, reg, nil); err != nil {
-				return err
-			}
-		}
-		return s.store.SetPosted(ctx, entity.Name, obj.ID, false)
-	}); err != nil {
+	result, err := s.entitySvc.Save(r.Context(), entityservice.SaveRequest{
+		Entity:          entity,
+		ID:              obj.ID,
+		IsNew:           false,
+		Fields:          obj.Fields,
+		TablePartRows:   obj.TablePartRows,
+		Action:          action,
+		ExpectedVersion: expectedVersion,
+	})
+	if err != nil {
 		// Оптимистический конфликт: перечитываем актуальное состояние из БД
 		// и показываем пользователю с понятным сообщением. Свои изменения
 		// он потеряет — но это лучше, чем тихо перетереть чужие.
@@ -779,6 +716,22 @@ func (s *Server) submitEdit(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		http.Error(w, err.Error(), 500)
+		return
+	}
+	if result.DSLError != "" {
+		refOptions, _ := s.loadRefOptions(r.Context(), entity)
+		tpRefOpts2, _ := s.loadTPRefOptions(r.Context(), entity)
+		s.renderEntityForm(w, r, "object", map[string]any{
+			"Entity":        entity,
+			"IsNew":         false,
+			"Error":         result.DSLError,
+			"Values":        formValues(r, entity),
+			"RefOptions":    refOptions,
+			"EnumOptions":   s.loadEnumOptions(entity),
+			"TPRefOptions":  tpRefOpts2,
+			"TPRefMeta":     tpRefMeta(entity),
+			"TablePartRows": tpRows,
+		})
 		return
 	}
 
