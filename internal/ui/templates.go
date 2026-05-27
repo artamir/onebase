@@ -1073,12 +1073,8 @@ const tplForm = `
               <option value="{{index . "id"}}" {{if eq (str (index . "id")) (refID (index $row $fn))}}selected{{end}}>{{index . "_label"}}</option>
               {{end}}
             </select>
-<<<<<<< HEAD
-            <button type="button" onclick="openRefPicker(this.parentElement.querySelector('select'))" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:5px;background:#f8fafc;cursor:pointer;font-size:12px;flex-shrink:0" title="Выбрать из списка">...</button>
-            <button type="button" onclick="openRefCreate(this.parentElement.querySelector('select'), '{{.RefEntity}}')" style="padding:4px 7px;border:1px solid #e2e8f0;border-radius:5px;background:#f8fafc;cursor:pointer;font-size:12px;flex-shrink:0;font-weight:600;color:#16a34a" title="Создать новый">+</button>
-=======
             <button type="button" onclick="openRefPicker(this.parentElement.querySelector('select'))" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:5px;background:#f8fafc;cursor:pointer;font-size:12px;flex-shrink:0" title="{{t $.Lang "Выбрать из списка"}}">...</button>
->>>>>>> pr-10
+            <button type="button" onclick="openRefCreate(this.parentElement.querySelector('select'), '{{.RefEntity}}')" style="padding:4px 7px;border:1px solid #e2e8f0;border-radius:5px;background:#f8fafc;cursor:pointer;font-size:12px;flex-shrink:0;font-weight:600;color:#16a34a" title="{{t $.Lang "Создать новый"}}">+</button>
           </div>
         {{else if eq (str .Type) "number"}}
           <input type="number" name="tp.{{$tpName}}.{{$i}}.{{$fn}}" value="{{index $row $fn}}"
