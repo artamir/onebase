@@ -13,6 +13,9 @@ type rawField struct {
 	Title  string            `yaml:"title"`
 	Titles map[string]string `yaml:"titles"`
 	Type   string            `yaml:"type"`
+	// AllowInlineCreate — pointer to differ unset from explicit false. nil
+	// means «keep context default» (true в шапке, false в ТЧ).
+	AllowInlineCreate *bool `yaml:"allow_inline_create"`
 }
 
 type rawTablePart struct {
@@ -233,7 +236,7 @@ func LoadConstantsFile(path string) ([]*Constant, error) {
 }
 
 func parseField(rf rawField) Field {
-	f := Field{Name: rf.Name, Title: rf.Title, Titles: rf.Titles, Type: FieldType(rf.Type)}
+	f := Field{Name: rf.Name, Title: rf.Title, Titles: rf.Titles, Type: FieldType(rf.Type), AllowInlineCreate: rf.AllowInlineCreate}
 	if strings.HasPrefix(rf.Type, "reference:") {
 		f.RefEntity = strings.TrimPrefix(rf.Type, "reference:")
 	} else if strings.HasPrefix(rf.Type, "enum:") {

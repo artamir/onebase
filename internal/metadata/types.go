@@ -28,6 +28,23 @@ type Field struct {
 	Type      FieldType
 	RefEntity string // non-empty when Type starts with "reference:"
 	EnumName  string // non-empty when Type starts with "enum:"
+	// AllowInlineCreate управляет показом кнопки «+» (создать новый элемент
+	// справочника, не покидая формы) у ссылочного поля. nil = дефолт по
+	// контексту: для полей шапки true, для полей ТЧ false. Переопределяется
+	// в metadata YAML (`allow_inline_create: true/false`). Для не-ref полей
+	// игнорируется. Управляемая форма может перекрыть дефолт на уровне
+	// элемента формы (см. FormElement.AllowInlineCreate).
+	AllowInlineCreate *bool
+}
+
+// InlineCreateEnabled — итоговое значение «показывать ли «+»» для поля.
+// inTablePart=true означает, что поле принадлежит табличной части (дефолт
+// false), иначе шапка (дефолт true). Используется шаблонами рендера формы.
+func (f Field) InlineCreateEnabled(inTablePart bool) bool {
+	if f.AllowInlineCreate != nil {
+		return *f.AllowInlineCreate
+	}
+	return !inTablePart
 }
 
 // DisplayName возвращает представление поля для интерфейса: Titles[lang] →

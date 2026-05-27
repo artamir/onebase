@@ -2234,16 +2234,20 @@ func (s *Server) allFunctions(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// tpRefMeta строит карту tpName → fieldName → имяСправочника для JS-помощника
-// addTpRow, чтобы динамически добавленные строки табчасти умели рендерить
-// кнопку «+ Создать» с правильным целевым справочником.
-func tpRefMeta(entity *metadata.Entity) map[string]map[string]string {
-	out := make(map[string]map[string]string, len(entity.TableParts))
+// tpRefMeta строит карту tpName → fieldName → {entity, allowCreate} для
+// JS-помощника addTpRow: динамически добавленные строки ТЧ рендерят кнопку
+// «+ Создать» с правильным целевым справочником, а allowCreate решает
+// показывать ли кнопку (дефолт в ТЧ — false, переопределяется в YAML).
+func tpRefMeta(entity *metadata.Entity) map[string]map[string]any {
+	out := make(map[string]map[string]any, len(entity.TableParts))
 	for _, tp := range entity.TableParts {
-		m := map[string]string{}
+		m := map[string]any{}
 		for _, f := range tp.Fields {
 			if f.RefEntity != "" {
-				m[f.Name] = f.RefEntity
+				m[f.Name] = map[string]any{
+					"entity":      f.RefEntity,
+					"allowCreate": f.InlineCreateEnabled(true),
+				}
 			}
 		}
 		out[tp.Name] = m

@@ -337,8 +337,8 @@ aside a:hover{background:#334155;color:#fff}
 main{flex:1;padding:28px;overflow-y:auto}
 h2{font-size:22px;font-weight:600;margin-bottom:20px;color:#1e293b}
 h3{font-size:16px;font-weight:600;margin:24px 0 10px;color:#1e293b}
-.card{background:#fff;border-radius:10px;padding:24px;box-shadow:0 1px 3px rgba(0,0,0,.1);max-width:900px}
-.main-list .card,.main-list .row-top,.main-list details,.main-list .breadcrumb{max-width:1400px}
+.card{background:#fff;border-radius:10px;padding:24px;box-shadow:0 1px 3px rgba(0,0,0,.1);max-width:1400px}
+.main-list .card,.main-list .row-top,.main-list details,.main-list .breadcrumb{max-width:1600px}
 table{width:100%;border-collapse:collapse;font-size:14px}
 th{text-align:left;padding:10px 12px;border-bottom:2px solid #e2e8f0;color:#64748b;font-weight:600}
 th a{color:#64748b;text-decoration:none}
@@ -359,8 +359,8 @@ input[type=text],input[type=datetime-local],input[type=date],input[type=number],
 input:focus,select:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.15)}
 .error{background:#fef2f2;border:1px solid #fecaca;color:#dc2626;padding:12px 16px;border-radius:7px;margin-bottom:16px;font-size:14px}
 .empty{color:#94a3b8;text-align:center;padding:48px;font-size:15px}
-.row-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;max-width:900px}
-details{margin-bottom:16px;max-width:900px;background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.row-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;max-width:1400px}
+details{margin-bottom:16px;max-width:1400px;background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
 details summary{padding:12px 20px;font-weight:600;font-size:14px;cursor:pointer;color:#475569;list-style:none}
 details summary::-webkit-details-marker{display:none}
 details summary::before{content:"▶ ";font-size:11px}
@@ -378,7 +378,7 @@ details[open] summary::before{content:"▼ "}
 .subsys-bar a{display:inline-block;padding:7px 18px;color:#94a3b8;text-decoration:none;font-size:13px;font-weight:500;border-bottom:3px solid transparent;transition:color .15s}
 .subsys-bar a:hover{color:#e2e8f0;background:rgba(255,255,255,.04)}
 .subsys-bar a.active{color:#7dd3fc;border-bottom-color:#3b82f6}
-.breadcrumb{display:flex;align-items:center;gap:6px;font-size:13px;color:#64748b;margin-bottom:12px;max-width:900px;flex-wrap:wrap}
+.breadcrumb{display:flex;align-items:center;gap:6px;font-size:13px;color:#64748b;margin-bottom:12px;max-width:1400px;flex-wrap:wrap}
 .breadcrumb a{color:#3b82f6;text-decoration:none}.breadcrumb a:hover{text-decoration:underline}
 .breadcrumb span{color:#94a3b8;padding:0 2px}
 /* Чтобы контент не накрывало панелью сообщений */
@@ -906,7 +906,7 @@ const tplForm = `
 {{define "page-form"}}
 {{template "head" .}}{{if not .IsPopup}}{{template "nav" .}}{{end}}
 <main>
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;max-width:900px">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;max-width:1400px">
   <h2 style="margin-bottom:0">{{if .IsNew}}{{t $.Lang "Создать"}}{{else}}{{t $.Lang "Редактировать"}}{{end}} — {{.Entity.DisplayName $.Lang}}</h2>
   {{if .IsPopup}}
   <a href="javascript:void(0)" onclick="try{parent.postMessage({source:'obRefCancel'}, '*')}catch(e){}" title="{{t $.Lang "Закрыть"}}" style="font-size:22px;line-height:1;color:#94a3b8;text-decoration:none;padding:2px 8px;border-radius:5px;background:#f1f5f9;font-weight:300">×</a>
@@ -1041,7 +1041,9 @@ const tplForm = `
         {{end}}
       </select>
       <button type="button" onclick="openRefPicker('ref-{{$fn}}')" style="padding:8px 12px;border:1px solid #e2e8f0;border-radius:7px;background:#f8fafc;cursor:pointer;font-size:13px;white-space:nowrap;flex-shrink:0" title="{{t $.Lang "Выбрать из списка"}}">...</button>
+      {{if .InlineCreateEnabled false}}
       <button type="button" onclick="openRefCreate(document.getElementById('ref-{{$fn}}'), '{{.RefEntity}}')" style="padding:8px 12px;border:1px solid #e2e8f0;border-radius:7px;background:#f8fafc;cursor:pointer;font-size:13px;white-space:nowrap;flex-shrink:0;font-weight:600;color:#16a34a" title="{{t $.Lang "Создать новый"}}">+</button>
+      {{end}}
     </div>
   {{else if isEnum (str .Type)}}
     <select name="{{$fn}}">
@@ -1085,7 +1087,9 @@ const tplForm = `
               {{end}}
             </select>
             <button type="button" onclick="openRefPicker(this.parentElement.querySelector('select'))" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:5px;background:#f8fafc;cursor:pointer;font-size:12px;flex-shrink:0" title="{{t $.Lang "Выбрать из списка"}}">...</button>
+            {{if .InlineCreateEnabled true}}
             <button type="button" onclick="openRefCreate(this.parentElement.querySelector('select'), '{{.RefEntity}}')" style="padding:4px 7px;border:1px solid #e2e8f0;border-radius:5px;background:#f8fafc;cursor:pointer;font-size:12px;flex-shrink:0;font-weight:600;color:#16a34a" title="{{t $.Lang "Создать новый"}}">+</button>
+            {{end}}
           </div>
         {{else if eq (str .Type) "number"}}
           <input type="number" name="tp.{{$tpName}}.{{$i}}.{{$fn}}" value="{{index $row $fn}}"
@@ -1209,14 +1213,15 @@ function addTpRow(tpName, fields, numFields, idx) {
       wrapper.appendChild(sel);
       wrapper.appendChild(pickBtn);
       // Кнопка «+» — создать новый элемент справочника не покидая формы.
-      // refMeta[fn] содержит имя справочника, на который ссылается поле.
-      var refEntity = refMeta[fn];
-      if (refEntity) {
+      // refMeta[fn] = {entity, allowCreate}. allowCreate=false по дефолту для
+      // полей ТЧ; перекрывается в metadata YAML.
+      var meta = refMeta[fn];
+      if (meta && meta.allowCreate && meta.entity) {
         var createBtn = document.createElement('button');
         createBtn.type = 'button'; createBtn.textContent = '+';
         createBtn.title = 'Создать новый';
         createBtn.style.cssText = 'padding:4px 7px;border:1px solid #e2e8f0;border-radius:5px;background:#f8fafc;cursor:pointer;font-size:12px;flex-shrink:0;font-weight:600;color:#16a34a';
-        (function(s, re){ createBtn.onclick = function(){ openRefCreate(s, re); }; })(sel, refEntity);
+        (function(s, re){ createBtn.onclick = function(){ openRefCreate(s, re); }; })(sel, meta.entity);
         wrapper.appendChild(createBtn);
       }
       td.appendChild(wrapper);
@@ -1499,7 +1504,7 @@ const tplDeleteMarked = `
   {{t $.Lang "Удалено:"}} {{.Deleted}}{{if .Skipped}} &nbsp;·&nbsp; {{t $.Lang "Пропущено (есть ссылки):"}} {{.Skipped}}{{end}}
 </div>{{end}}
 {{if .Entries}}
-<div class="card" style="max-width:900px;margin-bottom:16px">
+<div class="card" style="max-width:1400px;margin-bottom:16px">
 <table><thead><tr>
   <th>{{t $.Lang "Объект"}}</th><th>{{t $.Lang "Наименование"}}</th><th>{{t $.Lang "Статус"}}</th>
 </tr></thead><tbody>
