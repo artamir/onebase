@@ -11,6 +11,7 @@ import (
 	cronlib "github.com/robfig/cron/v3"
 
 	"github.com/ivantit66/onebase/internal/dsl/interpreter"
+	"github.com/ivantit66/onebase/internal/dslvars"
 	"github.com/ivantit66/onebase/internal/mailer"
 	"github.com/ivantit66/onebase/internal/metadata"
 	"github.com/ivantit66/onebase/internal/runtime"
@@ -221,36 +222,16 @@ func (s *Scheduler) runProcessor(ctx context.Context, job *metadata.ScheduledJob
 }
 
 func (s *Scheduler) buildDSLVars(ctx context.Context, mc *runtime.MovementsCollector) map[string]any {
-	enumsMap := make(map[string]any)
-	for _, e := range s.reg.Enums() {
-		inner := make(map[string]any, len(e.Values))
-		for _, v := range e.Values {
-			inner[v] = v
-		}
-		enumsMap[e.Name] = &interpreter.MapThis{M: inner}
-	}
-	constsMap := make(map[string]any)
-	if vals, err := s.db.ListConstants(ctx); err == nil {
-		constsMap = vals
-	}
-	queryFactory := interpreter.NewQueryFactory(ctx, s.db, s.reg)
-	predefined := interpreter.NewPredefinedRoot(ctx, s.db)
-	vars := map[string]any{
-		"Движения":                  mc,
-		"Перечисления":              &interpreter.MapThis{M: enumsMap},
-		"Константы":                 &interpreter.MapThis{M: constsMap},
-		"__factory_Запрос":          queryFactory,
-		"__factory_Query":           queryFactory,
-		"ПредопределённыеЗначения": predefined,
-		"PredefinedValues":          predefined,
-	}
-	for k, v := range interpreter.NewHTTPFunctions() {
-		vars[k] = v
-	}
-	for k, v := range interpreter.NewEmailFunctions(s.mailer) {
-		vars[k] = v
-	}
-	return vars
+	// Базовый набор переменных совпадает с тем, что UI handlers инжектируют
+	// для обработчиков OnWrite/OnPost. Caller-specific переменные (Параметры,
+	// Сообщить с привязкой к log задания) добавляются в runScheduledJob сверху.
+	return dslvars.Common{
+		Ctx:       ctx,
+		Reg:       s.reg,
+		Store:     s.db,
+		Mailer:    s.mailer,
+		Movements: mc,
+	}.Build()
 }
 
 // resolveParamTemplates replaces template expressions like {{today}} with actual values.

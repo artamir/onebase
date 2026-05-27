@@ -21,6 +21,7 @@ import (
 	"github.com/ivantit66/onebase/internal/dsl/interpreter"
 	"github.com/ivantit66/onebase/internal/dsl/lexer"
 	"github.com/ivantit66/onebase/internal/dsl/parser"
+	"github.com/ivantit66/onebase/internal/dslvars"
 	"github.com/ivantit66/onebase/internal/excel"
 	"github.com/ivantit66/onebase/internal/metadata"
 	"github.com/ivantit66/onebase/internal/printform"
@@ -1625,20 +1626,12 @@ func (s *Server) runOnWrite(obj *runtime.Object, mc *runtime.MovementsCollector)
 }
 
 func (s *Server) buildDSLVars(ctx context.Context, mc *runtime.MovementsCollector) map[string]any {
-	enumsMap := make(map[string]any)
-	for _, e := range s.reg.Enums() {
-		inner := make(map[string]any, len(e.Values))
-		for _, v := range e.Values {
-			inner[v] = v
-		}
-		enumsMap[e.Name] = &interpreter.MapThis{M: inner}
-	}
-	constsMap := make(map[string]any)
-	if vals, err := s.store.ListConstants(ctx); err == nil {
-		constsMap = vals
-	}
-	queryFactory := interpreter.NewQueryFactory(ctx, s.store, s.reg)
-	predefined := interpreter.NewPredefinedRoot(ctx, s.store)
+	// Базовый набор (Перечисления, Константы, Запрос, Предопределённые,
+	// Движения, HTTP, Email) — общий с scheduler, см. internal/dslvars.
+	vars := dslvars.Common{
+		Ctx: ctx, Reg: s.reg, Store: s.store, Mailer: s.mailer, Movements: mc,
+	}.Build()
+
 	// TxState несёт «живой» контекст. Транзакционные функции
 	// (НачатьТранзакцию и т.д.) и запись справочников из обработки
 	// (Справочники.X.Создать().Записать()) используют txState.Ctx(),
@@ -1679,37 +1672,23 @@ func (s *Server) buildDSLVars(ctx context.Context, mc *runtime.MovementsCollecto
 		return s.objectAttributeValue(txState.Ctx(), args)
 	})
 
-	vars := map[string]any{
-		"Движения":                 mc,
-		"Перечисления":             &interpreter.MapThis{M: enumsMap},
-		"Константы":                &interpreter.MapThis{M: constsMap},
-		"__factory_Запрос":         queryFactory,
-		"__factory_Query":          queryFactory,
-		"ПредопределённыеЗначения": predefined,
-		"PredefinedValues":         predefined,
-		"Справочники":              catalogs,
-		"Catalogs":                 catalogs,
-		"Документы":                documents,
-		"Documents":                documents,
-		"БлокировкаДанных":         lockFactory,
-		"DataLock":                 lockFactory,
-		"ТекущийПользователь":      currentUserFn,
-		"CurrentUser":              currentUserFn,
-		"ИмяПользователя":          userNameFn,
-		"UserName":                 userNameFn,
-		"ЗначениеРеквизитаОбъекта": attrValueFn,
-		"ObjectAttributeValue":     attrValueFn,
-	}
+	vars["Справочники"] = catalogs
+	vars["Catalogs"] = catalogs
+	vars["Документы"] = documents
+	vars["Documents"] = documents
+	vars["БлокировкаДанных"] = lockFactory
+	vars["DataLock"] = lockFactory
+	vars["ТекущийПользователь"] = currentUserFn
+	vars["CurrentUser"] = currentUserFn
+	vars["ИмяПользователя"] = userNameFn
+	vars["UserName"] = userNameFn
+	vars["ЗначениеРеквизитаОбъекта"] = attrValueFn
+	vars["ObjectAttributeValue"] = attrValueFn
+
 	// транзакции из DSL (обработки/проведение). Раньше NewTxFunctions
 	// использовался только в тестах — отсюда «unknown function
 	// НачатьТранзакцию». Теперь подключаем к реальному рантайму.
 	for k, v := range interpreter.NewTxFunctions(txState, s.store) {
-		vars[k] = v
-	}
-	for k, v := range interpreter.NewHTTPFunctions() {
-		vars[k] = v
-	}
-	for k, v := range interpreter.NewEmailFunctions(s.mailer) {
 		vars[k] = v
 	}
 	for k, v := range interpreter.NewSpreadsheetFunctions() {
