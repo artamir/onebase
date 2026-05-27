@@ -360,11 +360,20 @@ func (s *Server) form(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) submit(w http.ResponseWriter, r *http.Request) {
-	entity := s.getEntity(w, r)
-	if entity == nil {
-		return
-	}
+// parseSubmitForm — общая часть submit и submitEdit. Парсит форму, строит
+// объект, готовит коллектор движений, проверяет разрешение на проведение,
+// запускает обогащение TP-ссылок. Не делает сохранение и не вызывает DSL-хук —
+// это caller-specific (submit использует Upsert, submitEdit — UpsertVersioned).
+//
+// Если existingID == nil — создание нового объекта: id берётся из uuid.New,
+// для документов с полем "Номер" автогенерируется номер. Если existingID != nil —
+// редактирование: id берётся из URL, авто-нумерация не выполняется.
+//
+// Возвращает (nil,...,false) если запрос отклонён (нет прав / ошибка парсинга);
+// в этом случае ответ уже записан в w.
+func (s *Server) parseSubmitForm(w http.ResponseWriter, r *http.Request, entity *metadata.Entity, existingID *uuid.UUID) (
+	obj *runtime.Object, mc *runtime.MovementsCollector, fields map[string]any, tpRows map[string][]map[string]any, action string, isPostingAct bool, ok bool,
+) {
 	if !s.requirePerm(w, r, string(entity.Kind), entity.Name, "write") {
 		return
 	}
@@ -372,38 +381,52 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 400)
 		return
 	}
-	fields := formToFields(r, entity)
-	tpRows := parseTablePartRows(r, entity)
+	fields = formToFields(r, entity)
+	tpRows = parseTablePartRows(r, entity)
 
 	if entity.Hierarchical {
 		fields["parent_id"] = r.FormValue("parent_id")
 		fields["is_folder"] = r.FormValue("is_folder") == "true"
 	}
 
-	obj := runtime.NewObject(entity.Name, entity.Kind)
-	for k, v := range fields {
-		obj.Set(k, v)
-	}
-	obj.TablePartRows = tpRows
+	// Объект для new строится через NewObject+Set (ключи нормализуются в lowercase
+	// — историческое поведение submit). Для existing — прямое присваивание Fields,
+	// ключи остаются как пришли из формы (PascalCase). fieldValueDialect в storage
+	// читает значение по обоим вариантам ключа, так что save работает одинаково.
+	if existingID == nil {
+		obj = runtime.NewObject(entity.Name, entity.Kind)
+		for k, v := range fields {
+			obj.Set(k, v)
+		}
+		obj.TablePartRows = tpRows
 
-	// Auto-number: fill Номер if empty for new documents
-	if entity.Kind == metadata.KindDocument {
-		for _, f := range entity.Fields {
-			if f.Name == "Номер" && f.Type == metadata.FieldTypeString {
-				if v := fmt.Sprintf("%v", obj.Fields["Номер"]); v == "" || v == "<nil>" {
-					obj.Set("Номер", s.generateNumber(r.Context(), entity, obj.Fields))
+		// Auto-number: fill Номер if empty for new documents
+		if entity.Kind == metadata.KindDocument {
+			for _, f := range entity.Fields {
+				if f.Name == "Номер" && f.Type == metadata.FieldTypeString {
+					if v := fmt.Sprintf("%v", obj.Fields["Номер"]); v == "" || v == "<nil>" {
+						obj.Set("Номер", s.generateNumber(r.Context(), entity, obj.Fields))
+					}
+					break
 				}
-				break
 			}
+		}
+	} else {
+		obj = &runtime.Object{
+			Type:          entity.Name,
+			Kind:          entity.Kind,
+			ID:            *existingID,
+			Fields:        fields,
+			TablePartRows: tpRows,
 		}
 	}
 
-	mc := runtime.NewMovementsCollector(entity.Name, obj.ID)
+	mc = runtime.NewMovementsCollector(entity.Name, obj.ID)
 	setPeriodFromFields(mc, entity, obj.Fields)
 
-	action := r.FormValue("_action")
-	isPosting := entity.Posting && (action == "post" || action == "post_and_close")
-	if isPosting && !s.requirePerm(w, r, string(entity.Kind), entity.Name, "post") {
+	action = r.FormValue("_action")
+	isPostingAct = entity.Posting && (action == "post" || action == "post_and_close")
+	if isPostingAct && !s.requirePerm(w, r, string(entity.Kind), entity.Name, "post") {
 		return
 	}
 
@@ -411,6 +434,19 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request) {
 		if rows, ok := obj.TablePartRows[tp.Name]; ok {
 			s.enrichTPRowsWithRefs(r.Context(), tp, rows)
 		}
+	}
+	ok = true
+	return
+}
+
+func (s *Server) submit(w http.ResponseWriter, r *http.Request) {
+	entity := s.getEntity(w, r)
+	if entity == nil {
+		return
+	}
+	obj, mc, fields, tpRows, action, isPosting, ok := s.parseSubmitForm(w, r, entity, nil)
+	if !ok {
+		return
 	}
 
 	var dslErrMsg string
@@ -669,46 +705,14 @@ func (s *Server) submitEdit(w http.ResponseWriter, r *http.Request) {
 	if entity == nil {
 		return
 	}
-	if !s.requirePerm(w, r, string(entity.Kind), entity.Name, "write") {
-		return
-	}
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		http.Error(w, "invalid id", 400)
 		return
 	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), 400)
+	obj, mc, _, tpRows, action, isPostingAct, ok := s.parseSubmitForm(w, r, entity, &id)
+	if !ok {
 		return
-	}
-	fields := formToFields(r, entity)
-	tpRows := parseTablePartRows(r, entity)
-
-	if entity.Hierarchical {
-		fields["parent_id"] = r.FormValue("parent_id")
-		fields["is_folder"] = r.FormValue("is_folder") == "true"
-	}
-
-	obj := &runtime.Object{
-		Type:          entity.Name,
-		Kind:          entity.Kind,
-		ID:            id,
-		Fields:        fields,
-		TablePartRows: tpRows,
-	}
-	mc := runtime.NewMovementsCollector(entity.Name, id)
-	setPeriodFromFields(mc, entity, fields)
-
-	action := r.FormValue("_action")
-	isPostingAct := entity.Posting && (action == "post" || action == "post_and_close")
-	if isPostingAct && !s.requirePerm(w, r, string(entity.Kind), entity.Name, "post") {
-		return
-	}
-
-	for _, tp := range entity.TableParts {
-		if rows, ok := obj.TablePartRows[tp.Name]; ok {
-			s.enrichTPRowsWithRefs(r.Context(), tp, rows)
-		}
 	}
 
 	var dslErr2 string
