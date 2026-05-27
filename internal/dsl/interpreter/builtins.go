@@ -335,28 +335,53 @@ func midStr(args []any) string {
 }
 
 // KnownBuiltinNames returns a set of all known callable names (lowercase):
-// platform builtins + runtime-injected functions (HTTP, Email, etc.).
+// platform builtins + runtime-injected functions (HTTP, Email, Tx и т.п.).
 // Used by the syntax checker to validate function calls in modules.
+//
+// Имена из фабрик (NewHTTPFunctions, NewEmailFunctions, NewTxFunctions, ...)
+// собираются автоматически — добавил builtin в фабрику → имя сразу появилось
+// в чек-листе синтаксиса без правок здесь. Ключи с префиксом `__factory_`
+// (это служебные конструкторы для СоздатьОбъект, не пользовательские функции)
+// исключаются.
+//
+// Имена, инжектируемые напрямую через buildDSLVars / контекст интерпретатора
+// (Сообщить, ОписаниеОшибки, ТекущийПользователь и т.п.), пока перечислены
+// явно — у них нет общей фабрики. После выделения dslvars в отдельный пакет
+// этот список можно будет заменить на dslvars.Names().
 func KnownBuiltinNames() map[string]struct{} {
-	names := make(map[string]struct{}, len(builtins)+20)
+	names := make(map[string]struct{}, len(builtins)+32)
 	for k := range builtins {
 		names[k] = struct{}{}
 	}
 	// special context variables
 	names["this"] = struct{}{}
 	names["этотобъект"] = struct{}{}
-	// runtime-injected via buildDSLVars / buildDSLVarsWithMessages
+
+	// автосбор из фабрик. Фабрики вызываются с zero-аргументами — мы только
+	// итерируем ключи карты, замыкания не вызываются (некоторые из них при
+	// nil-state упадут при реальном вызове, но для перечисления имён это
+	// безопасно).
+	factoryMaps := []map[string]any{
+		NewHTTPFunctions(),
+		NewEmailFunctions(nil),
+		NewTxFunctions(nil, nil),
+		NewChartFunctions(),
+		NewSpreadsheetFunctions(),
+	}
+	for _, m := range factoryMaps {
+		for k := range m {
+			if strings.HasPrefix(k, "__factory_") {
+				continue // конструкторы для СоздатьОбъект, не вызываются по имени
+			}
+			names[strings.ToLower(k)] = struct{}{}
+		}
+	}
+
+	// имена, инжектируемые напрямую через buildDSLVars / контекст —
+	// без отдельной фабрики (см. ui/handlers.go и scheduler/scheduler.go).
 	for _, k := range []string{
 		"сообщить", "message",
-		"httpполучить", "httpget", "httpотправить", "httppost",
-		"отправитьписьмо", "sendemail",
-		// transactions (injected via TxState.Builtins)
-		"начатьтранзакцию", "begintransaction",
-		"зафиксироватьтранзакцию", "committransaction",
-		"отменитьтранзакцию", "rollbacktransaction",
-		// injected in except-block context
 		"описаниеошибки", "errordescription",
-		// register movement / lock / current-user globals (buildDSLVars)
 		"блокировкаданных", "datalock",
 		"текущийпользователь", "currentuser",
 		"имяпользователя", "username",
