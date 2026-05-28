@@ -134,6 +134,31 @@ func (s *Store) Update(b *Base) error {
 	return fmt.Errorf("base %q not found", b.ID)
 }
 
+// Move сдвигает базу с заданным id на delta позиций в списке
+// (delta=-1 — вверх, delta=+1 — вниз). Сдвиг за границы списка — no-op.
+func (s *Store) Move(id string, delta int) error {
+	bases, err := s.load()
+	if err != nil {
+		return err
+	}
+	idx := -1
+	for i, b := range bases {
+		if b.ID == id {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return fmt.Errorf("base %q not found", id)
+	}
+	target := idx + delta
+	if target < 0 || target >= len(bases) {
+		return nil
+	}
+	bases[idx], bases[target] = bases[target], bases[idx]
+	return s.save(bases)
+}
+
 func (s *Store) Remove(id string) error {
 	bases, err := s.load()
 	if err != nil {

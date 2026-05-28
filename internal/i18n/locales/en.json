@@ -594,5 +594,10 @@
   "Кнопка «+ Создать» в picker'е для ссылочного поля. По умолчанию включена для шапки документа.": "«+ Create» button in the picker for a reference field. Enabled by default for the document header.",
   "Кнопка «+ Создать» в picker'е. В ТЧ по умолчанию выключена.": "«+ Create» button in the picker. Disabled by default in table parts.",
   "Открыть карточку": "Open card",
-  "Показывать «+ Создать» в picker'е": "Show «+ Create» in the picker"
+  "Показывать «+ Создать» в picker'е": "Show «+ Create» in the picker",
+  "Выберите папку XML-выгрузки": "Select XML export folder",
+  "Добавить обработку": "Add data processor",
+  "Добавить общий модуль": "Add common module",
+  "Переместить вверх": "Move up",
+  "Переместить вниз": "Move down"
 }

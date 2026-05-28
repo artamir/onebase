@@ -323,6 +323,19 @@ func (h *handler) delete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
+func (h *handler) move(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	delta := 1
+	if r.URL.Query().Get("dir") == "up" {
+		delta = -1
+	}
+	if err := h.store.Move(id, delta); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	http.Redirect(w, r, "/?sel="+id, http.StatusFound)
+}
+
 func (h *handler) start(w http.ResponseWriter, r *http.Request) {
 	b, err := h.store.Get(chi.URLParam(r, "id"))
 	if err != nil {

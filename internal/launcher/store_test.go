@@ -110,6 +110,53 @@ func TestStore_Remove(t *testing.T) {
 	}
 }
 
+func TestStore_Move(t *testing.T) {
+	s := newTestStore(t)
+	a := &Base{Name: "A", DB: "postgres://localhost/a"}
+	b := &Base{Name: "B", DB: "postgres://localhost/b"}
+	c := &Base{Name: "C", DB: "postgres://localhost/c"}
+	s.Add(a)
+	s.Add(b)
+	s.Add(c)
+
+	order := func() []string {
+		bases, _ := s.List()
+		names := make([]string, len(bases))
+		for i, x := range bases {
+			names[i] = x.Name
+		}
+		return names
+	}
+
+	// Move B up: B,A,C
+	if err := s.Move(b.ID, -1); err != nil {
+		t.Fatalf("Move up: %v", err)
+	}
+	if got := order(); got[0] != "B" || got[1] != "A" || got[2] != "C" {
+		t.Fatalf("after move up want B,A,C got %v", got)
+	}
+
+	// Move B down twice: A,C,B
+	s.Move(b.ID, 1)
+	s.Move(b.ID, 1)
+	if got := order(); got[0] != "A" || got[1] != "C" || got[2] != "B" {
+		t.Fatalf("after move down want A,C,B got %v", got)
+	}
+
+	// Move past the bottom edge — no-op
+	if err := s.Move(b.ID, 1); err != nil {
+		t.Fatalf("Move at edge: %v", err)
+	}
+	if got := order(); got[2] != "B" {
+		t.Fatalf("edge move should be no-op, got %v", got)
+	}
+
+	// Unknown id — error
+	if err := s.Move("nope", -1); err == nil {
+		t.Fatal("Move with unknown id should error")
+	}
+}
+
 func TestStore_AtomicWrite(t *testing.T) {
 	s := newTestStore(t)
 	b := &Base{Name: "Atomic", DB: "postgres://localhost/atomic"}
