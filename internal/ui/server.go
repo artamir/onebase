@@ -137,6 +137,7 @@ func (s *Server) Mount(r chi.Router) {
 	r.Post("/ui/report/{name}", s.reportRun)
 	r.Get("/ui/processor/{name}", s.processorForm)
 	r.Post("/ui/processor/{name}", s.processorRun)
+	r.Post("/ui/processor/{name}/form-event", s.handleProcessorFormEvent)
 
 	// Document posting
 	r.Post("/ui/{kind}/{entity}/{id}/post", s.postDocument)

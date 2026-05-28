@@ -179,19 +179,24 @@ const tplManagedForm = `
 <main>
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;max-width:1400px">
   <h2 style="margin-bottom:0">
-    {{if .IsNew}}{{t $.Lang "Создать"}}{{else}}{{t $.Lang "Редактировать"}}{{end}} — {{.Entity.DisplayName $.Lang}}
-    <span style="font-size:11px;color:#10b981;background:#d1fae5;padding:2px 8px;border-radius:10px;vertical-align:middle;font-weight:500" title="Управляемая форма из forms/{{lower .Entity.Name}}/">◇ managed</span>
+    {{if .IsProcessor}}{{.Processor.DisplayName $.Lang}}{{else}}{{if .IsNew}}{{t $.Lang "Создать"}}{{else}}{{t $.Lang "Редактировать"}}{{end}} — {{.Entity.DisplayName $.Lang}}{{end}}
+    <span style="font-size:11px;color:#10b981;background:#d1fae5;padding:2px 8px;border-radius:10px;vertical-align:middle;font-weight:500" title="Управляемая форма из forms/{{if .IsProcessor}}{{lower .Processor.Name}}{{else}}{{lower .Entity.Name}}{{end}}/">◇ managed</span>
   </h2>
   {{if .IsPopup}}
   <a href="javascript:void(0)" onclick="try{parent.postMessage({source:'obRefCancel'}, '*')}catch(e){}" title="Закрыть" style="font-size:22px;line-height:1;color:#94a3b8;text-decoration:none;padding:2px 8px;border-radius:5px;background:#f1f5f9;font-weight:300">×</a>
   {{else}}
-  <a href="/ui/{{lower (str .Entity.Kind)}}/{{lower .Entity.Name}}" title="Закрыть" style="font-size:22px;line-height:1;color:#94a3b8;text-decoration:none;padding:2px 8px;border-radius:5px;background:#f1f5f9;font-weight:300">×</a>
+  <a href="{{if .IsProcessor}}/ui/{{else}}/ui/{{lower (str .Entity.Kind)}}/{{lower .Entity.Name}}{{end}}" title="Закрыть" style="font-size:22px;line-height:1;color:#94a3b8;text-decoration:none;padding:2px 8px;border-radius:5px;background:#f1f5f9;font-weight:300">×</a>
   {{end}}
 </div>
 {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
+{{if .RunError}}<div class="error">{{.RunError}}</div>{{end}}
+{{if .Messages}}{{range .Messages}}<div class="msg-info">{{.}}</div>{{end}}{{end}}
 
 {{if not .IsPopup}}
 <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+  {{if .IsProcessor}}
+  <button class="btn btn-primary" type="submit" form="main-form">{{t $.Lang "Выполнить"}}</button>
+  {{else}}
   {{if .Entity.Posting}}
     {{if not .IsNew}}
       {{if eq (index .Values "posted") "true"}}
@@ -221,6 +226,7 @@ const tplManagedForm = `
     </form>
     {{end}}
   {{end}}
+  {{end}}{{/* end if not .IsProcessor */}}
 </div>
 {{end}}{{/* end if not .IsPopup */}}
 
@@ -252,7 +258,7 @@ const tplManagedForm = `
 {{end}}
 
 <div class="card">
-<form id="main-form" method="POST">
+<form id="main-form" method="POST" {{if .IsProcessor}}action="/ui/processor/{{lower .Processor.Name}}" enctype="multipart/form-data"{{end}}>
 {{if and (not .IsNew) (index .Values "_version")}}<input type="hidden" name="_version" value="{{index .Values "_version"}}">{{end}}
 {{if .IsPopup}}<input type="hidden" name="_popup" value="1">{{end}}
 
@@ -265,6 +271,9 @@ const tplManagedForm = `
   {{if .IsPopup}}
   {{if .CanWrite}}<button class="btn btn-primary" type="submit" name="_action" value="" form="main-form">Записать и выбрать</button>{{end}}
   <a href="javascript:void(0)" onclick="try{parent.postMessage({source:'obRefCancel'}, '*')}catch(e){}" class="btn btn-cancel">Отмена</a>
+  {{else if .IsProcessor}}
+  <button class="btn btn-primary" type="submit">{{t $.Lang "Выполнить"}}</button>
+  <a href="/ui/" class="btn btn-cancel">Отмена</a>
   {{else}}
   {{if .CanWrite}}<button class="btn btn-secondary" type="submit" name="_action" value="" form="main-form">Записать</button>{{end}}
   <a href="/ui/{{lower (str .Entity.Kind)}}/{{lower .Entity.Name}}" class="btn btn-cancel">Отмена</a>
@@ -285,8 +294,13 @@ window._tpRefOpts = {{jsJSON .TPRefOptions}};
 (function(){
   const KIND   = "{{lower (str .Entity.Kind)}}";
   const ENTITY = "{{.Entity.Name}}";
+  {{if .IsProcessor}}
+  const URL    = "/ui/processor/{{lower .Processor.Name}}/form-event";
+  const DOC_ID = "";
+  {{else}}
   const URL    = "/ui/" + KIND + "/" + ENTITY + "/form-event";
   const DOC_ID = {{if .ID}}"{{.ID}}"{{else}}""{{end}};
+  {{end}}
 
   function ensureBanner(){
     let b = document.getElementById('ob-fmevt-banner');

@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/ivantit66/onebase/internal/dsl/ast"
+	"github.com/ivantit66/onebase/internal/dsl/interpreter"
 	"github.com/ivantit66/onebase/internal/metadata"
 	"github.com/ivantit66/onebase/internal/runtime"
 )
@@ -290,4 +291,140 @@ func serializeValue(v any) any {
 		return t.String()
 	}
 	return v
+}
+
+// handleProcessorFormEvent обрабатывает события managed-формы обработки.
+// Аналог handleManagedFormEvent, но вместо Entity использует виртуальную entity
+// из параметров обработки. Кнопка «Выполнить» запускает proc.os через interp.
+func (s *Server) handleProcessorFormEvent(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	enc := json.NewEncoder(w)
+
+	if err := r.ParseForm(); err != nil {
+		enc.Encode(formEventResponse{Error: "bad form: " + err.Error()})
+		return
+	}
+
+	procName := chi.URLParam(r, "name")
+	if procName == "" {
+		enc.Encode(formEventResponse{Error: "processor name required"})
+		return
+	}
+	proc := s.reg.GetProcessor(procName)
+	if proc == nil {
+		enc.Encode(formEventResponse{Error: "processor not found: " + procName})
+		return
+	}
+
+	form := proc.ManagedForm()
+	if form == nil {
+		enc.Encode(formEventResponse{Error: "managed form not found for " + procName})
+		return
+	}
+
+	elementName := strings.TrimSpace(r.FormValue("_element"))
+	eventName := strings.TrimSpace(r.FormValue("_event"))
+	if eventName == "" {
+		enc.Encode(formEventResponse{Error: "_event required"})
+		return
+	}
+
+	// Try form-level handler (from .form.os AST)
+	progAny := form.ProgramAST
+	var program *ast.Program
+	if progAny != nil {
+		if p, ok := progAny.(*ast.Program); ok && p != nil {
+			program = p
+		}
+	}
+
+	if program != nil {
+		procName := resolveHandlerProc(form, elementName, eventName)
+		if procName != "" {
+			var decl *ast.ProcedureDecl
+			for _, p := range program.Procedures {
+				if strings.EqualFold(p.Name.Literal, procName) {
+					decl = p
+					break
+				}
+			}
+			if decl != nil {
+				virtEntity := processorVirtualEntity(proc)
+				obj := buildObjectFromForm(r, virtEntity)
+				mc := runtime.NewMovementsCollector("processor", uuid.Nil)
+				var msgs []string
+				vars := s.buildDSLVarsWithMessages(r.Context(), mc, &msgs)
+				thisObj := &formObjectThis{obj: obj, entity: virtEntity}
+				vars["Объект"] = thisObj
+				vars["ЭтотОбъект"] = thisObj
+				vars["Параметры"] = thisObj
+
+				if runErr := s.interp.Run(decl, thisObj, vars); runErr != nil {
+					enc.Encode(formEventResponse{
+						OK:     false,
+						Values: serializeFieldsForEntity(obj.Fields, virtEntity),
+						Messages: msgs,
+						Error:  runErr.Error(),
+					})
+					return
+				}
+
+				enc.Encode(formEventResponse{
+					OK:     true,
+					Values: serializeFieldsForEntity(obj.Fields, virtEntity),
+					Messages: msgs,
+				})
+				return
+			}
+		}
+	}
+
+	// No form handler — for "Нажатие" on execute button, run processor logic
+	if eventName == string(metadata.FormEventOnClick) {
+		paramValues := map[string]any{}
+		for _, p := range proc.Params {
+			paramValues[p.Name] = parseParamValue(r.FormValue(p.Name), p.Type)
+		}
+
+		procDecl := s.reg.GetProcedure(proc.Name, "Выполнить")
+		if procDecl == nil {
+			enc.Encode(formEventResponse{OK: true})
+			return
+		}
+
+		userKey := userKeyFromRequest(r)
+		var msgs []string
+		msgFunc := interpreter.BuiltinFunc(func(args []any, file string, line int) (any, error) {
+			if len(args) > 0 {
+				text := fmt.Sprintf("%v", args[0])
+				msgs = append(msgs, text)
+				s.messages.Push(userKey, text)
+			}
+			return nil, nil
+		})
+
+		paramsThis := &interpreter.MapThis{M: paramValues}
+		mc := runtime.NewMovementsCollector("processor", uuid.Nil)
+		dslVars := s.buildDSLVars(r.Context(), mc)
+		dslVars["Параметры"] = paramsThis
+		dslVars["Сообщить"] = msgFunc
+		dslVars["Message"] = msgFunc
+
+		err := s.interp.Run(procDecl, paramsThis, dslVars)
+		if err != nil {
+			enc.Encode(formEventResponse{
+				OK:      false,
+				Messages: msgs,
+				Error:   err.Error(),
+			})
+			return
+		}
+		enc.Encode(formEventResponse{
+			OK:      true,
+			Messages: msgs,
+		})
+		return
+	}
+
+	enc.Encode(formEventResponse{OK: true})
 }

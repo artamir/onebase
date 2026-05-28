@@ -148,6 +148,9 @@ func Load(dir string) (*Project, error) {
 	if err := p.loadProcessors(); err != nil {
 		return nil, err
 	}
+	if err := p.loadProcessorForms(); err != nil {
+		return nil, err
+	}
 	if err := p.loadSubsystems(); err != nil {
 		return nil, err
 	}
@@ -196,6 +199,18 @@ func (p *Project) loadProcessors() error {
 		return fmt.Errorf("project: load processors: %w", err)
 	}
 	p.Processors = procs
+	return nil
+}
+
+func (p *Project) loadProcessorForms() error {
+	managedLoader := loader.NewManagedFormLoader()
+	for _, proc := range p.Processors {
+		managed, err := managedLoader.LoadEntityForms(p.Dir, proc.Name)
+		if err != nil {
+			return fmt.Errorf("load managed forms for processor %s: %w", proc.Name, err)
+		}
+		proc.Forms = managed
+	}
 	return nil
 }
 

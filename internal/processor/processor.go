@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ivantit66/onebase/internal/metadata"
 	"gopkg.in/yaml.v3"
 )
 
@@ -18,10 +19,11 @@ type Param struct {
 }
 
 type Processor struct {
-	Name   string            `yaml:"name"`
-	Title  string            `yaml:"title"`
-	Titles map[string]string `yaml:"titles"`
-	Params []Param           `yaml:"params"`
+	Name   string                    `yaml:"name"`
+	Title  string                    `yaml:"title"`
+	Titles map[string]string         `yaml:"titles"`
+	Params []Param                   `yaml:"params"`
+	Forms  []*metadata.FormModule    `yaml:"-"`
 }
 
 // DisplayLabel возвращает подпись параметра с учётом языка.
@@ -48,6 +50,16 @@ func (p *Processor) DisplayName(lang string) string {
 		return p.Title
 	}
 	return p.Name
+}
+
+// ManagedForm возвращает первую managed-форму обработки или nil.
+func (p *Processor) ManagedForm() *metadata.FormModule {
+	for _, f := range p.Forms {
+		if f != nil && f.IsManaged() {
+			return f
+		}
+	}
+	return nil
 }
 
 func LoadFile(path string) (*Processor, error) {

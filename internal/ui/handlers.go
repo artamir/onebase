@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/text/encoding/charmap"
@@ -1386,6 +1387,38 @@ func (s *Server) processorForm(w http.ResponseWriter, r *http.Request) {
 	if proc == nil {
 		return
 	}
+
+	// Managed form path
+	if mf := proc.ManagedForm(); mf != nil {
+		virtEntity := processorVirtualEntity(proc)
+		paramValues := map[string]string{}
+		for _, p := range proc.Params {
+			if p.Default != nil {
+				paramValues[p.Name] = fmt.Sprintf("%v", paramDefaultValue(p.Default, p.Type))
+			}
+		}
+		refOpts, _ := s.loadRefOptions(r.Context(), virtEntity)
+		enumOpts := s.loadEnumOptions(virtEntity)
+		for k, v := range processorEnumOptions(proc) {
+			enumOpts[k] = v
+		}
+		s.render(w, r, "page-managed-form", map[string]any{
+			"Entity":        virtEntity,
+			"Form":          mf,
+			"IsNew":         true,
+			"Values":        paramValues,
+			"RefOptions":    refOpts,
+			"EnumOptions":   enumOpts,
+			"TPRefOptions":  map[string]map[string][]map[string]any{},
+			"TPRefMeta":     map[string]map[string]any{},
+			"TablePartRows": map[string][]map[string]any{},
+			"IsProcessor":   true,
+			"Processor":     proc,
+		})
+		return
+	}
+
+	// Auto-generated form (legacy)
 	paramValues := map[string]any{}
 	for _, p := range proc.Params {
 		if p.Default != nil {
@@ -1472,16 +1505,20 @@ func (s *Server) processorRun(w http.ResponseWriter, r *http.Request) {
 		paramValues[p.Name] = parseParamValue(r.FormValue(p.Name), p.Type)
 	}
 
-	refOpts := s.loadProcessorRefOpts(r.Context(), proc.Params)
-
 	procDecl := s.reg.GetProcedure(proc.Name, "Выполнить")
 	if procDecl == nil {
-		s.render(w, r, "page-processor", map[string]any{
-			"Processor":   proc,
-			"ParamValues": paramValues,
-			"RefOptions":  refOpts,
-			"RunError":    s.tr(s.resolveLang(r), "Процедура Выполнить() не найдена в src/") + strings.ToLower(string([]rune(proc.Name)[:1])) + string([]rune(proc.Name)[1:]) + ".proc.os",
-		})
+		runErr := s.tr(s.resolveLang(r), "Процедура Выполнить() не найдена в src/") + strings.ToLower(string([]rune(proc.Name)[:1])) + string([]rune(proc.Name)[1:]) + ".proc.os"
+		if proc.ManagedForm() != nil {
+			s.renderProcessorManagedResult(w, r, proc, paramValues, nil, runErr)
+		} else {
+			refOpts := s.loadProcessorRefOpts(r.Context(), proc.Params)
+			s.render(w, r, "page-processor", map[string]any{
+				"Processor":   proc,
+				"ParamValues": paramValues,
+				"RefOptions":  refOpts,
+				"RunError":    runErr,
+			})
+		}
 		return
 	}
 
@@ -1509,13 +1546,48 @@ func (s *Server) processorRun(w http.ResponseWriter, r *http.Request) {
 		runErr = err.Error()
 	}
 
-	s.render(w, r, "page-processor", map[string]any{
-		"Processor":   proc,
-		"ParamValues": paramValues,
-		"RefOptions":  refOpts,
-		"Messages":    messages,
-		"RunError":    runErr,
-		"Ran":         true,
+	if proc.ManagedForm() != nil {
+		s.renderProcessorManagedResult(w, r, proc, paramValues, messages, runErr)
+	} else {
+		refOpts := s.loadProcessorRefOpts(r.Context(), proc.Params)
+		s.render(w, r, "page-processor", map[string]any{
+			"Processor":   proc,
+			"ParamValues": paramValues,
+			"RefOptions":  refOpts,
+			"Messages":    messages,
+			"RunError":    runErr,
+			"Ran":         true,
+		})
+	}
+}
+
+// renderProcessorManagedResult renders processor results via managed form template.
+func (s *Server) renderProcessorManagedResult(w http.ResponseWriter, r *http.Request, proc *processorpkg.Processor, paramValues map[string]any, messages []string, runErr string) {
+	virtEntity := processorVirtualEntity(proc)
+	refOpts, _ := s.loadRefOptions(r.Context(), virtEntity)
+	enumOpts := s.loadEnumOptions(virtEntity)
+	for k, v := range processorEnumOptions(proc) {
+		enumOpts[k] = v
+	}
+	strValues := make(map[string]string, len(paramValues))
+	for k, v := range paramValues {
+		strValues[k] = fmt.Sprintf("%v", v)
+	}
+	s.render(w, r, "page-managed-form", map[string]any{
+		"Entity":        virtEntity,
+		"Form":          proc.ManagedForm(),
+		"IsNew":         true,
+		"Values":        strValues,
+		"RefOptions":    refOpts,
+		"EnumOptions":   enumOpts,
+		"TPRefOptions":  map[string]map[string][]map[string]any{},
+		"TPRefMeta":     map[string]map[string]any{},
+		"TablePartRows": map[string][]map[string]any{},
+		"IsProcessor":   true,
+		"Processor":     proc,
+		"Messages":      messages,
+		"RunError":      runErr,
+		"Ran":           true,
 	})
 }
 
@@ -1534,17 +1606,77 @@ func (s *Server) getProcessor(w http.ResponseWriter, r *http.Request) *processor
 
 // decodeUploadText tries UTF-8; falls back to Windows-1251.
 func decodeUploadText(data []byte) string {
-	s := string(data)
-	for _, r := range s {
-		if r == '�' {
-			decoded, err := charmap.Windows1251.NewDecoder().Bytes(data)
-			if err == nil {
-				return string(decoded)
-			}
-			return s
+	valid := utf8.Valid(data)
+	fmt.Printf("[DEBUG decodeUploadText] len=%d utf8.Valid=%v first32=%x\n", len(data), valid, data[:min(32, len(data))])
+	if valid {
+		return string(data)
+	}
+	decoded, err := charmap.Windows1251.NewDecoder().Bytes(data)
+	if err != nil {
+		fmt.Printf("[DEBUG] win1251 decode error: %v\n", err)
+		return string(data)
+	}
+	fmt.Printf("[DEBUG] decoded OK, sample: %q\n", string(decoded[:min(80, len(decoded))]))
+	return string(decoded)
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// processorVirtualEntity создаёт виртуальную Entity из параметров обработки,
+// чтобы managed-форма могла рендерить поля через стандартный pipeline.
+func processorVirtualEntity(proc *processorpkg.Processor) *metadata.Entity {
+	fields := make([]metadata.Field, 0, len(proc.Params))
+	for _, p := range proc.Params {
+		f := metadata.Field{
+			Name:   p.Name,
+			Title:  p.Label,
+			Titles: p.Labels,
+		}
+		switch {
+		case p.Type == "string", p.Type == "text":
+			f.Type = metadata.FieldTypeString
+		case p.Type == "number":
+			f.Type = metadata.FieldTypeNumber
+		case p.Type == "date":
+			f.Type = metadata.FieldTypeDate
+		case p.Type == "bool":
+			f.Type = metadata.FieldTypeBool
+		case p.Type == "choice":
+			enumName := "_" + p.Name + "_choice"
+			f.Type = metadata.FieldType("enum:" + enumName)
+			f.EnumName = enumName
+		case strings.HasPrefix(p.Type, "reference:"):
+			f.Type = metadata.FieldType("reference:" + strings.TrimPrefix(p.Type, "reference:"))
+			f.RefEntity = strings.TrimPrefix(p.Type, "reference:")
+		default:
+			f.Type = metadata.FieldTypeString
+		}
+		fields = append(fields, f)
+	}
+	return &metadata.Entity{
+		Name:   proc.Name,
+		Title:  proc.Title,
+		Titles: proc.Titles,
+		Kind:   metadata.KindCatalog,
+		Fields: fields,
+	}
+}
+
+// processorEnumOptions возвращает synthetic enum options для choice-параметров
+// обработки, дополняя результат loadEnumOptions.
+func processorEnumOptions(proc *processorpkg.Processor) map[string][]string {
+	opts := make(map[string][]string)
+	for _, p := range proc.Params {
+		if p.Type == "choice" && len(p.Options) > 0 {
+			opts[p.Name] = p.Options
 		}
 	}
-	return s
+	return opts
 }
 
 func parseParamValue(s, typ string) any {
