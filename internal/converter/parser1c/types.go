@@ -100,6 +100,20 @@ type ScheduledJobMeta struct {
 	Handler  string
 }
 
+// ModuleMeta — общий модуль
+type ModuleMeta struct {
+	Name   string
+	Source string
+}
+
+// ProcessorMeta — обработка
+type ProcessorMeta struct {
+	Name       string
+	Synonym    string
+	Attributes []Attribute
+	Source     string
+}
+
 // ConfigDump — всё содержимое выгрузки конфигурации
 type ConfigDump struct {
 	Catalogs        []*CatalogMeta
@@ -111,6 +125,8 @@ type ConfigDump struct {
 	AccountRegisters []*AccountRegMeta
 	ChartsOfAccounts []*ChartOfAccountsMeta
 	ScheduledJobs   []*ScheduledJobMeta
+	Modules         []*ModuleMeta
+	Processors      []*ProcessorMeta
 	SkippedDirs     []SkippedItem
 }
 

@@ -2010,6 +2010,11 @@ func (h *handler) configuratorNewObject(w http.ResponseWriter, r *http.Request) 
 	}
 
 	filename := nameToFilename(name) + ".yaml"
+	if kind == "module" {
+		filename = nameToFilename(name) + ".module.os"
+		content = "// " + name + "\n// Общий модуль\n\nПроцедура Главная()\nКонецПроцедуры\n"
+		subdir = "src"
+	}
 
 	var saveErr error
 	if b.ConfigSource == "database" {
@@ -2063,6 +2068,8 @@ func newObjectContent(kind, name string) (subdir, content string) {
 		return "widgets", "name: " + name + "\ntype: kpi\ntitle: " + name + "\nformat: number\nquery: |\n  ВЫБРАТЬ КОЛИЧЕСТВО(*) КАК Значение ИЗ Документ.ИмяДокумента\n"
 	case "accountreg":
 		return "accountregs", "name: " + name + "\ntitle: " + name + "\naccounts: ПланСчетов\nresources:\n  - name: Сумма\n    type: number\n"
+	case "processor":
+		return "processors", "name: " + name + "\ntitle: " + name + "\nparams: []\n"
 	}
 	return "", ""
 }

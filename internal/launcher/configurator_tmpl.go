@@ -223,6 +223,9 @@ pre.os-code{
 .fg input[type=text],.fg textarea{width:100%;padding:7px 10px;border:1px solid #c8d0de;border-radius:4px;font-size:13px}
 .fg input:focus,.fg textarea:focus{border-color:#1a4a80;outline:none}
 .fg .hint{font-size:11px;color:#888;margin-top:3px}
+.input-browse{display:flex;gap:4px}.input-browse input{flex:1;padding:7px 10px;border:1px solid #c8d0de;border-radius:4px;font-size:13px}
+.btn-browse{flex-shrink:0;padding:7px 10px;border:1px solid #ACA899;border-radius:4px;background:linear-gradient(to bottom,#F5F4EE,#E0DDD2);cursor:pointer;font-size:13px}
+.btn-browse:hover{background:linear-gradient(to bottom,#EAF3FF,#C5DCFF);border-color:#7EAFF5}
 .form-btns{display:flex;gap:8px}
 .btn-primary{background:#1a4a80;color:#fff;border:none;padding:7px 16px;border-radius:4px;cursor:pointer;font-size:13px}
 .btn-primary:hover{background:#15396a}
@@ -541,7 +544,7 @@ const cfgFoot = `{{define "cfg-foot"}}
 </div>
 <script>
 // ── New object form ────────────────────────────────────────────
-var _cfgNewTitles = {catalog:'Новый справочник', document:'Новый документ', register:'Новый регистр', inforeg:'Новый регистр сведений', accountreg:'Новый регистр бухгалтерии', enum:'Новое перечисление', subsystem:'Новая подсистема', widget:'Новый виджет'};
+var _cfgNewTitles = {catalog:'Новый справочник', document:'Новый документ', register:'Новый регистр', inforeg:'Новый регистр сведений', accountreg:'Новый регистр бухгалтерии', enum:'Новое перечисление', subsystem:'Новая подсистема', widget:'Новый виджет', module:'Новый общий модуль', processor:'Новая обработка'};
 function cfgNewObj(kind) {
   if (kind === 'printform') { cfgNewPrintFormShow(); return; }
   var f = document.getElementById('cfg-new-form');
@@ -561,6 +564,20 @@ function cfgNewPrintFormShow() {
   document.getElementById('cfg-new-form-pf').style.display = 'block';
   document.getElementById('cfg-new-pf-name').value = '';
   document.getElementById('cfg-new-pf-name').focus();
+}
+
+// ── Folder picker ──────────────────────────────────────────────
+function pickDir(inputId, title) {
+  var btn = event.target;
+  var cur = document.getElementById(inputId).value || '';
+  btn.disabled = true;
+  btn.textContent = '...';
+  fetch('/browse-dir?title=' + encodeURIComponent(title) + '&initial_path=' + encodeURIComponent(cur))
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if (d.path) document.getElementById(inputId).value = d.path;
+    })
+    .finally(function(){ btn.disabled = false; btn.textContent = '\u{1F4C1}'; });
 }
 
 // ── Logo upload helpers ──────────────────────────────────────────
@@ -2837,7 +2854,7 @@ const cfgTabTree = `{{define "tab-tree"}}
   {{end}}
   </details>
 
-  <details open class="cfg-tree"><summary class="cfg-group">{{t $.Lang "Общие модули"}}</summary>
+  <details open class="cfg-tree"><summary class="cfg-group cfg-group-hd"><span>{{t $.Lang "Общие модули"}}</span><span class="cfg-add-btn" onclick="event.stopPropagation();cfgNewObj('module')" title="{{t $.Lang "Добавить общий модуль"}}">+</span></summary>
   {{range .Modules}}
   <div class="cfg-item" data-id="mod-{{.Name}}" onclick="selItem(this)">
     <span class="ic">📦</span>{{.Name}}
@@ -2845,7 +2862,7 @@ const cfgTabTree = `{{define "tab-tree"}}
   {{end}}
   </details>
 
-  <details open class="cfg-tree"><summary class="cfg-group">{{t $.Lang "Обработки"}}</summary>
+  <details open class="cfg-tree"><summary class="cfg-group cfg-group-hd"><span>{{t $.Lang "Обработки"}}</span><span class="cfg-add-btn" onclick="event.stopPropagation();cfgNewObj('processor')" title="{{t $.Lang "Добавить обработку"}}">+</span></summary>
   {{range .Processors}}
   <div class="cfg-item" data-id="proc-{{.Name}}" onclick="selItem(this)">
     <span class="ic">⚙</span>{{if .Title}}{{.Title}}{{else}}{{.Name}}{{end}}
@@ -4146,8 +4163,11 @@ const cfgTabConvert = `{{define "tab-convert"}}
   <form method="POST" action="/bases/{{.Base.ID}}/configurator/convert">
     <div class="fg">
       <label>{{t $.Lang "Путь к папке XML-выгрузки"}}</label>
-      <input type="text" name="src_dir" value="{{.ConvertSrcDir}}"
-             placeholder="C:\Users\...\export\МояКонфигурация" autofocus>
+      <div class="input-browse">
+        <input type="text" id="convert-src-dir" name="src_dir" value="{{.ConvertSrcDir}}"
+               placeholder="C:\Users\...\export\МояКонфигурация" autofocus>
+        <button type="button" class="btn-browse" onclick="pickDir('convert-src-dir','{{t $.Lang "Выберите папку XML-выгрузки"}}')">📁</button>
+      </div>
       <div class="hint">{{t $.Lang "Выгрузка делается в конфигураторе 1С:Предприятие: Конфигурация → Выгрузить конфигурацию в файлы"}}</div>
     </div>
     <div class="form-btns">

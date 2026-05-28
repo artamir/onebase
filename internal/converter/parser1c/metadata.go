@@ -229,16 +229,30 @@ func ParseDir(dir string) (*ConfigDump, error) {
 			}
 			dump.ScheduledJobs = append(dump.ScheduledJobs, jobs...)
 
-		case "ConfigDumpInfo.xml", "config.xml":
-			// служебный файл
+		case "ConfigDumpInfo.xml", "config.xml", "Languages":
+			// служебный файл / языки — пропускаем
 
-		case "Tasks", "DataProcessors", "BusinessProcesses",
+		case "CommonModules":
+			mods, err := parseCommonModules(subDir)
+			if err != nil {
+				return nil, err
+			}
+			dump.Modules = append(dump.Modules, mods...)
+
+		case "DataProcessors":
+			procs, err := parseDataProcessors(subDir)
+			if err != nil {
+				return nil, err
+			}
+			dump.Processors = append(dump.Processors, procs...)
+
+		case "Tasks", "BusinessProcesses",
 			"ExchangePlans", "ChartsOfCharacteristicTypes",
 			"ChartsOfCalculationTypes", "FilterCriteria",
 			"SettingsStorages", "FunctionalOptions",
 			"FunctionalOptionsParameters", "DefinedTypes",
 			"CommandGroups", "Roles", "CommonTemplates",
-			"CommonForms", "CommonCommands", "CommonModules",
+			"CommonForms", "CommonCommands",
 			"CommonAttributes", "EventSubscriptions",
 			"SequenceRegisters", "Recalculations",
 			"CalculationRegisters", "ExternalDataSources":
@@ -619,6 +633,92 @@ func parseScheduledJobs(dir string) ([]*ScheduledJobMeta, error) {
 			continue
 		}
 		result = append(result, &ScheduledJobMeta{Name: name})
+	}
+	return result, nil
+}
+
+func parseCommonModules(dir string) ([]*ModuleMeta, error) {
+	var result []*ModuleMeta
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, nil
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		mod := &ModuleMeta{Name: name}
+
+		if v8, _ := parseV83File(filepath.Join(dir, name+".xml")); v8 != nil {
+			for _, obj := range []*xmlV8Obj{v8.Catalog, v8.Task, v8.DataProcessor, v8.BusinessProcess} {
+				if obj != nil {
+					mod.Name = orDefault(obj.Props.Name, name)
+					break
+				}
+			}
+		}
+
+		bslPath := filepath.Join(dir, name, "Ext", "Module.bsl")
+		if data, err := os.ReadFile(bslPath); err == nil {
+			mod.Source = string(data)
+		} else {
+			bslPath = filepath.Join(dir, name, "Module.bsl")
+			if data, err := os.ReadFile(bslPath); err == nil {
+				mod.Source = string(data)
+			}
+		}
+
+		result = append(result, mod)
+	}
+	return result, nil
+}
+
+func parseDataProcessors(dir string) ([]*ProcessorMeta, error) {
+	var result []*ProcessorMeta
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, nil
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		proc := &ProcessorMeta{Name: name}
+
+		if v8, _ := parseV83File(filepath.Join(dir, name+".xml")); v8 != nil {
+			obj := v8.DataProcessor
+			if obj == nil {
+				obj = v8.Catalog
+			}
+			if obj != nil {
+				proc.Name = orDefault(obj.Props.Name, name)
+				proc.Attributes = convertV83Attrs(obj.ChildObjects.Attributes)
+			}
+		} else {
+			metaFile := filepath.Join(dir, name, "Ext", "Metadata.xml")
+			if _, serr := os.Stat(metaFile); os.IsNotExist(serr) {
+				metaFile = filepath.Join(dir, name, "Metadata.xml")
+			}
+			if props, perr := parseMetaFile(metaFile); perr == nil {
+				proc.Name = orDefault(props.Name, name)
+				proc.Synonym = props.Synonym.Content
+				proc.Attributes = convertAttrs(props.Attributes)
+			}
+		}
+
+		bslPath := filepath.Join(dir, name, "Ext", "ObjectModule.bsl")
+		if data, err := os.ReadFile(bslPath); err == nil {
+			proc.Source = string(data)
+		} else {
+			bslPath = filepath.Join(dir, name, "ObjectModule.bsl")
+			if data, err := os.ReadFile(bslPath); err == nil {
+				proc.Source = string(data)
+			}
+		}
+
+		result = append(result, proc)
 	}
 	return result, nil
 }

@@ -83,6 +83,16 @@ func Convert(opts Options) (*writer.ConversionReport, error) {
 		return nil, fmt.Errorf("convert: write scheduled jobs: %w", err)
 	}
 
+	// Общие модули
+	if err := writer.WriteModules(dump.Modules, opts.OutDir, report); err != nil {
+		return nil, fmt.Errorf("convert: write modules: %w", err)
+	}
+
+	// Обработки
+	if err := writer.WriteProcessors(dump.Processors, opts.OutDir, report); err != nil {
+		return nil, fmt.Errorf("convert: write processors: %w", err)
+	}
+
 	// DSL-заглушки
 	if err := writer.WriteDSLStubs(dump.Documents, opts.SourceDir, opts.OutDir, report); err != nil {
 		return nil, fmt.Errorf("convert: write dsl stubs: %w", err)

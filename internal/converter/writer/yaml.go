@@ -326,3 +326,43 @@ func writeYAML(path string, v any) error {
 func fileName(name string) string {
 	return strings.ToLower(strings.ReplaceAll(name, " ", "_"))
 }
+
+// WriteProcessors записывает обработки в out/processors/*.yaml.
+func WriteProcessors(procs []*parser1c.ProcessorMeta, outDir string, notes *ConversionReport) error {
+	dir := filepath.Join(outDir, "processors")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	srcDir := filepath.Join(outDir, "src")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		return err
+	}
+	for _, proc := range procs {
+		var fields []yamlField
+		for _, a := range proc.Attributes {
+			t, note := parser1c.MapType(a.Type)
+			fields = append(fields, yamlField{Name: a.Name, Type: t})
+			if note != "" {
+				notes.TypeWarnings = append(notes.TypeWarnings, fmt.Sprintf("processor %s.%s: %s", proc.Name, a.Name, note))
+			}
+		}
+		obj := map[string]any{
+			"name":   proc.Name,
+			"title":  synonymTitle(proc.Name, proc.Synonym),
+			"params": fields,
+		}
+		if err := writeYAML(filepath.Join(dir, fileName(proc.Name)+".yaml"), obj); err != nil {
+			return err
+		}
+		source := proc.Source
+		if source == "" {
+			source = fmt.Sprintf("// %s\n// Обработка\n\nПроцедура Главная()\nКонецПроцедуры\n", proc.Name)
+		}
+		srcPath := filepath.Join(srcDir, fileName(proc.Name)+".proc.os")
+		if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+			return err
+		}
+		notes.Processors++
+	}
+	return nil
+}

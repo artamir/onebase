@@ -68,3 +68,24 @@ func buildStub(doc *parser1c.DocumentMeta, srcDir1C string) string {
 	sb.WriteString("КонецПроцедуры\n")
 	return sb.String()
 }
+
+// WriteModules записывает общие модули в out/src/*.module.os.
+func WriteModules(mods []*parser1c.ModuleMeta, outDir string, notes *ConversionReport) error {
+	dir := filepath.Join(outDir, "src")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	for _, mod := range mods {
+		source := mod.Source
+		if source == "" {
+			source = fmt.Sprintf("// %s\n// Общий модуль\n\nПроцедура Главная()\nКонецПроцедуры\n", mod.Name)
+		}
+		name := strings.ToLower(mod.Name) + ".module.os"
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(source), 0o644); err != nil {
+			return err
+		}
+		notes.Modules++
+	}
+	return nil
+}

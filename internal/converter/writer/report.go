@@ -16,6 +16,8 @@ type ConversionReport struct {
 	AccountRegisters int
 	ChartsOfAccounts int
 	ScheduledJobs    int
+	Modules          int
+	Processors       int
 	DSLStubs         []string
 	Skipped          []string
 	TypeWarnings     []string
@@ -36,6 +38,8 @@ func (r *ConversionReport) String() string {
 	sb.WriteString(fmt.Sprintf("Регистров бухгалтерии: %d → %d YAML\n", r.AccountRegisters, r.AccountRegisters))
 	sb.WriteString(fmt.Sprintf("Планов счетов:         %d → %d YAML\n", r.ChartsOfAccounts, r.ChartsOfAccounts))
 	sb.WriteString(fmt.Sprintf("Регл. заданий:         %d → %d YAML\n", r.ScheduledJobs, r.ScheduledJobs))
+	sb.WriteString(fmt.Sprintf("Общих модулей:         %d → %d .os\n", r.Modules, r.Modules))
+	sb.WriteString(fmt.Sprintf("Обработок:             %d → %d YAML + .os\n", r.Processors, r.Processors))
 	sb.WriteString(fmt.Sprintf("DSL-заглушки:          %d .os файлов\n", len(r.DSLStubs)))
 
 	if len(r.Skipped) > 0 {
