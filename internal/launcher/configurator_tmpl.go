@@ -1,4 +1,4 @@
-﻿package launcher
+package launcher
 
 import (
 	"strings"

@@ -1,4 +1,4 @@
-﻿package devserver
+package devserver
 
 import (
 	"os"

@@ -1,4 +1,4 @@
-﻿package ast
+package ast
 
 import "github.com/ivantit66/onebase/internal/dsl/token"
 

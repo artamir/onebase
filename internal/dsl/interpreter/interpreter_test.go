@@ -1,4 +1,4 @@
-﻿package interpreter_test
+package interpreter_test
 
 import (
 	"strings"

@@ -1,4 +1,4 @@
-﻿// Package widget runs dashboard widgets defined as metadata.Widget on top of
+// Package widget runs dashboard widgets defined as metadata.Widget on top of
 // the existing Query Language pipeline.
 package widget
 
