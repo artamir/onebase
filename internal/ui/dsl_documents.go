@@ -95,18 +95,16 @@ func (p *docProxy) CallMethod(method string, args []any) any {
 		if len(args) == 0 {
 			return nil
 		}
-		value := fmt.Sprint(args[0])
-		if r, ok := args[0].(*interpreter.Ref); ok {
-			value = r.Name
+		return p.findByField("Номер", fmt.Sprint(args[0]), args[0])
+	case "найтипореквизиту", "findbyattribute":
+		if len(args) < 2 {
+			interpreter.RaiseUserError("НайтиПоРеквизиту(" + p.entity.Name + "): нужны имя реквизита и значение")
 		}
-		idStr, display, found, err := p.s.store.FindCatalogByField(p.ctx(), p.entity, "Номер", value)
-		if err != nil {
-			interpreter.RaiseUserError("НайтиПоНомеру(" + p.entity.Name + "): " + err.Error())
+		field, ok := args[0].(string)
+		if !ok {
+			interpreter.RaiseUserError("НайтиПоРеквизиту(" + p.entity.Name + "): имя реквизита должно быть строкой")
 		}
-		if !found {
-			return nil
-		}
-		return &interpreter.Ref{UUID: idStr, Name: display, Type: p.entity.Name, Manager: p}
+		return p.findByField(field, fmt.Sprint(args[1]), args[1])
 	case "удалить", "delete":
 		if len(args) == 0 {
 			interpreter.RaiseUserError("Удалить(" + p.entity.Name + "): не передана ссылка")
@@ -128,6 +126,22 @@ func (p *docProxy) CallMethod(method string, args []any) any {
 		return result
 	}
 	return nil
+}
+
+// findByField ищет документ по значению реквизита. raw — исходный аргумент DSL,
+// чтобы при передаче ссылки искать по её наименованию.
+func (p *docProxy) findByField(field, value string, raw any) any {
+	if r, ok := raw.(*interpreter.Ref); ok {
+		value = r.Name
+	}
+	idStr, display, found, err := p.s.store.FindCatalogByField(p.ctx(), p.entity, field, value)
+	if err != nil {
+		interpreter.RaiseUserError("Найти(" + p.entity.Name + "." + field + "): " + err.Error())
+	}
+	if !found {
+		return nil
+	}
+	return &interpreter.Ref{UUID: idStr, Name: display, Type: p.entity.Name, Manager: p}
 }
 
 // DeleteRef реализует interpreter.RefManager — удаление документа по UUID.
@@ -184,6 +198,7 @@ func (p *docProxy) LoadObject(uuidStr string) (any, error) {
 		ctxSrc: p.ctxSrc,
 		entity: p.entity,
 		obj:    obj,
+		loaded: true,
 	}, nil
 }
 
@@ -200,6 +215,10 @@ type docWriter struct {
 	ctxSrc docsCtxSource
 	entity *metadata.Entity
 	obj    *runtime.Object
+	// loaded — объект получен из БД (Ссылка.ПолучитьОбъект), а не создан.
+	// saved — объект уже записан в этой сессии. Оба используются ЭтоНовый().
+	loaded bool
+	saved  bool
 }
 
 func (w *docWriter) ctx() context.Context {
@@ -252,7 +271,46 @@ func (w *docWriter) CallMethod(method string, args []any) any {
 				w.Set(n, args[1])
 			}
 		}
+	case "этоновый", "isnew":
+		return !w.loaded && !w.saved
+	case "прочитать", "read":
+		if err := w.read(); err != nil {
+			interpreter.RaiseUserError("Прочитать(" + w.entity.Name + "): " + err.Error())
+		}
+		return nil
 	}
+	return nil
+}
+
+// read перечитывает шапку и табличные части документа из БД
+// (Документ.Прочитать()). Использует тот же путь загрузки, что и
+// Ссылка.ПолучитьОбъект().
+func (w *docWriter) read() error {
+	row, err := w.s.store.GetByID(w.ctx(), w.entity.Name, w.obj.ID, w.entity)
+	if err != nil {
+		return err
+	}
+	fields := make(map[string]any, len(row))
+	for _, f := range w.entity.Fields {
+		if v, ok := row[f.Name]; ok && v != nil {
+			fields[strings.ToLower(f.Name)] = v
+		}
+	}
+	tpRows := make(map[string][]map[string]any, len(w.entity.TableParts))
+	for _, tp := range w.entity.TableParts {
+		rows, err := w.s.store.GetTablePartRows(w.ctx(), w.entity.Name, tp.Name, w.obj.ID, tp)
+		if err != nil {
+			return fmt.Errorf("табличная часть %s: %w", tp.Name, err)
+		}
+		tpRows[tp.Name] = rows
+	}
+	w.obj.Fields = fields
+	w.obj.TablePartRows = tpRows
+	w.s.enrichHeaderRefs(w.ctx(), w.entity, w.obj)
+	for _, tp := range w.entity.TableParts {
+		w.s.enrichTPRowsWithRefs(w.ctx(), tp, tpRows[tp.Name])
+	}
+	w.loaded = true
 	return nil
 }
 
@@ -345,6 +403,7 @@ func (w *docWriter) write() error {
 	if err := w.s.saveTablePartsDirect(ctx, w.entity, w.obj.ID, w.obj.TablePartRows); err != nil {
 		return err
 	}
+	w.saved = true
 	// Для непроводимых документов движения, записанные в ПриЗаписи, фиксируем.
 	// У проводимых документов движения формирует проведение (post).
 	if !w.entity.Posting {

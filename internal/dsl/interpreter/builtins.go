@@ -37,14 +37,14 @@ var builtins = map[string]func(args []any, file string, line int) (any, error){
 		if len(args) > 0 {
 			msg = fmt.Sprintf("%v", args[0])
 		}
-		panic(userError{Msg: msg})
+		panic(userError{Msg: msg, File: file, Line: line})
 	},
 	"вызватьисключение": func(args []any, file string, line int) (any, error) {
 		msg := ""
 		if len(args) > 0 {
 			msg = fmt.Sprintf("%v", args[0])
 		}
-		panic(userError{Msg: msg})
+		panic(userError{Msg: msg, File: file, Line: line})
 	},
 
 	// ─── Даты ─────────────────────────────────────────────────────────────
@@ -389,6 +389,7 @@ func KnownBuiltinNames() map[string]struct{} {
 	for _, k := range []string{
 		"сообщить", "message",
 		"описаниеошибки", "errordescription",
+		"информацияобошибке", "errorinfo",
 		"блокировкаданных", "datalock",
 		"текущийпользователь", "currentuser",
 		"имяпользователя", "username",

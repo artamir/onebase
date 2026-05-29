@@ -217,6 +217,55 @@ func TestDocsRoot_FindByNumberAndDelete(t *testing.T) {
 	}
 }
 
+// ЭтоНовый(): Истина у созданного, Ложь после Записать и у загруженного.
+// Прочитать(): откатывает несохранённые изменения к значениям из БД.
+func TestDocWriter_IsNewAndRead(t *testing.T) {
+	ctx := context.Background()
+	db, err := storage.ConnectSQLite(ctx, filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	doc := &metadata.Entity{
+		Name: "Заметка",
+		Kind: metadata.KindDocument,
+		Fields: []metadata.Field{
+			{Name: "Номер", Type: metadata.FieldTypeString},
+			{Name: "Текст", Type: metadata.FieldTypeString},
+		},
+	}
+	if err := db.Migrate(ctx, []*metadata.Entity{doc}); err != nil {
+		t.Fatal(err)
+	}
+	registry := runtime.NewRegistry()
+	registry.Load(runtime.LoadOptions{Entities: []*metadata.Entity{doc}})
+	s := &Server{store: db, reg: registry, lockMgr: runtime.NewLockManager(), messages: NewMessageStore()}
+	root := newDocsRoot(s, interpreter.NewTxState(ctx))
+	dp := root.Get("Заметка").(*docProxy)
+
+	w := dp.CallMethod("создать", nil).(*docWriter)
+	if w.CallMethod("этоновый", nil) != true {
+		t.Error("новый документ: ЭтоНовый должно быть Истина")
+	}
+	w.Set("Номер", "З-1")
+	w.Set("Текст", "оригинал")
+	ref := w.CallMethod("записать", nil).(*interpreter.Ref)
+	if w.CallMethod("этоновый", nil) != false {
+		t.Error("после Записать: ЭтоНовый должно быть Ложь")
+	}
+
+	loaded := ref.CallMethod("получитьобъект", nil).(*docWriter)
+	if loaded.CallMethod("этоновый", nil) != false {
+		t.Error("загруженный объект не должен быть новым")
+	}
+	loaded.Set("Текст", "черновик")
+	loaded.CallMethod("прочитать", nil)
+	if got := loaded.Get("Текст"); got != "оригинал" {
+		t.Errorf("после Прочитать ожидался 'оригинал', got %v", got)
+	}
+}
+
 // Ссылка.ПолучитьОбъект() для существующего документа возвращает docWriter
 // с загруженной шапкой и табличными частями: можно прочитать значения,
 // изменить и Записать() — обновится та же запись по UUID, ТЧ перезапишется.

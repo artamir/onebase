@@ -18,8 +18,14 @@ type dslStop struct{ err error }
 // dslReturn — ранний выход через Возврат
 type dslReturn struct{ val any }
 
-// userError — пользовательская ошибка через Error(), перехватывается Попыткой
-type userError struct{ Msg string }
+// userError — пользовательская ошибка через Error(), перехватывается Попыткой.
+// File/Line — место возбуждения (для ИнформацияОбОшибке); могут быть пустыми,
+// если ошибка поднята из метода объекта (RaiseUserError) без позиции.
+type userError struct {
+	Msg  string
+	File string
+	Line int
+}
 
 // RaiseUserError panics with a DSL user error. Предназначено для
 // внешних пакетов (например ui), которым нужно прервать выполнение DSL
@@ -749,13 +755,22 @@ func (i *Interpreter) execTry(t *ast.TryStmt, e *env) {
 		descFn := BuiltinFunc(func(args []any, file string, line int) (any, error) {
 			return msg, nil
 		})
-		// ОписаниеОшибки доступна только внутри блока Исключение, поэтому
-		// публикуется временно. Сам блок исполняется в текущем scope (не в
-		// child) — чтобы переменные, впервые присвоенные в Исключение, были
-		// видны после КонецПопытки, как в 1С (см. П.39).
+		// ИнформацияОбОшибке() → Структура с полями Описание/НомерСтроки/Источник.
+		// Возвращаем *Struct (а не отдельный тип), чтобы Инфо.Описание работало
+		// через существующую ветку MemberExpr без правок диспетчера.
+		errInfo := newErrorInfo(caught)
+		infoFn := BuiltinFunc(func(args []any, file string, line int) (any, error) {
+			return errInfo, nil
+		})
+		// ОписаниеОшибки/ИнформацияОбОшибке доступны только внутри блока
+		// Исключение, поэтому публикуются временно. Сам блок исполняется в
+		// текущем scope (не в child) — чтобы переменные, впервые присвоенные в
+		// Исключение, были видны после КонецПопытки, как в 1С (см. П.39).
 		restore := publishTemp(e, map[string]any{
-			"ОписаниеОшибки":   descFn,
-			"ErrorDescription": descFn,
+			"ОписаниеОшибки":     descFn,
+			"ErrorDescription":   descFn,
+			"ИнформацияОбОшибке": infoFn,
+			"ErrorInfo":          infoFn,
 		})
 		i.execBlock(t.Except, e)
 		restore()

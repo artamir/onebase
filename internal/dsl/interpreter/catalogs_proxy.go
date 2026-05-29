@@ -137,6 +137,15 @@ func (p *CatalogProxy) CallMethod(method string, args []any) any {
 		return p.findByField("Наименование", args)
 	case "найтипокоду", "findbycode":
 		return p.findByField("Код", args)
+	case "найтипореквизиту", "findbyattribute":
+		if len(args) < 2 {
+			RaiseUserError("НайтиПоРеквизиту(" + p.entity.Name + "): нужны имя реквизита и значение")
+		}
+		field, ok := args[0].(string)
+		if !ok {
+			RaiseUserError("НайтиПоРеквизиту(" + p.entity.Name + "): имя реквизита должно быть строкой")
+		}
+		return p.findByField(field, args[1:])
 	case "создать", "create":
 		return &CatalogRecordWriter{
 			entity: p.entity,
@@ -263,6 +272,16 @@ func (w *CatalogRecordWriter) Set(name string, v any) {
 	w.fields[strings.ToLower(name)] = v
 }
 
+// Fields — имена заполненных полей объекта. Позволяет использовать объект
+// как источник в ЗаполнитьЗначенияСвойств(Приёмник, Объект).
+func (w *CatalogRecordWriter) Fields() []string {
+	names := make([]string, 0, len(w.fields))
+	for k := range w.fields {
+		names = append(names, k)
+	}
+	return names
+}
+
 // CallMethod — Записать() / УстановитьЗначение().
 func (w *CatalogRecordWriter) CallMethod(method string, args []any) any {
 	switch strings.ToLower(method) {
@@ -286,6 +305,33 @@ func (w *CatalogRecordWriter) CallMethod(method string, args []any) any {
 				w.Set(n, args[1])
 			}
 		}
+	case "этоновый", "isnew":
+		return w.idStr == ""
+	case "прочитать", "read":
+		w.read()
+		return nil
 	}
 	return nil
+}
+
+// read перечитывает поля объекта из БД (Объект.Прочитать()). Требует, чтобы
+// объект уже был записан (иначе нечего читать).
+func (w *CatalogRecordWriter) read() {
+	if w.idStr == "" {
+		RaiseUserError("Прочитать(" + w.entity.Name + "): объект ещё не записан")
+	}
+	id, err := uuid.Parse(w.idStr)
+	if err != nil {
+		RaiseUserError("Прочитать(" + w.entity.Name + "): неверный идентификатор")
+	}
+	row, err := w.db.GetByID(w.ctx(), w.entity.Name, id, w.entity)
+	if err != nil {
+		RaiseUserError("Прочитать(" + w.entity.Name + "): " + err.Error())
+	}
+	w.fields = make(map[string]any, len(row))
+	for _, f := range w.entity.Fields {
+		if v, ok := row[f.Name]; ok && v != nil {
+			w.fields[strings.ToLower(f.Name)] = v
+		}
+	}
 }
