@@ -2,8 +2,9 @@
 
 import (
 	"fmt"
-	"math"
 	"strings"
+
+	"github.com/shopspring/decimal"
 )
 
 // numberToWords переводит целое неотрицательное число в текст русскими словами.
@@ -118,10 +119,10 @@ func abs64(n int64) int64 {
 // «Одна тысяча двести тридцать четыре рубля 56 копеек».
 // currency: "rub" (по умолчанию) | "usd" | "eur" — для будущего расширения,
 // сейчас только rub полностью локализован.
-func AmountInWords(amount float64, currency string) string {
-	// Считаем общее число копеек через ОДНО округление — устойчивее к
-	// float-погрешности, чем split-по-точке-плюс-округление-дроби.
-	totalKopecks := int64(math.Round(amount * 100))
+func AmountInWords(amount decimal.Decimal, currency string) string {
+	// Общее число копеек — точное decimal-умножение на 100 с округлением до
+	// целого (half-away-from-zero), без захода во float (план 42).
+	totalKopecks := amount.Mul(decimal.NewFromInt(100)).Round(0).IntPart()
 	negative := totalKopecks < 0
 	if negative {
 		totalKopecks = -totalKopecks

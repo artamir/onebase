@@ -156,7 +156,7 @@ func init() {
 		if len(args) == 0 {
 			return "", nil
 		}
-		amount, _ := toFloat(args[0])
+		amount, _ := toDecimal(args[0])
 		currency := "rub"
 		if len(args) >= 2 {
 			if s, ok := args[1].(string); ok && s != "" {

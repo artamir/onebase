@@ -1,6 +1,10 @@
 ﻿package interpreter
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/shopspring/decimal"
+)
 
 // ЧислоПрописью должно правильно склонять рубли и копейки.
 func TestAmountInWords_Basic(t *testing.T) {
@@ -27,7 +31,7 @@ func TestAmountInWords_Basic(t *testing.T) {
 		{1_234_567.89, "Один миллион двести тридцать четыре тысячи пятьсот шестьдесят семь рублей 89 копеек"},
 	}
 	for _, c := range cases {
-		got := AmountInWords(c.amount, "rub")
+		got := AmountInWords(decimal.NewFromFloat(c.amount), "rub")
 		if got != c.want {
 			t.Errorf("AmountInWords(%v) = %q, want %q", c.amount, got, c.want)
 		}
@@ -48,7 +52,7 @@ func TestAmountInWords_KopeckRounding(t *testing.T) {
 		{-1.50, "Минус один рубль 50 копеек"},
 	}
 	for _, c := range cases {
-		got := AmountInWords(c.amount, "rub")
+		got := AmountInWords(decimal.NewFromFloat(c.amount), "rub")
 		if got != c.want {
 			t.Errorf("AmountInWords(%v) = %q, want %q", c.amount, got, c.want)
 		}
@@ -82,7 +86,7 @@ func TestPluralRu(t *testing.T) {
 }
 
 func TestAmountInWords_USD(t *testing.T) {
-	got := AmountInWords(1234.56, "usd")
+	got := AmountInWords(decimal.NewFromFloat(1234.56), "usd")
 	want := "Одна тысяча двести тридцать четыре доллара 56 центов"
 	if got != want {
 		t.Errorf("AmountInWords USD = %q, want %q", got, want)
@@ -101,7 +105,7 @@ func TestAmountInWords_FeminineThousand(t *testing.T) {
 		{21000, "Двадцать одна тысяча рублей 00 копеек"},
 	}
 	for _, c := range cases {
-		got := AmountInWords(c.amount, "rub")
+		got := AmountInWords(decimal.NewFromFloat(c.amount), "rub")
 		if got != c.want {
 			t.Errorf("AmountInWords(%v) = %q, want %q", c.amount, got, c.want)
 		}
