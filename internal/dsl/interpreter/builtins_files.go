@@ -25,8 +25,8 @@ func init() {
 
 // КопироватьФайл(Откуда, Куда) — копирование содержимого файла.
 func copyFileFn(args []any, _ string, _ int) (any, error) {
-	src := strArg(args, 0)
-	dst := strArg(args, 1)
+	src := safePathOrRaise("КопироватьФайл", strArg(args, 0))
+	dst := safePathOrRaise("КопироватьФайл", strArg(args, 1))
 	in, err := os.Open(src)
 	if err != nil {
 		RaiseUserError("КопироватьФайл: " + err.Error())
@@ -45,7 +45,9 @@ func copyFileFn(args []any, _ string, _ int) (any, error) {
 
 // ПереместитьФайл(Откуда, Куда) — переименование/перемещение.
 func moveFileFn(args []any, _ string, _ int) (any, error) {
-	if err := os.Rename(strArg(args, 0), strArg(args, 1)); err != nil {
+	src := safePathOrRaise("ПереместитьФайл", strArg(args, 0))
+	dst := safePathOrRaise("ПереместитьФайл", strArg(args, 1))
+	if err := os.Rename(src, dst); err != nil {
 		RaiseUserError("ПереместитьФайл: " + err.Error())
 	}
 	return nil, nil
@@ -54,7 +56,7 @@ func moveFileFn(args []any, _ string, _ int) (any, error) {
 // УдалитьФайлы(Путь) — удаление файла или пустого каталога. Намеренно не
 // рекурсивно (os.Remove), чтобы случайно не снести дерево каталогов.
 func deleteFileFn(args []any, _ string, _ int) (any, error) {
-	if err := os.Remove(strArg(args, 0)); err != nil {
+	if err := os.Remove(safePathOrRaise("УдалитьФайлы", strArg(args, 0))); err != nil {
 		RaiseUserError("УдалитьФайлы: " + err.Error())
 	}
 	return nil, nil
@@ -62,7 +64,7 @@ func deleteFileFn(args []any, _ string, _ int) (any, error) {
 
 // СоздатьКаталог(Путь) — создание каталога вместе с родительскими.
 func makeDirFn(args []any, _ string, _ int) (any, error) {
-	if err := os.MkdirAll(strArg(args, 0), 0o755); err != nil {
+	if err := os.MkdirAll(safePathOrRaise("СоздатьКаталог", strArg(args, 0)), 0o755); err != nil {
 		RaiseUserError("СоздатьКаталог: " + err.Error())
 	}
 	return nil, nil
@@ -70,7 +72,7 @@ func makeDirFn(args []any, _ string, _ int) (any, error) {
 
 // НайтиФайлы(Путь, Маска) → Массив путей подходящих файлов.
 func findFilesFn(args []any, _ string, _ int) (any, error) {
-	pattern := filepath.Join(strArg(args, 0), strArg(args, 1))
+	pattern := filepath.Join(safePathOrRaise("НайтиФайлы", strArg(args, 0)), strArg(args, 1))
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		RaiseUserError("НайтиФайлы: " + err.Error())

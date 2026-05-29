@@ -53,7 +53,7 @@ func (r *dslTextReader) CallMethod(name string, args []any) any {
 		if r.path == "" {
 			panic(userError{Msg: "ЧтениеТекста.Открыть: не указан путь к файлу"})
 		}
-		data, err := os.ReadFile(r.path)
+		data, err := os.ReadFile(safePathOrRaise("ЧтениеТекста.Открыть", r.path))
 		if err != nil {
 			panic(userError{Msg: "ЧтениеТекста: ошибка чтения файла " + r.path + ": " + err.Error()})
 		}
@@ -132,7 +132,7 @@ func (w *dslTextWriter) CallMethod(name string, args []any) any {
 		return nil
 	case "закрыть", "close":
 		if w.isOpen && w.path != "" {
-			err := os.WriteFile(w.path, []byte(w.buf.String()), 0644)
+			err := os.WriteFile(safePathOrRaise("ЗаписьТекста.Закрыть", w.path), []byte(w.buf.String()), 0644)
 			if err != nil {
 				panic(userError{Msg: "ЗаписьТекста: ошибка записи файла " + w.path + ": " + err.Error()})
 			}

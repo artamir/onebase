@@ -220,6 +220,10 @@ func runServer(cmd *cobra.Command, _ []string) error {
 		fmt.Fprintln(os.Stderr, "⚠️  ONEBASE: ДЕМО-РЕЖИМ. Данные сбрасываются по расписанию.")
 
 		uiCfg.DemoMode = true
+		// Безопасность: в демо-режиме обработки исполняет недоверенный
+		// пользователь — ограничиваем файловые builtins каталогом базы,
+		// чтобы DSL не мог читать/писать произвольные файлы на сервере.
+		interpreter.SetFileSandbox(proj.Dir)
 		msg := appCfg.Demo.Message
 		if msg == "" {
 			msg = "Данные сбрасываются каждую ночь в 02:00"
