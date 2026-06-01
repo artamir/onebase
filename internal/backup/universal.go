@@ -809,9 +809,13 @@ func insertRow(ctx context.Context, db *storage.DB, tableName string, raw map[st
 			}
 			decoded, err := base64.StdEncoding.DecodeString(b64)
 			if err != nil {
-				return fmt.Errorf("col %s: base64 decode: %w", col, err)
+				// Старые бэкапы могли хранить этот столбец как обычный TEXT
+				// (например, _audit.old_value/new_value до перехода на BLOB/JSONB):
+				// значение — валидная строка, но не base64. Сохраняем как есть.
+				goVal = b64
+			} else {
+				goVal = decoded
 			}
-			goVal = decoded
 		} else if jsonCols[col] {
 			// JSON/JSONB column: pass raw JSON string directly.
 			goVal = string(rawVal)

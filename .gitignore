@@ -27,6 +27,10 @@ improvement-roadmap.md
 .DS_Store
 Thumbs.db
 
+# Claude Code skills
+.claude/commands/
+.claude/scheduled_tasks.lock
+
 # IDE
 .idea/
 .vscode/

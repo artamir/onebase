@@ -172,6 +172,43 @@ func TestMarshalUnmarshalBytes(t *testing.T) {
 	}
 }
 
+// TestImportLegacyTextIntoBlobCol проверяет, что бэкап старого релиза, где
+// BLOB-столбец (например _audit.old_value) хранился как обычный TEXT, а не
+// base64, импортируется без ошибки «illegal base64 data»: значение
+// сохраняется как строка.
+func TestImportLegacyTextIntoBlobCol(t *testing.T) {
+	ctx := context.Background()
+	dst := newSQLite(t, "legacy-dst")
+	if _, err := dst.Exec(ctx,
+		`CREATE TABLE _audit (id TEXT PRIMARY KEY, old_value BLOB)`); err != nil {
+		t.Fatal(err)
+	}
+
+	// Имитируем JSONL старого бэкапа: заголовок помечает old_value как
+	// байтовый столбец, но реальное значение — обычная JSON-строка, а не
+	// base64 (старый SQLite-драйвер вернул TEXT-значение BLOB-столбца строкой).
+	tmpDir := t.TempDir()
+	jsonlPath := filepath.Join(tmpDir, "_audit.jsonl")
+	legacy := `{"_schema":1,"btypes":["old_value"]}` + "\n" +
+		`{"id":"a1","old_value":"{\"qty\":5}"}` + "\n"
+	if err := os.WriteFile(jsonlPath, []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := importTableJSONL(ctx, dst, "_audit", jsonlPath); err != nil {
+		t.Fatalf("importTableJSONL: %v", err)
+	}
+
+	var got string
+	if err := dst.QueryRow(ctx,
+		`SELECT old_value FROM _audit WHERE id='a1'`).Scan(&got); err != nil {
+		t.Fatalf("select: %v", err)
+	}
+	if got != `{"qty":5}` {
+		t.Errorf("old_value mismatch: got %q, want %q", got, `{"qty":5}`)
+	}
+}
+
 // TestMetaTxtUniversalFormat checks that ExportUniversal embeds format=universal
 // in META.txt.
 func TestMetaTxtUniversalFormat(t *testing.T) {
