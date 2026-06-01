@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/ivantit66/onebase/internal/i18n"
+	"github.com/ivantit66/onebase/internal/webassets"
 )
 
 //go:embed static
@@ -76,6 +77,10 @@ func (s *Server) ListenAndServe() error {
 
 	// Static assets (embedded)
 	r.Handle("/static/*", http.StripPrefix("/static/", staticHTTP))
+	// Monaco editor (shared vendored tree) — отдельный путь, чтобы не
+	// конфликтовать с catch-all /static/*. Конфигуратор и редактор форм
+	// грузят его офлайн вместо CDN.
+	r.Handle("/vendor/monaco/*", http.StripPrefix("/vendor/monaco/", webassets.MonacoHandler()))
 
 	// Launcher pages (no auth)
 	r.Get("/", s.h.index)
@@ -137,6 +142,9 @@ func (s *Server) ListenAndServe() error {
 		r.Post("/bases/{id}/configurator/check", s.h.configuratorCheck)
 		r.Post("/bases/{id}/configurator/check-all", s.h.configuratorCheckAll)
 		r.Post("/bases/{id}/configurator/migrate", s.h.configuratorMigrate)
+		r.Get("/bases/{id}/configurator/launch-state", s.h.configuratorLaunchState)
+		r.Post("/bases/{id}/configurator/restart", s.h.configuratorRestart)
+		r.Post("/bases/{id}/configurator/reorder", s.h.configuratorReorder)
 		r.Get("/bases/{id}/configurator/config/export-zip", s.h.configExportZip)
 		r.Post("/bases/{id}/configurator/config/import-zip", s.h.configImportZip)
 		r.Get("/bases/{id}/configurator/admin/users", s.h.cfgAdminUsers)
