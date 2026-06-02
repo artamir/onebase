@@ -100,6 +100,12 @@ func buildSchemaDB(proj *project.Project) (*storage.DB, func(), error) {
 		func() error { return db.MigrateInfoRegisters(ctx, proj.InfoRegisters) },
 		func() error { return db.MigrateConstants(ctx, proj.Constants) },
 		func() error { return db.MigrateAccountRegisters(ctx, proj.AccountRegisters) },
+		// План счетов (_accounts) — отдельная системная таблица, на которую
+		// JOIN-ятся бух-отчёты (оборотно-сальдовая). run/dev/deploy создают её
+		// через EnsureAccountsTable; повторяем здесь, иначе исполняемая
+		// валидация запросов падает с «no such table: _accounts».
+		func() error { return db.EnsureAccountsTable(ctx) },
+		func() error { return db.SyncAccounts(ctx, proj.ChartsOfAccounts) },
 	}
 	for _, step := range steps {
 		if err := step(); err != nil {
