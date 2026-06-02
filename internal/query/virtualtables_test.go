@@ -316,3 +316,156 @@ func TestCompile_MissingRegister_Error(t *testing.T) {
 		t.Errorf("error should mention register name, got: %v", err)
 	}
 }
+
+// --- Обороты с периодичностью ---
+
+func TestCompile_Turnovers_Periodicity_Month_PG(t *testing.T) {
+	src := `ВЫБРАТЬ Номенклатура, КоличествоПриход
+ИЗ РегистрНакопления.ТоварноеДвижение.Обороты(&Нач, &Кон, Месяц)`
+
+	r, err := query.Compile(src, query.CompileOpts{
+		Registers: []*metadata.Register{testReg()},
+		Params:    map[string]any{"Нач": time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), "Кон": time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := r.SQL
+	if !strings.Contains(sql, "date_trunc('month', period) AS Период") {
+		t.Errorf("expected date_trunc month in SELECT, got:\n%s", sql)
+	}
+	if !strings.Contains(sql, "GROUP BY date_trunc('month', period)") {
+		t.Errorf("expected date_trunc month in GROUP BY, got:\n%s", sql)
+	}
+	if strings.Contains(sql, "WHERE") && strings.Contains(sql, "Месяц") {
+		t.Errorf("Месяц should NOT appear as a filter condition, got:\n%s", sql)
+	}
+}
+
+func TestCompile_Turnovers_Periodicity_Month_SQLite(t *testing.T) {
+	src := `ВЫБРАТЬ Номенклатура, КоличествоПриход
+ИЗ РегистрНакопления.ТоварноеДвижение.Обороты(, , Месяц)`
+
+	r, err := query.Compile(src, query.CompileOpts{
+		Registers: []*metadata.Register{testReg()},
+		Dialect:   storage.SQLiteDialect{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := r.SQL
+	if !strings.Contains(sql, "strftime('%Y-%m', period) AS Период") {
+		t.Errorf("expected strftime month in SELECT, got:\n%s", sql)
+	}
+	if !strings.Contains(sql, "GROUP BY strftime('%Y-%m', period)") {
+		t.Errorf("expected strftime month in GROUP BY, got:\n%s", sql)
+	}
+}
+
+func TestCompile_Turnovers_Periodicity_Day(t *testing.T) {
+	src := `ВЫБРАТЬ Номенклатура
+ИЗ РегистрНакопления.ТоварноеДвижение.Обороты(, , День)`
+
+	r, err := query.Compile(src, query.CompileOpts{
+		Registers: []*metadata.Register{testReg()},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(r.SQL, "date_trunc('day', period) AS Период") {
+		t.Errorf("expected date_trunc day, got:\n%s", r.SQL)
+	}
+}
+
+func TestCompile_Turnovers_Periodicity_Year(t *testing.T) {
+	src := `ВЫБРАТЬ Номенклатура
+ИЗ РегистрНакопления.ТоварноеДвижение.Обороты(, , Год)`
+
+	r, err := query.Compile(src, query.CompileOpts{
+		Registers: []*metadata.Register{testReg()},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(r.SQL, "date_trunc('year', period) AS Период") {
+		t.Errorf("expected date_trunc year, got:\n%s", r.SQL)
+	}
+}
+
+func TestCompile_Turnovers_Periodicity_Record(t *testing.T) {
+	src := `ВЫБРАТЬ Номенклатура
+ИЗ РегистрНакопления.ТоварноеДвижение.Обороты(, , Запись)`
+
+	r, err := query.Compile(src, query.CompileOpts{
+		Registers: []*metadata.Register{testReg()},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(r.SQL, "period AS Период") {
+		t.Errorf("expected raw period (no truncation), got:\n%s", r.SQL)
+	}
+}
+
+func TestCompile_Turnovers_PeriodicityWithFilter(t *testing.T) {
+	src := `ВЫБРАТЬ Номенклатура, КоличествоПриход
+ИЗ РегистрНакопления.ТоварноеДвижение.Обороты(, , Месяц, Склад = &С)`
+
+	r, err := query.Compile(src, query.CompileOpts{
+		Registers: []*metadata.Register{testReg()},
+		Params:    map[string]any{"С": "Основной"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := r.SQL
+	// Periodicity should be present
+	if !strings.Contains(sql, "date_trunc('month', period) AS Период") {
+		t.Errorf("expected period column, got:\n%s", sql)
+	}
+	// Filter should be applied from args[3]
+	if !strings.Contains(sql, "склад = $") {
+		t.Errorf("expected filter 'склад = $N', got:\n%s", sql)
+	}
+}
+
+func TestCompile_Turnovers_FilterBackwardCompat(t *testing.T) {
+	src := `ВЫБРАТЬ Номенклатура, КоличествоПриход
+ИЗ РегистрНакопления.ТоварноеДвижение.Обороты(, , Склад = &С)`
+
+	r, err := query.Compile(src, query.CompileOpts{
+		Registers: []*metadata.Register{testReg()},
+		Params:    map[string]any{"С": "Основной"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := r.SQL
+	// No period column — backward compatible
+	if strings.Contains(sql, "AS Период") {
+		t.Errorf("should NOT have period column when no periodicity, got:\n%s", sql)
+	}
+	// Filter should still work from args[2]
+	if !strings.Contains(sql, "склад = $") {
+		t.Errorf("expected filter condition, got:\n%s", sql)
+	}
+}
+
+func TestCompile_Turnovers_Periodicity_NoDate(t *testing.T) {
+	src := `ВЫБРАТЬ Номенклатура, КоличествоПриход
+ИЗ РегистрНакопления.ТоварноеДвижение.Обороты(, , Месяц)`
+
+	r, err := query.Compile(src, query.CompileOpts{
+		Registers: []*metadata.Register{testReg()},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := r.SQL
+	if !strings.Contains(sql, "date_trunc('month', period) AS Период") {
+		t.Errorf("expected period column even without dates, got:\n%s", sql)
+	}
+	if strings.Contains(sql, "period >=") || strings.Contains(sql, "period <=") {
+		t.Errorf("no date args → no period WHERE conditions, got:\n%s", sql)
+	}
+}

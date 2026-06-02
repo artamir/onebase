@@ -211,6 +211,75 @@ var accumVTKinds = map[string]string{
 	"BALANCESANDTURNOVERS":  "balances_turnovers",
 }
 
+// periodicityLevels maps RU/EN periodicity keywords (for Обороты third argument)
+// to an internal granularity key used by periodTruncSQL.
+var periodicityLevels = map[string]string{
+	"ДЕНЬ":    "day",
+	"DAY":     "day",
+	"НЕДЕЛЯ":  "week",
+	"WEEK":    "week",
+	"МЕСЯЦ":   "month",
+	"MONTH":   "month",
+	"КВАРТАЛ": "quarter",
+	"QUARTER": "quarter",
+	"ГОД":     "year",
+	"YEAR":    "year",
+	"ЗАПИСЬ":  "record",
+	"RECORD":  "record",
+}
+
+// periodTruncSQL returns a SQL expression that truncates the period column
+// to the given granularity, using dialect-appropriate functions.
+func periodTruncSQL(level string, d storage.Dialect) string {
+	switch d.Name() {
+	case "sqlite":
+		switch level {
+		case "day":
+			return "date(period)"
+		case "week":
+			return "strftime('%Y-W%W', period)"
+		case "month":
+			return "strftime('%Y-%m', period)"
+		case "quarter":
+			return "(strftime('%Y', period) || '-Q' || CAST((CAST(strftime('%m', period) AS INTEGER)-1)/3+1 AS TEXT))"
+		case "year":
+			return "strftime('%Y', period)"
+		case "record":
+			return "period"
+		}
+	default: // postgres
+		switch level {
+		case "day":
+			return "date_trunc('day', period)"
+		case "week":
+			return "date_trunc('week', period)"
+		case "month":
+			return "date_trunc('month', period)"
+		case "quarter":
+			return "date_trunc('quarter', period)"
+		case "year":
+			return "date_trunc('year', period)"
+		case "record":
+			return "period"
+		}
+	}
+	return "period"
+}
+
+// detectPeriodicity checks whether tokens represent a single periodicity keyword.
+// Returns the internal level key and true if so; ("", false) otherwise — in which
+// case the caller should treat the tokens as a filter condition (backward compat).
+func detectPeriodicity(tokens []tok) (string, bool) {
+	if len(tokens) != 1 {
+		return "", false
+	}
+	if tokens[0].kind != tIdent {
+		return "", false
+	}
+	level, ok := periodicityLevels[strings.ToUpper(tokens[0].val)]
+	return level, ok
+}
+
 var infoVTKinds = map[string]string{
 	"СРЕЗПОСЛЕДНИХ": "last_slice",
 	"LASTSLICE":     "last_slice",
@@ -772,10 +841,26 @@ func (tr *translator) genBalances(reg *metadata.Register, args [][]tok) (string,
 func (tr *translator) genTurnovers(reg *metadata.Register, args [][]tok) (string, string, error) {
 	tableName := metadata.RegisterTableName(reg.Name)
 	alias := "обороты_" + strings.ToLower(reg.Name)
+	d := dialectOrDefault(tr.opts.Dialect)
 	dims := dimCols(reg.Dimensions)
 	selDims := dimSelCols(reg.Dimensions)
 
+	// Detect periodicity in args[2]: if it is a single keyword like Месяц/День/…,
+	// treat it as periodicity and shift the filter to args[3] (if present).
+	var periodLevel string
+	filterArgIdx := 2
+	if len(args) > 2 && len(args[2]) > 0 {
+		if pl, ok := detectPeriodicity(args[2]); ok {
+			periodLevel = pl
+			filterArgIdx = -1
+		}
+	}
+
 	var cols []string
+	// Period column (truncated) — first, before dimensions, matching 1C convention.
+	if periodLevel != "" {
+		cols = append(cols, periodTruncSQL(periodLevel, d)+" AS Период")
+	}
 	cols = append(cols, selDims...)
 	for _, r := range reg.Resources {
 		col := strings.ToLower(r.Name)
@@ -804,8 +889,11 @@ func (tr *translator) genTurnovers(reg *metadata.Register, args [][]tok) (string
 			conds = append(conds, "period <= "+s)
 		}
 	}
-	if len(args) > 2 && len(args[2]) > 0 {
-		if s := tr.translateFilterTokens(args[2]); s != "" {
+	// Filter: from args[filterArgIdx] when periodicity is absent, or from args[3]
+	// when periodicity was detected in args[2].
+	filterTokens := filterArg(filterArgIdx, periodLevel, args)
+	if len(filterTokens) > 0 {
+		if s := tr.translateFilterTokens(filterTokens); s != "" {
 			conds = append(conds, s)
 		}
 	}
@@ -813,12 +901,33 @@ func (tr *translator) genTurnovers(reg *metadata.Register, args [][]tok) (string
 		sb.WriteString(" WHERE ")
 		sb.WriteString(strings.Join(conds, " AND "))
 	}
-	if len(dims) > 0 {
+	if len(dims) > 0 || periodLevel != "" {
+		var groupBy []string
+		if periodLevel != "" {
+			groupBy = append(groupBy, periodTruncSQL(periodLevel, d))
+		}
+		groupBy = append(groupBy, dims...)
 		sb.WriteString(" GROUP BY ")
-		sb.WriteString(strings.Join(dims, ", "))
+		sb.WriteString(strings.Join(groupBy, ", "))
 	}
 
 	return sb.String(), alias, nil
+}
+
+// filterArg returns the filter tokens from args, accounting for periodicity shift.
+// When periodicity was detected in args[2], the filter lives in args[3].
+func filterArg(idx int, periodLevel string, args [][]tok) []tok {
+	if periodLevel != "" {
+		// periodicity consumed args[2]; filter is in args[3] if present
+		if len(args) > 3 && len(args[3]) > 0 {
+			return args[3]
+		}
+		return nil
+	}
+	if idx >= 0 && len(args) > idx && len(args[idx]) > 0 {
+		return args[idx]
+	}
+	return nil
 }
 
 func (tr *translator) genBalancesAndTurnovers(reg *metadata.Register, args [][]tok) (string, string, error) {
