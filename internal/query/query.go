@@ -355,6 +355,7 @@ type translator struct {
 	refDims     []refDimInfo                  // reference dimensions with auto-JOIN info
 	mainTable   string                        // main FROM table/alias (set when source is emitted)
 	section     querySection                  // current clause context
+	aliases     map[string]struct{}           // имена алиасов вывода (КАК ...) — их не квалифицируем и не CAST'им
 }
 
 func (tr *translator) peek(offset int) tok {
@@ -1031,13 +1032,15 @@ func preScanAllRefDims(tokens []tok, opts CompileOpts) []refDimInfo {
 		if isAccumRegType(upper) {
 			for _, reg := range opts.Registers {
 				if strings.EqualFold(reg.Name, regName) {
-					return buildRefDimInfos(append(reg.Dimensions, reg.Attributes...))
+					// С entities, чтобы refIsDoc выставился: измерение-ссылка на
+					// документ должно отображаться через .номер, а не .наименование.
+					return buildRefDimInfosWithEntities(append(reg.Dimensions, reg.Attributes...), opts.Entities)
 				}
 			}
 		} else if isInfoRegType(upper) {
 			for _, ir := range opts.InfoRegs {
 				if strings.EqualFold(ir.Name, regName) {
-					return buildRefDimInfos(ir.Dimensions)
+					return buildRefDimInfosWithEntities(ir.Dimensions, opts.Entities)
 				}
 			}
 		}
@@ -1288,6 +1291,9 @@ func buildColTypes(tokens []tok, opts CompileOpts) map[string]metadata.FieldType
 // в позициях сравнения/сортировки (WHERE/HAVING/ORDER BY). В ВЫБРАТЬ не кастим —
 // вывод остаётся точным TEXT.
 func (tr *translator) needsNumberCast(lower string) bool {
+	if _, isAlias := tr.aliases[lower]; isAlias {
+		return false // ссылка на алиас вывода (КАК ...), а не сырая колонка
+	}
 	if tr.colTypes[lower] != metadata.FieldTypeNumber {
 		return false
 	}
@@ -1305,6 +1311,9 @@ func (tr *translator) needsNumberCast(lower string) bool {
 // когда активны авто-JOIN'ы (п.48) — иначе одноимённая колонка присоединённого
 // каталога вызывает ambiguous column. Неизвестные идентификаторы не трогаем.
 func (tr *translator) qualifyOwn(col, lower string) string {
+	if _, isAlias := tr.aliases[lower]; isAlias {
+		return col // алиас вывода, не колонка таблицы
+	}
 	if len(tr.refDims) > 0 && tr.mainTable != "" {
 		if _, own := tr.colTypes[lower]; own {
 			return tr.mainTable + "." + col
@@ -1382,6 +1391,7 @@ func translate(tokens []tok, opts CompileOpts) (Result, error) {
 		colTypes:    buildColTypes(tokens, opts),
 		mainTable:   preScanMainTable(tokens),
 		refDims:     preScanRefDims(tokens, opts),
+		aliases:     map[string]struct{}{},
 		section:     sectionOther,
 	}
 	for {
@@ -1484,9 +1494,12 @@ func translate(tokens []tok, opts CompileOpts) (Result, error) {
 				}
 			}
 			if tr.section == sectionFrom {
+				// ON ссылается на источник через tr.mainTable: это имя таблицы
+				// либо её алиас (КАК р). Использование сырого tableName при
+				// наличии алиаса давало `no such column: таблица.col`.
 				for _, rd := range tr.refDims {
 					tr.emit(fmt.Sprintf("LEFT JOIN %s %s ON %s.id = %s.%s",
-						rd.joinTable, rd.joinAlias, rd.joinAlias, tableName, rd.idCol))
+						rd.joinTable, rd.joinAlias, rd.joinAlias, tr.mainTable, rd.idCol))
 				}
 			}
 			continue
@@ -1583,7 +1596,18 @@ func translate(tokens []tok, opts CompileOpts) (Result, error) {
 			} else {
 				lower := strings.ToLower(t.val)
 				nextIsDot := tr.peek(0).kind == tDot
-				if tr.section == sectionFrom && !prevDot {
+				prevAlias := false
+				if tr.pos >= 2 {
+					if pv := strings.ToUpper(tr.tokens[tr.pos-2].val); pv == "КАК" || pv == "AS" {
+						prevAlias = !prevDot
+					}
+				}
+				if prevAlias {
+					// Имя алиаса вывода (КАК <name>) — не колонка: эмитим как есть
+					// и запоминаем, чтобы ссылки на него не квалифицировать/CAST'ить.
+					tr.aliases[lower] = struct{}{}
+					tr.emit(lower)
+				} else if tr.section == sectionFrom && !prevDot {
 					tr.emit(lower)
 				} else if rd := tr.findRefDim(lower); rd != nil && !prevDot {
 					if nextIsDot {
@@ -1595,6 +1619,7 @@ func translate(tokens []tok, opts CompileOpts) (Result, error) {
 							if p := strings.ToUpper(tr.peek(0).val); p != "КАК" && p != "AS" {
 								tr.emit("AS")
 								tr.emit(rd.fieldName)
+								tr.aliases[strings.ToLower(rd.fieldName)] = struct{}{}
 							}
 						case sectionGroupBy, sectionOrderBy:
 							tr.emit(rd.displayCol())

@@ -21,6 +21,7 @@ import (
 	"github.com/ivantit66/onebase/internal/processor"
 	"github.com/ivantit66/onebase/internal/project"
 	"github.com/ivantit66/onebase/internal/query"
+	"github.com/ivantit66/onebase/internal/storage"
 	"gopkg.in/yaml.v3"
 )
 
@@ -209,6 +210,53 @@ func CheckQueries(proj *project.Project) []Issue {
 				Message: err.Error(),
 			})
 		}
+	}
+	return issues
+}
+
+// CheckQueriesExecutable компилирует каждый запрос виджета/отчёта под SQLite и
+// валидирует его через validate (PREPARE против in-memory схемы из метаданных).
+// Это ловит класс «компилируется, но не исполняется» — no such table (VT без
+// скобок), ambiguous column (авто-JOIN), неизвестные ключевые слова — которые
+// CheckQueries (только компиляция) пропускает. validate(sql) возвращает ошибку
+// prepare или nil. Компиляционные ошибки здесь не дублируются (их репортит
+// CheckQueries) — запрос с ошибкой компиляции просто пропускается.
+func CheckQueriesExecutable(proj *project.Project, validate func(sqlText string) error) []Issue {
+	var issues []Issue
+	opts := query.CompileOpts{
+		Registers:   proj.Registers,
+		InfoRegs:    proj.InfoRegisters,
+		AccountRegs: proj.AccountRegisters,
+		Entities:    proj.Entities,
+		Dialect:     storage.SQLiteDialect{},
+	}
+	check := func(qtext, file, name, kind string, params map[string]any) {
+		if qtext == "" {
+			return
+		}
+		o := opts
+		o.Params = params
+		r, err := query.Compile(qtext, o)
+		if err != nil {
+			return // ошибки компиляции уже репортит CheckQueries
+		}
+		if verr := validate(r.SQL); verr != nil {
+			issues = append(issues, Issue{File: file, Object: name, Kind: kind, Message: verr.Error()})
+		}
+	}
+	for _, w := range proj.Widgets {
+		params := map[string]any{}
+		for k := range w.Params {
+			params[k] = nil
+		}
+		check(w.Query, "widgets/"+w.Name+".yaml", w.Name, "Виджет (исполнение запроса)", params)
+	}
+	for _, rep := range proj.Reports {
+		params := map[string]any{}
+		for _, p := range rep.Params {
+			params[p.Name] = nil
+		}
+		check(rep.Query, "reports/"+rep.Name+".yaml", rep.Name, "Отчёт (исполнение запроса)", params)
 	}
 	return issues
 }

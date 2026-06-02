@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 
 	"github.com/ivantit66/onebase/internal/configcheck"
 	"github.com/ivantit66/onebase/internal/project"
+	"github.com/ivantit66/onebase/internal/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -43,6 +45,15 @@ func runCheck(cmd *cobra.Command, _ []string) error {
 	// project.Load даёт кросс-ссылочные ошибки и Project для компиляции запросов.
 	if proj, lerr := project.Load(bc.Dir); lerr == nil {
 		issues = append(issues, configcheck.CheckQueries(proj)...)
+		// п.45: исполняемая валидация запросов против in-memory схемы из
+		// метаданных (best-effort — при сбое настройки схемы просто пропускаем,
+		// чтобы не ломать обычную проверку компиляции).
+		if db, closeDB, derr := buildSchemaDB(proj); derr == nil {
+			issues = append(issues, configcheck.CheckQueriesExecutable(proj, func(sql string) error {
+				return db.ValidateQuery(context.Background(), sql)
+			})...)
+			closeDB()
+		}
 		proj.Close()
 	} else if !configcheck.AlreadyReported(issues, lerr.Error()) {
 		issues = append(issues, configcheck.Issue{Message: "Project.Load: " + lerr.Error()})
@@ -62,6 +73,41 @@ func runCheck(cmd *cobra.Command, _ []string) error {
 		os.Exit(1)
 	}
 	return nil
+}
+
+// buildSchemaDB поднимает временную SQLite-базу со схемой из метаданных проекта
+// (entity/register/inforeg/constant/accountreg) — для исполняемой валидации
+// запросов (п.45). Возвращает базу и closer (закрыть + удалить файл). Файл, а не
+// ":memory:", т.к. ConnectSQLite ориентирован на путь; один коннект в пуле
+// (SetMaxOpenConns(1)) гарантирует, что миграции и PREPARE видят одну схему.
+func buildSchemaDB(proj *project.Project) (*storage.DB, func(), error) {
+	ctx := context.Background()
+	f, err := os.CreateTemp("", "onebase_check_*.db")
+	if err != nil {
+		return nil, nil, err
+	}
+	path := f.Name()
+	f.Close()
+	db, err := storage.ConnectSQLite(ctx, path)
+	if err != nil {
+		os.Remove(path)
+		return nil, nil, err
+	}
+	closer := func() { db.Close(); os.Remove(path) }
+	steps := []func() error{
+		func() error { return db.Migrate(ctx, proj.Entities) },
+		func() error { return db.MigrateRegisters(ctx, proj.Registers) },
+		func() error { return db.MigrateInfoRegisters(ctx, proj.InfoRegisters) },
+		func() error { return db.MigrateConstants(ctx, proj.Constants) },
+		func() error { return db.MigrateAccountRegisters(ctx, proj.AccountRegisters) },
+	}
+	for _, step := range steps {
+		if err := step(); err != nil {
+			closer()
+			return nil, nil, err
+		}
+	}
+	return db, closer, nil
 }
 
 func printIssuesText(res configcheck.Result) {

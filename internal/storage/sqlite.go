@@ -114,6 +114,22 @@ func ConnectSQLite(ctx context.Context, dbPath string) (*DB, error) {
 	}, nil
 }
 
+// ValidateQuery компилирует (PREPARE) SQL без исполнения — для статической
+// валидации запросов против схемы (onebase check, п.45). Ловит то, что пропускает
+// компиляция DSL→SQL: no such table (VT без скобок), ambiguous column (авто-JOIN),
+// неизвестные ключевые слова (near "…": syntax error). Только SQLite; на других
+// бэкендах возвращает nil (валидация не выполняется).
+func (db *DB) ValidateQuery(ctx context.Context, sqlText string) error {
+	if db.sqlDB == nil {
+		return nil
+	}
+	stmt, err := db.sqlDB.PrepareContext(ctx, sqlText)
+	if err != nil {
+		return err
+	}
+	return stmt.Close()
+}
+
 func defaultFilesDirForSQLite(dbPath string) string {
 	base := filepath.Base(dbPath)
 	// strip .db / .sqlite / .sqlite3 if present
