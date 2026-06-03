@@ -1,0 +1,15 @@
+name: ЗакрытиеМесяца
+numerator:
+  prefix: "ЗМ-"
+  length: 5
+  period: month
+posting: true
+fields:
+  - name: Дата
+    type: date
+  - name: Организация
+    type: reference:Организация
+  - name: ПериодЗакрытия
+    type: string
+  - name: Комментарий
+    type: string

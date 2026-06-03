@@ -1,0 +1,5 @@
+name: Прочее
+title: Прочие операции
+order: 30
+contents:
+  documents: [АвансовыйОтчёт]

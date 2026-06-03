@@ -1,0 +1,21 @@
+name: ПриходныйКассовыйОрдер
+numerator:
+  prefix: "ПКО-"
+  length: 5
+  period: year
+posting: true
+fields:
+  - name: Дата
+    type: date
+  - name: Организация
+    type: reference:Организация
+  - name: Контрагент
+    type: reference:Контрагент
+  - name: Сумма
+    type: number
+  - name: ВидПлатежа
+    type: enum:ВидПлатежа
+  - name: Основание
+    type: string
+  - name: Комментарий
+    type: string

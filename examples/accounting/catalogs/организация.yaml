@@ -1,0 +1,16 @@
+name: Организация
+fields:
+  - name: Наименование
+    type: string
+  - name: ИНН
+    type: string
+  - name: КПП
+    type: string
+  - name: РасчётныйСчёт
+    type: string
+  - name: Банк
+    type: string
+  - name: БИК
+    type: string
+  - name: Адрес
+    type: string

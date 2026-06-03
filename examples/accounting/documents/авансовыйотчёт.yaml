@@ -1,0 +1,24 @@
+name: АвансовыйОтчёт
+numerator:
+  prefix: "АО-"
+  length: 5
+  period: year
+posting: true
+fields:
+  - name: Дата
+    type: date
+  - name: Организация
+    type: reference:Организация
+  - name: ПодотчётноеЛицо
+    type: string
+  - name: Комментарий
+    type: string
+tableparts:
+  - name: Расходы
+    fields:
+      - name: НаименованиеРасхода
+        type: string
+      - name: Сумма
+        type: number
+      - name: СчётУчёта
+        type: string

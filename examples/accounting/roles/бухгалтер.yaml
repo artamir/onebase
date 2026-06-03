@@ -1,0 +1,26 @@
+name: Бухгалтер
+description: Полный доступ к бухгалтерскому учёту
+permissions:
+  catalogs:
+    Контрагент: [read, write]
+    Номенклатура: [read, write]
+    Организация: [read, write]
+    Склад: [read, write]
+  documents:
+    ПоступлениеТоваров: [read, write, post, unpost]
+    РеализацияТоваров: [read, write, post, unpost]
+    ПриходныйКассовыйОрдер: [read, write, post, unpost]
+    РасходныйКассовыйОрдер: [read, write, post, unpost]
+    ПлатёжноеПоручение: [read, write, post, unpost]
+    ПоступлениеНаРасчётныйСчёт: [read, write, post, unpost]
+    АвансовыйОтчёт: [read, write, post, unpost]
+    ЗакрытиеМесяца: [read, write, post, unpost]
+  registers:
+    БухУчёт: [read]
+  reports:
+    ОборотноСальдовая: [run]
+    ОборотыЗаПериод: [run]
+    ГлавнаяКнига: [run]
+    КассоваяКнига: [run]
+    ЖурналОпераций: [run]
+    КарточкаСчёта: [run]

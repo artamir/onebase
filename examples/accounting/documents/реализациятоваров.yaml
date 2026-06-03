@@ -3,11 +3,36 @@ numerator:
   prefix: "РЕА-"
   length: 5
   period: year
+posting: true
 fields:
   - name: Дата
     type: date
   - name: Покупатель
     type: reference:Контрагент
+  - name: Организация
+    type: reference:Организация
+  - name: Склад
+    type: reference:Склад
   - name: СуммаДокумента
     type: number
-posting: true
+  - name: НДС
+    type: number
+  - name: Комментарий
+    type: string
+tableparts:
+  - name: Товары
+    fields:
+      - name: Номенклатура
+        type: reference:Номенклатура
+      - name: Количество
+        type: number
+      - name: Цена
+        type: number
+      - name: Сумма
+        type: number
+      - name: Себестоимость
+        type: number
+      - name: НДС
+        type: number
+      - name: СтавкаНДС
+        type: enum:СтавкаНДС

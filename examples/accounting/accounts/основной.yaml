@@ -1,27 +1,76 @@
 name: Основной
 title: Основной план счетов
 accounts:
+  # Внеоборотные активы
   - code: "01"
     name: Основные средства
     kind: active
+  - code: "02"
+    name: Амортизация основных средств
+    kind: passive
+
+  # Производственные запасы
   - code: "10"
     name: Материалы
     kind: active
+  - code: "19"
+    name: НДС по приобретённым ценностям
+    kind: active
+  - code: "19.3"
+    name: НДС по приобретённым МПЗ
+    kind: active
+    parent: "19"
   - code: "41"
     name: Товары
     kind: active
+
+  # Денежные средства
   - code: "50"
     name: Касса
     kind: active
   - code: "51"
     name: Расчётный счёт
     kind: active
+  - code: "57"
+    name: Переводы в пути
+    kind: active
+
+  # Расчёты
   - code: "60"
     name: Расчёты с поставщиками
     kind: active_passive
   - code: "62"
     name: Расчёты с покупателями
     kind: active_passive
+  - code: "68"
+    name: Налоги и сборы
+    kind: active_passive
+  - code: "68.2"
+    name: НДС
+    kind: active_passive
+    parent: "68"
+  - code: "70"
+    name: Расчёты с персоналом по оплате труда
+    kind: active_passive
+  - code: "71"
+    name: Расчёты с подотчётными лицами
+    kind: active_passive
+  - code: "73"
+    name: Расчёты с персоналом по прочим операциям
+    kind: active_passive
+  - code: "75"
+    name: Расчёты с учредителями
+    kind: active_passive
+
+  # Капитал
+  - code: "80"
+    name: Уставный капитал
+    kind: passive
+  - code: "84"
+    name: Нераспределённая прибыль (непокрытый убыток)
+    kind: active_passive
+
+  # Финансовые результаты
   - code: "90"
     name: Продажи
     kind: active_passive
@@ -33,3 +82,25 @@ accounts:
     name: Себестоимость продаж
     kind: active
     parent: "90"
+  - code: "90.3"
+    name: НДС
+    kind: active
+    parent: "90"
+  - code: "90.9"
+    name: Прибыль/убыток от продаж
+    kind: active_passive
+    parent: "90"
+  - code: "91"
+    name: Прочие доходы и расходы
+    kind: active_passive
+  - code: "91.1"
+    name: Прочие доходы
+    kind: passive
+    parent: "91"
+  - code: "91.2"
+    name: Прочие расходы
+    kind: active
+    parent: "91"
+  - code: "99"
+    name: Прибыли и убытки
+    kind: active_passive

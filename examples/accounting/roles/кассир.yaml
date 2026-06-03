@@ -1,0 +1,15 @@
+name: Кассир
+description: Работа с кассовыми и банковскими документами
+permissions:
+  catalogs:
+    Контрагент: [read]
+  documents:
+    ПриходныйКассовыйОрдер: [read, write, post, unpost]
+    РасходныйКассовыйОрдер: [read, write, post, unpost]
+    ПлатёжноеПоручение: [read, write, post, unpost]
+    ПоступлениеНаРасчётныйСчёт: [read, write, post, unpost]
+  registers:
+    БухУчёт: [read]
+  reports:
+    КассоваяКнига: [run]
+    КарточкаСчёта: [run]

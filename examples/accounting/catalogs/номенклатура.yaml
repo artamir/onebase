@@ -1,0 +1,12 @@
+name: Номенклатура
+fields:
+  - name: Наименование
+    type: string
+  - name: Артикул
+    type: string
+  - name: ВидНоменклатуры
+    type: enum:ВидНоменклатуры
+  - name: СтавкаНДС
+    type: enum:СтавкаНДС
+  - name: ЕдиницаИзмерения
+    type: enum:ЕдиницаИзмерения
