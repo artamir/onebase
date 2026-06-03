@@ -607,6 +607,12 @@ func (i *Interpreter) evalCall(c *ast.CallExpr, e *env) any {
 		}
 		fn, ok := builtins[strings.ToLower(fnName)]
 		if !ok {
+			// Factory-вызов без Новый: ЧтениеТекста(Путь), Запрос(Текст), …
+			if factory, ok2 := e.get("__factory_" + fnName); ok2 {
+				if fn2, ok3 := factory.(func([]any) any); ok3 {
+					return fn2(args)
+				}
+			}
 			panic(dslStop{err: fmt.Errorf("%s:%d: unknown function %q", callee.Tok.File, callee.Tok.Line, fnName)})
 		}
 		result, err := fn(args, callee.Tok.File, callee.Tok.Line)
