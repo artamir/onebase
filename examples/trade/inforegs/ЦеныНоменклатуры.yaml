@@ -1,0 +1,9 @@
+name: ЦеныНоменклатуры
+dimensions:
+  - name: Номенклатура
+    type: reference:Номенклатура
+  - name: ТипЦены
+    type: string
+resources:
+  - name: Цена
+    type: number

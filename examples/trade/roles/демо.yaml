@@ -8,7 +8,7 @@ permissions:
     Организация: [read, write]
     ЕдиницаИзмерения: [read, write]
     СтавкаНДС: [read, write]
-    МестаХранения: [read, write]
+    МестоХранения: [read, write]
   documents:
     ПоступлениеТоваров: [read, write, post, unpost]
     РеализацияТоваров: [read, write, post, unpost]
