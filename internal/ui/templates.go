@@ -463,6 +463,7 @@ const tplNav = `
       <a href="/ui/admin/cleanup">{{t $.Lang "Очистка регистров"}}</a>
       {{if .IsAdmin}}<a href="/ui/admin/extforms">{{t $.Lang "Внешние печатные формы"}}</a>{{end}}
       {{if .IsAdmin}}<a href="/ui/admin/extreports">{{t $.Lang "Внешние отчёты"}}</a>{{end}}
+      {{if .IsAdmin}}<a href="/ui/admin/extprocessors">{{t $.Lang "Внешние обработки"}}</a>{{end}}
       {{if .IsAdmin}}<a href="/ui/all-functions">{{t $.Lang "Все функции"}}</a>{{end}}
       {{if .IsAdmin}}<div class="sys-sub"><a href="#" onclick="event.preventDefault()">{{t $.Lang "Инструменты разработчика"}} &#9654;</a>
       <div class="sys-submenu">

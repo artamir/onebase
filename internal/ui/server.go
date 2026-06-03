@@ -56,6 +56,7 @@ type Server struct {
 	entitySvc        *entityservice.Service // упсёрт + ТЧ + движения + проведение, разделяется с api
 	extforms         *extform.Repo          // внешний контур: печатные формы из БД
 	extreports       *extform.ReportRepo    // внешний контур: отчёты из БД
+	extprocessors    *extform.ProcessorRepo // внешний контур: обработки из БД
 }
 
 func New(reg *runtime.Registry, store *storage.DB, interp *interpreter.Interpreter, authRepo *auth.Repo, cfg Config, sched *scheduler.Scheduler) *Server {
@@ -63,7 +64,7 @@ func New(reg *runtime.Registry, store *storage.DB, interp *interpreter.Interpret
 	if maxBytes <= 0 {
 		maxBytes = 50 * 1024 * 1024
 	}
-	s := &Server{reg: reg, store: store, interp: interp, authRepo: authRepo, cfg: cfg, sched: sched, mailer: cfg.Mailer, maxFileSizeBytes: maxBytes, globalDebug: debugger.NewGlobalDebugController(), messages: NewMessageStore(), widgetCache: widget.NewCache(60 * time.Second), lockMgr: runtime.NewLockManager(), extforms: extform.New(store), extreports: extform.NewReports(store)}
+	s := &Server{reg: reg, store: store, interp: interp, authRepo: authRepo, cfg: cfg, sched: sched, mailer: cfg.Mailer, maxFileSizeBytes: maxBytes, globalDebug: debugger.NewGlobalDebugController(), messages: NewMessageStore(), widgetCache: widget.NewCache(60 * time.Second), lockMgr: runtime.NewLockManager(), extforms: extform.New(store), extreports: extform.NewReports(store), extprocessors: extform.NewProcessors(store)}
 	s.entitySvc = &entityservice.Service{
 		Store:  store,
 		Reg:    reg,
@@ -206,6 +207,14 @@ func (s *Server) Mount(r chi.Router) {
 	r.Post("/ui/admin/extreports/{id}/toggle", s.adminExtReportToggle)
 	r.Post("/ui/admin/extreports/{id}/delete", s.adminExtReportDelete)
 	r.Get("/ui/admin/extreports/{id}/export", s.adminExtReportExport)
+
+	// Admin: external processors (исполняют DSL — загрузка только админ)
+	r.Get("/ui/admin/extprocessors", s.adminExtProcessors)
+	r.Post("/ui/admin/extprocessors", s.adminExtProcessorUpload)
+	r.Post("/ui/admin/extprocessors/{id}/toggle", s.adminExtProcessorToggle)
+	r.Post("/ui/admin/extprocessors/{id}/trust", s.adminExtProcessorTrust)
+	r.Post("/ui/admin/extprocessors/{id}/delete", s.adminExtProcessorDelete)
+	r.Get("/ui/admin/extprocessors/{id}/export", s.adminExtProcessorExport)
 
 	// Admin: scheduled jobs
 	r.Get("/ui/admin/scheduled", s.scheduledList)
@@ -547,9 +556,17 @@ func (s *Server) buildFlatNav(r *http.Request) []navGroup {
 
 	procs := s.reg.Processors()
 	sort.Slice(procs, func(i, j int) bool { return procs[i].Name < procs[j].Name })
+	isAdmin := s.isAdmin(r)
 	var procItems []navItem
 	for _, proc := range procs {
+		// Внешняя недоверенная обработка видна только администратору.
+		if proc.External && !proc.Trusted && !isAdmin {
+			continue
+		}
 		label := proc.DisplayName(lang)
+		if proc.External {
+			label += " (" + s.tr(lang, "внешняя") + ")"
+		}
 		procItems = append(procItems, navItem{
 			Label: label,
 			URL:   "/ui/processor/" + strings.ToLower(proc.Name),

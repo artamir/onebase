@@ -167,6 +167,14 @@ func runDev(cmd *cobra.Command, _ []string) error {
 		} else {
 			reg.SetExternalReports(extReps)
 		}
+		extProcRepo := extform.NewProcessors(db)
+		if err := extProcRepo.EnsureSchema(ctx); err != nil {
+			fmt.Fprintln(os.Stderr, "[dev] extform processors schema error:", err)
+		} else if extProcs, extPrograms, err := extProcRepo.LoadEnabled(ctx); err != nil {
+			fmt.Fprintln(os.Stderr, "[dev] external processors:", err)
+		} else {
+			reg.SetExternalProcessors(extProcs, extPrograms)
+		}
 		if loadErr := sched.Reload(proj.ScheduledJobs); loadErr != nil {
 			fmt.Fprintln(os.Stderr, "[dev] scheduler reload error:", loadErr)
 		}

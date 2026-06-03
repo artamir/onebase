@@ -3,8 +3,12 @@ package runtime
 import (
 	"testing"
 
+	"github.com/ivantit66/onebase/internal/dsl/ast"
+	"github.com/ivantit66/onebase/internal/dsl/lexer"
+	"github.com/ivantit66/onebase/internal/dsl/parser"
 	"github.com/ivantit66/onebase/internal/metadata"
 	"github.com/ivantit66/onebase/internal/printform"
+	"github.com/ivantit66/onebase/internal/processor"
 	"github.com/ivantit66/onebase/internal/report"
 )
 
@@ -154,6 +158,49 @@ func TestSetExternalReports_MergeAndPriority(t *testing.T) {
 	// Reports(): конфиг + только не конфликтующие внешние = 2.
 	if got := len(r.Reports()); got != 2 {
 		t.Errorf("ожидалось 2 отчёта (конфиг + 1 внешний без коллизии), got %d", got)
+	}
+}
+
+// Внешняя обработка регистрируется вместе с кодом; GetProcessor/GetProcedure
+// её находят, External выставляется, при коллизии имени приоритет у конфигурации.
+func TestSetExternalProcessors(t *testing.T) {
+	r := NewRegistry()
+	r.mu.Lock()
+	r.processors["КонфигОбр"] = &processor.Processor{Name: "КонфигОбр"}
+	r.mu.Unlock()
+
+	parse := func(src string) *ast.Program {
+		prog, err := parser.New(lexer.New(src, "x.proc.os")).ParseProgram()
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		return prog
+	}
+	r.SetExternalProcessors(
+		[]*processor.Processor{{Name: "ВнешняяОбр", Trusted: true}},
+		map[string]*ast.Program{
+			"ВнешняяОбр": parse("Процедура Выполнить()\nКонецПроцедуры\n"),
+		},
+	)
+
+	p := r.GetProcessor("ВнешняяОбр")
+	if p == nil || !p.External || !p.Trusted {
+		t.Errorf("ожидалась внешняя доверенная обработка, got %+v", p)
+	}
+	if d := r.GetProcedure("ВнешняяОбр", "Выполнить"); d == nil {
+		t.Error("код внешней обработки не зарегистрирован (GetProcedure nil)")
+	}
+	if got := len(r.Processors()); got != 2 {
+		t.Errorf("ожидалось 2 обработки (конфиг + внешняя), got %d", got)
+	}
+
+	// Коллизия имени: внешняя «КонфигОбр» не перехватывает конфигурацию.
+	r.SetExternalProcessors(
+		[]*processor.Processor{{Name: "КонфигОбр"}},
+		map[string]*ast.Program{"КонфигОбр": parse("Процедура Выполнить()\nКонецПроцедуры\n")},
+	)
+	if p := r.GetProcessor("КонфигОбр"); p == nil || p.External {
+		t.Errorf("при коллизии должна отдаваться обработка конфигурации, got %+v", p)
 	}
 }
 

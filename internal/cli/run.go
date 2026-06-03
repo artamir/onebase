@@ -193,6 +193,15 @@ func runServer(cmd *cobra.Command, _ []string) error {
 	} else {
 		reg.SetExternalReports(extReps)
 	}
+	extProcRepo := extform.NewProcessors(db)
+	if err := extProcRepo.EnsureSchema(ctx); err != nil {
+		return fmt.Errorf("extform processors schema: %w", err)
+	}
+	if extProcs, extPrograms, err := extProcRepo.LoadEnabled(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, "external processors:", err)
+	} else {
+		reg.SetExternalProcessors(extProcs, extPrograms)
+	}
 
 	appCfg, _ := project.LoadConfig(proj.Dir)
 	uiCfg := ui.Config{

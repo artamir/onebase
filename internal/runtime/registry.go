@@ -28,10 +28,12 @@ type Registry struct {
 	extPrintForms   map[string][]*printform.PrintForm   // lowercase entity name → внешние формы (из БД)
 	dslPrintForms   map[string][]*printform.DSLPrintForm // lowercase entity name → DSL forms
 	procs           map[string]map[string]*ast.ProcedureDecl
+	extProcs        map[string]map[string]*ast.ProcedureDecl // код внешних обработок (из БД), ключ — имя обработки
 	managerProcs    map[string]map[string]*ast.ProcedureDecl // lowercase entity → procs модуля менеджера
 	moduleProcs     map[string]*ast.ProcedureDecl // flat: proc name → decl
 	moduleByName    map[string]map[string]*ast.ProcedureDecl // lowercase module → procs in it
 	processors      map[string]*processor.Processor
+	extProcessors   map[string]*processor.Processor // внешние обработки (из БД), ключ — Name
 	subsystems      []*metadata.Subsystem // sorted by Order
 	journals        map[string]*metadata.Journal
 	accountRegs     map[string]*metadata.AccountRegister
@@ -64,6 +66,8 @@ func NewRegistry() *Registry {
 		moduleProcs:     make(map[string]*ast.ProcedureDecl),
 		moduleByName:    make(map[string]map[string]*ast.ProcedureDecl),
 		processors:      make(map[string]*processor.Processor),
+		extProcessors:   make(map[string]*processor.Processor),
+		extProcs:        make(map[string]map[string]*ast.ProcedureDecl),
 		journals:        make(map[string]*metadata.Journal),
 		accountRegs:     make(map[string]*metadata.AccountRegister),
 		chartsOfAccount: make(map[string]*metadata.ChartOfAccounts),
@@ -608,11 +612,48 @@ func (r *Registry) GetSiblingProc(currentFile, name string) *ast.ProcedureDecl {
 func (r *Registry) Processors() []*processor.Processor {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	out := make([]*processor.Processor, 0, len(r.processors))
+	out := make([]*processor.Processor, 0, len(r.processors)+len(r.extProcessors))
 	for _, p := range r.processors {
 		out = append(out, p)
 	}
+	// внешние обработки, чьё имя не занято конфигурацией
+	for name, p := range r.extProcessors {
+		if _, busy := r.processors[name]; busy {
+			continue
+		}
+		out = append(out, p)
+	}
 	return out
+}
+
+// SetExternalProcessors атомарно заменяет набор внешних обработок (метаданные +
+// разобранный код). Каждой выставляется External=true. При коллизии имени с
+// обработкой конфигурации пишется предупреждение — приоритет у конфигурации
+// (см. GetProcessor/GetProcedure). Хранится отдельно от processors/procs,
+// поэтому reload конфигурации внешние обработки не затирает.
+func (r *Registry) SetExternalProcessors(procs []*processor.Processor, programs map[string]*ast.Program) {
+	pm := make(map[string]*processor.Processor, len(procs))
+	for _, p := range procs {
+		p.External = true
+		pm[p.Name] = p
+	}
+	codeMap := make(map[string]map[string]*ast.ProcedureDecl, len(programs))
+	for name, prog := range programs {
+		m := make(map[string]*ast.ProcedureDecl, len(prog.Procedures))
+		for _, d := range prog.Procedures {
+			m[strings.ToLower(d.Name.Literal)] = d
+		}
+		codeMap[name] = m
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for name := range pm {
+		if _, busy := r.processors[name]; busy {
+			log.Printf("extform: внешняя обработка %q совпадает по имени с обработкой конфигурации — используется обработка конфигурации", name)
+		}
+	}
+	r.extProcessors = pm
+	r.extProcs = codeMap
 }
 
 func (r *Registry) GetProcessor(name string) *processor.Processor {
@@ -623,6 +664,15 @@ func (r *Registry) GetProcessor(name string) *processor.Processor {
 	}
 	nl := strings.ToLower(name)
 	for k, v := range r.processors {
+		if strings.ToLower(k) == nl {
+			return v
+		}
+	}
+	// внешние обработки — только если в конфигурации такого имени нет
+	if p, ok := r.extProcessors[name]; ok {
+		return p
+	}
+	for k, v := range r.extProcessors {
 		if strings.ToLower(k) == nl {
 			return v
 		}
@@ -684,11 +734,22 @@ func (r *Registry) Journals() []*metadata.Journal {
 func (r *Registry) GetProcedure(entityName, procName string) *ast.ProcedureDecl {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	pm, ok := r.procs[entityName]
+	// Сначала ищем в коде конфигурации, затем — во внешних обработках (код из
+	// БД). Конфигурация приоритетнее: одноимённая внешняя обработка не
+	// перехватывает процедуру конфигурации.
+	if d := lookupProc(r.procs, entityName, procName); d != nil {
+		return d
+	}
+	return lookupProc(r.extProcs, entityName, procName)
+}
+
+// lookupProc находит процедуру в карте procs (entity → procName → decl) с
+// регистронезависимым фолбэком по имени сущности и алиасами событий.
+func lookupProc(procs map[string]map[string]*ast.ProcedureDecl, entityName, procName string) *ast.ProcedureDecl {
+	pm, ok := procs[entityName]
 	if !ok {
-		// case-insensitive fallback: DSL filename may differ in case from entity name
 		nl := strings.ToLower(entityName)
-		for k, v := range r.procs {
+		for k, v := range procs {
 			if strings.ToLower(k) == nl {
 				pm = v
 				break
@@ -702,7 +763,6 @@ func (r *Registry) GetProcedure(entityName, procName string) *ast.ProcedureDecl 
 	if p, ok := pm[procLower]; ok {
 		return p
 	}
-	// try English alias → Russian proc name (both stored as lowercase)
 	if ru, ok := eventAliases[procLower]; ok {
 		return pm[ru]
 	}
