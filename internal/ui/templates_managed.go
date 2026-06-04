@@ -78,8 +78,9 @@ const tplManagedForm = `
         </select>
       {{else if eq (str $el.Type) "file"}}
         <div style="display:flex;gap:6px;align-items:center">
-          <input type="text" name="{{$fn}}" id="file-path-{{$fn}}" value="{{index $ctx.Values $fn}}" placeholder="Путь к файлу" style="flex:1"{{if $el.ReadOnly}} readonly{{end}}>
-          <input type="file" id="file-pick-{{$fn}}" style="display:none" onchange="obFilePick(this,'file-path-{{$fn}}')">
+          <input type="text" id="file-path-{{$fn}}" placeholder="Выберите файл" style="flex:1"{{if $el.ReadOnly}} readonly{{end}}>
+          <textarea name="{{$fn}}" id="file-content-{{$fn}}" style="display:none"></textarea>
+          <input type="file" id="file-pick-{{$fn}}" style="display:none" onchange="obFilePick(this,'file-path-{{$fn}}','file-content-{{$fn}}')">
           <button type="button" onclick="document.getElementById('file-pick-{{$fn}}').click()" style="padding:8px 12px;border:1px solid #e2e8f0;border-radius:7px;background:#f8fafc;cursor:pointer;font-size:13px;white-space:nowrap" title="Выбрать файл">…</button>
         </div>
       {{else}}
@@ -88,8 +89,9 @@ const tplManagedForm = `
     {{else if eq (str $el.Type) "file"}}
       {{/* Поле не найдено в Entity, но элемент объявлен как file */}}
       <div style="display:flex;gap:6px;align-items:center">
-        <input type="text" name="{{$fn}}" id="file-path-{{$fn}}" value="{{index $ctx.Values $fn}}" placeholder="Путь к файлу" style="flex:1">
-        <input type="file" id="file-pick-{{$fn}}" style="display:none" onchange="obFilePick(this,'file-path-{{$fn}}')">
+        <input type="text" id="file-path-{{$fn}}" placeholder="Выберите файл" style="flex:1">
+        <textarea name="{{$fn}}" id="file-content-{{$fn}}" style="display:none"></textarea>
+        <input type="file" id="file-pick-{{$fn}}" style="display:none" onchange="obFilePick(this,'file-path-{{$fn}}','file-content-{{$fn}}')">
         <button type="button" onclick="document.getElementById('file-pick-{{$fn}}').click()" style="padding:8px 12px;border:1px solid #e2e8f0;border-radius:7px;background:#f8fafc;cursor:pointer;font-size:13px;white-space:nowrap" title="Выбрать файл">…</button>
       </div>
     {{else}}
@@ -457,20 +459,22 @@ window._tpRefOpts = {{jsJSON .TPRefOptions}};
     });
   }
 
-  // obFilePick — при выборе файла читает содержимое (FileReader + TextDecoder
-  // для UTF-8 / Windows-1251) и сохраняет в data-file-content. В поле показываем
-  // только имя файла. В webview/Electron — file.path вместо содержимого.
-  window.obFilePick = function(input, targetId) {
+  // obFilePick — при выборе файла: имя в текстовое поле, содержимое в скрытый
+  // textarea. Кодировка: UTF-8 → fallback Windows-1251 (TextDecoder).
+  // В webview/Electron — file.path вместо содержимого.
+  window.obFilePick = function(input, pathId, contentId) {
     const file = input.files[0];
     if (!file) return;
-    const target = document.getElementById(targetId);
-    if (!target) return;
+    const pathEl = document.getElementById(pathId);
+    const contentEl = contentId ? document.getElementById(contentId) : null;
+    if (!pathEl) return;
     if (file.path) {
-      target.value = file.path;
-      delete target.dataset.fileContent;
+      pathEl.value = file.path;
+      if (contentEl) contentEl.value = '';
       return;
     }
-    target.value = file.name;
+    pathEl.value = file.name;
+    if (!contentEl) return;
     const reader = new FileReader();
     reader.onload = function() {
       const bytes = new Uint8Array(reader.result);
@@ -480,7 +484,7 @@ window._tpRefOpts = {{jsJSON .TPRefOptions}};
       } catch(e) {
         text = new TextDecoder('windows-1251').decode(bytes);
       }
-      target.dataset.fileContent = text;
+      contentEl.value = text;
     };
     reader.readAsArrayBuffer(file);
   };
@@ -494,14 +498,7 @@ window._tpRefOpts = {{jsJSON .TPRefOptions}};
     fd.set('_kind', 'object');
     if (DOC_ID) fd.set('_id', DOC_ID);
     const body = new URLSearchParams();
-    fd.forEach((v, k) => {
-      const el = form.querySelector('[name="'+k+'"]');
-      if (el && el.dataset.fileContent !== undefined) {
-        body.append(k, el.dataset.fileContent);
-      } else {
-        body.append(k, typeof v === 'string' ? v : '');
-      }
-    });
+    fd.forEach((v, k) => body.append(k, typeof v === 'string' ? v : ''));
     try {
       const res = await fetch(URL, {
         method: 'POST',
