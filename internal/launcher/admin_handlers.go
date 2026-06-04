@@ -90,13 +90,13 @@ func (h *handler) cfgAdminUsers(w http.ResponseWriter, r *http.Request) {
 			listTitle = "Убрать из списка выбора"
 			listStyle = "background:#2563eb;color:#fff"
 		}
-			langLabel := "—"
-			if u.Lang != "" {
-				langLabel = u.Lang
-			}
+		langLabel := "—"
+		if u.Lang != "" {
+			langLabel = u.Lang
+		}
 		html += fmt.Sprintf(`<tr%s><td style="padding:5px 8px">%s</td><td style="padding:5px 8px">%s</td><td style="padding:5px 8px;text-align:center">%s</td><td style="padding:5px 8px;color:#888">%s</td><td style="padding:5px 8px"><button onclick="cfgUserLang('%s','%s')" style="background:#7c3aed;color:#fff;border:none;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:11px">%s</button></td><td style="padding:5px 8px;white-space:nowrap"><button onclick="cfgUserRoles('%s')" style="background:#0e7490;color:#fff;border:none;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:11px;margin-right:4px">Роли</button><button onclick="cfgUserPasswd('%s')" style="background:#f59e0b;color:#fff;border:none;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:11px;margin-right:4px">Пароль</button><button onclick="cfgUserDenyPasswd('%s',%v)" title="%s" style="%s;border:none;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:11px;margin-right:4px">%s</button><button onclick="cfgUserShowInList('%s',%v)" title="%s" style="%s;border:none;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:11px;margin-right:4px">%s</button><button onclick="cfgUserDel('%s')" style="color:#c00;background:none;border:none;cursor:pointer;font-size:11px" title="Удалить">✕</button></td></tr>`,
 			bg, escHTML(u.Login), escHTML(u.FullName), admin, u.CreatedAt.Format("02.01.2006"),
-				u.ID, u.Lang, langLabel,
+			u.ID, u.Lang, langLabel,
 			u.ID,
 			u.ID,
 			u.ID, u.DenyPasswdChange, denyTitle, denyStyle, denyIcon,
@@ -606,6 +606,10 @@ func (h *handler) cfgAdminSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pageSize := db.GetListPageSize(r.Context())
+	navChecked := ""
+	if db.GetNavCollapsible(r.Context()) {
+		navChecked = "checked"
+	}
 	html := fmt.Sprintf(`<div style="padding:16px">
 	<h3 style="margin:0 0 14px;font-size:15px">Параметры базы</h3>
 	<div style="padding:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:4px;max-width:520px">
@@ -615,6 +619,12 @@ func (h *handler) cfgAdminSettings(w http.ResponseWriter, r *http.Request) {
 	    <input type="number" id="st-pagesize" min="1" max="%d" value="%d" style="width:90px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:3px;font-size:12px">
 	  </label>
 	  <div style="font-size:11px;color:#666;margin-top:6px">Применяется к спискам справочников и документов. Допустимо от 1 до %d. URL-параметр <code>?limit=</code> по-прежнему переопределяет значение разово.</div>
+	  <div style="font-size:13px;font-weight:600;margin:16px 0 8px">Меню</div>
+	  <label style="font-size:12px;display:flex;align-items:center;gap:8px">
+	    <input type="checkbox" id="st-collapsenav" %s>
+	    Сворачиваемые группы в левом меню
+	  </label>
+	  <div style="font-size:11px;color:#666;margin-top:6px">Когда включено, группы меню (Отчёты, Регистры, Обработки…) можно сворачивать; тяжёлые группы свёрнуты по умолчанию, чтобы меню не растягивало страницу.</div>
 	  <button onclick="cfgSettingsSave()" style="margin-top:12px;background:#16a34a;color:#fff;border:none;padding:5px 14px;border-radius:3px;cursor:pointer;font-size:12px">Сохранить</button>
 	  <span id="st-msg" style="font-size:11px;margin-left:8px"></span>
 	</div>
@@ -622,7 +632,8 @@ func (h *handler) cfgAdminSettings(w http.ResponseWriter, r *http.Request) {
 <script>
 function cfgSettingsSave(){
   var n=parseInt(document.getElementById('st-pagesize').value,10);
-  fetch('/bases/%s/configurator/admin/settings/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({list_page_size:n})})
+  var c=document.getElementById('st-collapsenav').checked;
+  fetch('/bases/%s/configurator/admin/settings/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({list_page_size:n,collapsible_nav:c})})
     .then(function(r){return r.json()})
     .then(function(d){
       var m=document.getElementById('st-msg');
@@ -631,7 +642,7 @@ function cfgSettingsSave(){
     })
     .catch(function(){var m=document.getElementById('st-msg');m.textContent='Ошибка сети';m.style.color='#c00';});
 }
-</script>`, storage.MaxListPageSize, pageSize, storage.MaxListPageSize, b.ID)
+</script>`, storage.MaxListPageSize, pageSize, storage.MaxListPageSize, navChecked, b.ID)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(html))
 }
@@ -646,7 +657,8 @@ func (h *handler) cfgAdminSettingsSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		ListPageSize int `json:"list_page_size"`
+		ListPageSize   int   `json:"list_page_size"`
+		CollapsibleNav *bool `json:"collapsible_nav"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]any{"error": err.Error()})
@@ -660,6 +672,12 @@ func (h *handler) cfgAdminSettingsSave(w http.ResponseWriter, r *http.Request) {
 	if err := db.SaveListPageSize(r.Context(), req.ListPageSize); err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
+	}
+	if req.CollapsibleNav != nil {
+		if err := db.SaveNavCollapsible(r.Context(), *req.CollapsibleNav); err != nil {
+			writeJSON(w, 500, map[string]any{"error": err.Error()})
+			return
+		}
 	}
 	writeJSON(w, 200, map[string]any{"ok": true, "value": db.GetListPageSize(r.Context())})
 }

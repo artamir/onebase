@@ -42,6 +42,18 @@ type SubsystemContents struct {
 	Journals   []string
 }
 
+// IsEmpty сообщает, что набор объектов пуст (ни одного объекта ни в одной
+// категории). Используется, чтобы отличить заданный, но пустой nav от
+// отсутствующего.
+func (c *SubsystemContents) IsEmpty() bool {
+	if c == nil {
+		return true
+	}
+	return len(c.Documents) == 0 && len(c.Catalogs) == 0 && len(c.Reports) == 0 &&
+		len(c.InfoRegs) == 0 && len(c.Registers) == 0 && len(c.Processors) == 0 &&
+		len(c.Journals) == 0
+}
+
 type rawSubsystem struct {
 	Name     string            `yaml:"name"`
 	Title    string            `yaml:"title"`

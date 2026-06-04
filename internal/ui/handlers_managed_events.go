@@ -38,11 +38,11 @@ import (
 
 // formEventResponse — структура ответа JSON.
 type formEventResponse struct {
-	OK         bool                       `json:"ok"`
-	Values     map[string]any             `json:"values,omitempty"`
+	OK         bool                        `json:"ok"`
+	Values     map[string]any              `json:"values,omitempty"`
 	TableParts map[string][]map[string]any `json:"tableparts,omitempty"`
-	Messages   []string                   `json:"messages,omitempty"`
-	Error      string                     `json:"error,omitempty"`
+	Messages   []string                    `json:"messages,omitempty"`
+	Error      string                      `json:"error,omitempty"`
 }
 
 // handleManagedFormEvent — единая точка обработки событий managed-форм.
@@ -330,6 +330,10 @@ func (s *Server) handleProcessorFormEvent(w http.ResponseWriter, r *http.Request
 		enc.Encode(formEventResponse{Error: "processor not found: " + procName})
 		return
 	}
+	if !s.can(r, "processor", proc.Name, "run") {
+		enc.Encode(formEventResponse{Error: "доступ запрещён"})
+		return
+	}
 
 	form := proc.ManagedForm()
 	if form == nil {
@@ -383,7 +387,7 @@ func (s *Server) handleProcessorFormEvent(w http.ResponseWriter, r *http.Request
 
 				if runErr := s.interp.Run(decl, thisObj, vars); runErr != nil {
 					enc.Encode(formEventResponse{
-						OK:     false,
+						OK:         false,
 						Values:     serializeFieldsForEntity(obj.Fields, virtEntity),
 						TableParts: serializeTablePartRowsForEntity(obj.TablePartRows, virtEntity),
 						Messages:   msgs,
@@ -437,14 +441,14 @@ func (s *Server) handleProcessorFormEvent(w http.ResponseWriter, r *http.Request
 		err := s.interp.Run(procDecl, paramsThis, dslVars)
 		if err != nil {
 			enc.Encode(formEventResponse{
-				OK:      false,
+				OK:       false,
 				Messages: msgs,
-				Error:   err.Error(),
+				Error:    err.Error(),
 			})
 			return
 		}
 		enc.Encode(formEventResponse{
-			OK:      true,
+			OK:       true,
 			Messages: msgs,
 		})
 		return

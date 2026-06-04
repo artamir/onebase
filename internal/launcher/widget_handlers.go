@@ -109,18 +109,21 @@ func (h *handler) configuratorSaveHomePage(w http.ResponseWriter, r *http.Reques
 	}
 
 	type yamlHomePage struct {
-		Title   string                    `yaml:"title,omitempty"`
-		Titles  map[string]string         `yaml:"titles,omitempty"`
-		Layout  string                    `yaml:"layout,omitempty"`
-		Rows    []metadata.HomePageRow    `yaml:"rows,omitempty"`
-		Widgets []metadata.HomePageWidget `yaml:"widgets,omitempty"`
+		Title   string                      `yaml:"title,omitempty"`
+		Titles  map[string]string           `yaml:"titles,omitempty"`
+		Layout  string                      `yaml:"layout,omitempty"`
+		Rows    []metadata.HomePageRow      `yaml:"rows,omitempty"`
+		Widgets []metadata.HomePageWidget   `yaml:"widgets,omitempty"`
+		Nav     *metadata.SubsystemContents `yaml:"nav,omitempty"`
 	}
 	hp := yamlHomePage{Title: strings.TrimSpace(r.FormValue("home_title"))}
 
-	// Сохраняем переводы заголовка (titles) из существующего файла.
+	// Сохраняем переводы заголовка (titles) и блок nav из существующего файла,
+	// чтобы визуальное редактирование раскладки виджетов их не теряло.
 	if proj, lerr := h.loadProjectFor(r.Context(), b); lerr == nil && proj != nil {
 		if proj.HomePage != nil {
 			hp.Titles = proj.HomePage.Titles
+			hp.Nav = proj.HomePage.Nav
 			if hp.Title == "" {
 				hp.Title = proj.HomePage.Title
 			}

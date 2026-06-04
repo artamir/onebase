@@ -16,27 +16,46 @@ var jsonMarshal = json.Marshal
 
 // Permission holds allowed operations per entity kind.
 type Permission struct {
-	Catalogs  map[string][]string `yaml:"catalogs"`
-	Documents map[string][]string `yaml:"documents"`
-	Registers map[string][]string `yaml:"registers"`
-	InfoRegs  map[string][]string `yaml:"inforegs"`
-	Reports   map[string][]string `yaml:"reports"`
+	Catalogs   map[string][]string `yaml:"catalogs"`
+	Documents  map[string][]string `yaml:"documents"`
+	Registers  map[string][]string `yaml:"registers"`
+	InfoRegs   map[string][]string `yaml:"inforegs"`
+	Reports    map[string][]string `yaml:"reports"`
+	Processors map[string][]string `yaml:"processors"`
 }
 
 // Role is a named set of permissions.
 type Role struct {
 	ID          string
-	Name        string      `yaml:"name"`
-	Description string      `yaml:"description"`
-	Permissions Permission  `yaml:"permissions"`
+	Name        string     `yaml:"name"`
+	Description string     `yaml:"description"`
+	Permissions Permission `yaml:"permissions"`
 }
 
 // Has reports whether the user has permission for (kind, entity, op).
-// kind: "catalog"|"document"|"register"|"inforeg"|"report"
+// kind: "catalog"|"document"|"register"|"inforeg"|"report"|"processor"
 // op:   "read"|"write"|"delete"|"post"|"unpost"|"run"
 func (u *User) Has(kind, entity, op string) bool {
 	if u.IsAdmin {
 		return true
+	}
+	// Обработки используют opt-in семантику ради обратной совместимости: роль,
+	// которая НЕ объявляет секцию `processors` (map == nil), разрешает все
+	// обработки (прежнее поведение, когда прав на обработки не существовало).
+	// Роль с объявленной секцией ограничивает доступ перечисленными. Пустой
+	// `processors: {}` (non-nil) запрещает все обработки.
+	if kind == "processor" {
+		for _, r := range u.Roles {
+			if r.Permissions.Processors == nil {
+				return true
+			}
+			for _, allowed := range r.Permissions.Processors[entity] {
+				if allowed == op {
+					return true
+				}
+			}
+		}
+		return false
 	}
 	for _, r := range u.Roles {
 		var m map[string][]string
@@ -249,18 +268,20 @@ func LoadRolesYAML(dir string) ([]*Role, error) {
 // marshalPermissions converts Permission to JSON string.
 func marshalPermissions(p Permission) (string, error) {
 	type permJSON struct {
-		Catalogs  map[string][]string `json:"catalogs,omitempty"`
-		Documents map[string][]string `json:"documents,omitempty"`
-		Registers map[string][]string `json:"registers,omitempty"`
-		InfoRegs  map[string][]string `json:"inforegs,omitempty"`
-		Reports   map[string][]string `json:"reports,omitempty"`
+		Catalogs   map[string][]string `json:"catalogs,omitempty"`
+		Documents  map[string][]string `json:"documents,omitempty"`
+		Registers  map[string][]string `json:"registers,omitempty"`
+		InfoRegs   map[string][]string `json:"inforegs,omitempty"`
+		Reports    map[string][]string `json:"reports,omitempty"`
+		Processors map[string][]string `json:"processors"`
 	}
 	b, err := jsonMarshal(permJSON{
-		Catalogs:  p.Catalogs,
-		Documents: p.Documents,
-		Registers: p.Registers,
-		InfoRegs:  p.InfoRegs,
-		Reports:   p.Reports,
+		Catalogs:   p.Catalogs,
+		Documents:  p.Documents,
+		Registers:  p.Registers,
+		InfoRegs:   p.InfoRegs,
+		Reports:    p.Reports,
+		Processors: p.Processors,
 	})
 	if err != nil {
 		return "{}", err
@@ -274,20 +295,22 @@ func unmarshalPermissions(data []byte) Permission {
 		return Permission{}
 	}
 	var raw struct {
-		Catalogs  map[string][]string `json:"catalogs"`
-		Documents map[string][]string `json:"documents"`
-		Registers map[string][]string `json:"registers"`
-		InfoRegs  map[string][]string `json:"inforegs"`
-		Reports   map[string][]string `json:"reports"`
+		Catalogs   map[string][]string `json:"catalogs"`
+		Documents  map[string][]string `json:"documents"`
+		Registers  map[string][]string `json:"registers"`
+		InfoRegs   map[string][]string `json:"inforegs"`
+		Reports    map[string][]string `json:"reports"`
+		Processors map[string][]string `json:"processors"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return Permission{}
 	}
 	return Permission{
-		Catalogs:  raw.Catalogs,
-		Documents: raw.Documents,
-		Registers: raw.Registers,
-		InfoRegs:  raw.InfoRegs,
-		Reports:   raw.Reports,
+		Catalogs:   raw.Catalogs,
+		Documents:  raw.Documents,
+		Registers:  raw.Registers,
+		InfoRegs:   raw.InfoRegs,
+		Reports:    raw.Reports,
+		Processors: raw.Processors,
 	}
 }
