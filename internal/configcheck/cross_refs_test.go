@@ -141,3 +141,39 @@ table:
 		t.Errorf("Сумма и @row валидны — ошибки быть не должно: %+v", issues)
 	}
 }
+
+// CheckNameCollisions должен ловить справочник и документ с одинаковым именем
+// (делят одну таблицу lower(имя)) и молчать, когда имена различны (issue #20).
+func TestCheckNameCollisions(t *testing.T) {
+	dir := t.TempDir()
+	mkFile(t, filepath.Join(dir, "catalogs", "счёт.yaml"), `name: Счёт
+fields:
+  - name: Наименование
+    type: string`)
+	mkFile(t, filepath.Join(dir, "documents", "счёт.yaml"), `name: Счёт
+fields:
+  - name: Номер
+    type: string`)
+	// Документ с уникальным именем — коллизии быть не должно.
+	mkFile(t, filepath.Join(dir, "documents", "заказ.yaml"), `name: Заказ
+fields:
+  - name: Номер
+    type: string`)
+
+	proj, err := project.Load(dir)
+	if err != nil {
+		t.Fatalf("project.Load: %v", err)
+	}
+	defer proj.Close()
+
+	issues := CheckNameCollisions(proj)
+	if len(issues) != 1 {
+		t.Fatalf("ожидалась ровно одна коллизия, получено %d: %+v", len(issues), issues)
+	}
+	if issues[0].Object != "счёт" || !strings.Contains(issues[0].Message, "коллизия") {
+		t.Errorf("неожиданная ошибка коллизии: %+v", issues[0])
+	}
+	if !strings.Contains(issues[0].Message, "справочник") || !strings.Contains(issues[0].Message, "документ") {
+		t.Errorf("сообщение должно называть оба вида объектов: %q", issues[0].Message)
+	}
+}

@@ -187,6 +187,60 @@ func CheckCrossRefs(proj *project.Project, roles []*auth.Role) []Issue {
 	return issues
 }
 
+// CheckNameCollisions ловит совпадение имён сущностей (справочников и
+// документов) без учёта регистра. Имя физической таблицы строится как
+// metadata.TableName(name) = lower(name) без префикса вида, поэтому каталог
+// «Счёт» и документ «Счёт» претендуют на одну таблицу «счёт» — миграция тихо
+// смешает их колонки. Регистры (рег_/инфо_) и табличные части (<сущность>_<тч>)
+// имеют префиксы и в этом пространстве имён не участвуют. См. issue #20.
+func CheckNameCollisions(proj *project.Project) []Issue {
+	type ent struct {
+		name string
+		kind string
+	}
+	byTable := map[string][]ent{}
+	kindLabel := func(k metadata.Kind) string {
+		switch k {
+		case metadata.KindCatalog:
+			return "справочник"
+		case metadata.KindDocument:
+			return "документ"
+		default:
+			return string(k)
+		}
+	}
+	for _, e := range proj.Entities {
+		tbl := metadata.TableName(e.Name)
+		byTable[tbl] = append(byTable[tbl], ent{name: e.Name, kind: kindLabel(e.Kind)})
+	}
+
+	var tables []string
+	for tbl, group := range byTable {
+		if len(group) > 1 {
+			tables = append(tables, tbl)
+		}
+	}
+	sort.Strings(tables)
+
+	var issues []Issue
+	for _, tbl := range tables {
+		group := byTable[tbl]
+		sort.Slice(group, func(i, j int) bool { return group[i].name < group[j].name })
+		var parts []string
+		for _, g := range group {
+			parts = append(parts, fmt.Sprintf("%s %q", g.kind, g.name))
+		}
+		issues = append(issues, Issue{
+			Object: tbl,
+			Kind:   "Имя таблицы",
+			Message: fmt.Sprintf(
+				"коллизия имён: %s используют одну таблицу %q — переименуйте один из объектов",
+				strings.Join(parts, ", "), tbl),
+		})
+	}
+	return issues
+}
+
 // fieldInEntity сообщает, есть ли у сущности поле с таким именем.
 func fieldInEntity(e *metadata.Entity, name string) bool {
 	for i := range e.Fields {

@@ -52,6 +52,9 @@ func runCheck(cmd *cobra.Command, _ []string) error {
 		// отдельно — они не часть project.Project.
 		roles, _ := auth.LoadRolesYAML(filepath.Join(bc.Dir, "roles"))
 		issues = append(issues, configcheck.CheckCrossRefs(proj, roles)...)
+		// Коллизии имён таблиц: справочник и документ с одинаковым именем
+		// делят одну физическую таблицу lower(имя) (issue #20).
+		issues = append(issues, configcheck.CheckNameCollisions(proj)...)
 		// п.45: исполняемая валидация запросов против in-memory схемы из
 		// метаданных (best-effort — при сбое настройки схемы просто пропускаем,
 		// чтобы не ломать обычную проверку компиляции).
