@@ -1135,13 +1135,13 @@ func preScanAllRefDims(tokens []tok, opts CompileOpts) []refDimInfo {
 			if isAccumRegType(upper) {
 				for _, reg := range opts.Registers {
 					if strings.EqualFold(reg.Name, regName) {
-						return buildVTRefDimInfos(append(reg.Dimensions, reg.Attributes...))
+						return buildVTRefDimInfos(append(reg.Dimensions, reg.Attributes...), opts.Entities)
 					}
 				}
 			} else if isInfoRegType(upper) {
 				for _, ir := range opts.InfoRegs {
 					if strings.EqualFold(ir.Name, regName) {
-						return buildVTRefDimInfos(ir.Dimensions)
+						return buildVTRefDimInfos(ir.Dimensions, opts.Entities)
 					}
 				}
 			}
@@ -1197,18 +1197,27 @@ func filterUsedRefDims(dims []refDimInfo, tokens []tok) []refDimInfo {
 
 // buildVTRefDimInfos creates refDimInfos for VT outer queries where the subquery
 // aliases _id columns to logical names, so JOIN ON uses fieldName instead of idCol.
-func buildVTRefDimInfos(dims []metadata.Field) []refDimInfo {
+// entities позволяет выставить refIsDoc: ссылка-измерение на документ отображается
+// через .номер, а не .наименование (у документов нет наименования).
+func buildVTRefDimInfos(dims []metadata.Field, entities []*metadata.Entity) []refDimInfo {
 	var result []refDimInfo
 	for _, d := range dims {
 		if d.RefEntity != "" {
 			fn := strings.ToLower(d.Name)
-			result = append(result, refDimInfo{
+			rd := refDimInfo{
 				fieldName: fn,
 				idCol:     fn, // VT aliased from _id
 				joinAlias: "ref_" + fn,
 				joinTable: strings.ToLower(d.RefEntity),
 				isVT:      true,
-			})
+			}
+			for _, e := range entities {
+				if strings.EqualFold(e.Name, d.RefEntity) && e.Kind == metadata.KindDocument {
+					rd.refIsDoc = true
+					break
+				}
+			}
+			result = append(result, rd)
 		}
 	}
 	return result

@@ -598,6 +598,41 @@ func TestCompile_VT_RefDim_AutoJoin(t *testing.T) {
 	}
 }
 
+// TestCompile_VT_RefDim_Document verifies that a dimension referencing a document
+// resolves to .номер (not .наименование) in a virtual-table (Остатки) query —
+// documents have no наименование column. Regression for buildVTRefDimInfos not
+// propagating refIsDoc.
+func TestCompile_VT_RefDim_Document(t *testing.T) {
+	src := "ВЫБРАТЬ ЗаказПоставщику, КоличествоОстаток " +
+		"ИЗ РегистрНакопления.ТоварыВПути.Остатки()"
+
+	reg := &metadata.Register{
+		Name: "ТоварыВПути",
+		Dimensions: []metadata.Field{
+			{Name: "ЗаказПоставщику", RefEntity: "ЗаказПоставщику"},
+		},
+		Resources: []metadata.Field{{Name: "Количество"}},
+	}
+
+	r, err := query.Compile(src, query.CompileOpts{
+		Registers: []*metadata.Register{reg},
+		Entities: []*metadata.Entity{
+			{Name: "ЗаказПоставщику", Kind: metadata.KindDocument},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := r.SQL
+
+	if !strings.Contains(sql, "ref_заказпоставщику.номер") {
+		t.Errorf("expected document ref to resolve to .номер, got: %s", sql)
+	}
+	if strings.Contains(sql, "ref_заказпоставщику.наименование") {
+		t.Errorf("document ref must not use .наименование, got: %s", sql)
+	}
+}
+
 // TestCompile_VT_WithUserAlias verifies that КАК after a VT subquery is consumed
 // and the user-provided alias is used in the auto-JOIN ON clause.
 func TestCompile_VT_WithUserAlias(t *testing.T) {
