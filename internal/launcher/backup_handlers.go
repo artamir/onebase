@@ -111,7 +111,7 @@ func (h *handler) backupCreate(w http.ResponseWriter, r *http.Request) {
 	} else {
 		data.FieldsSaved = true
 		data.FieldsSavedEntity = "panel-backup"
-		data.BackupMessage = "Р‘СЌРєР°Рї СЃРѕР·РґР°РЅ: " + filepath.Base(outPath)
+		data.BackupMessage = "Бэкап создан: " + filepath.Base(outPath)
 	}
 	renderCfg(w, r, data)
 }
@@ -189,11 +189,11 @@ func (h *handler) backupSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	data := h.loadCfgData(r.Context(), b, "backup")
 	if saveErr != nil {
-		data.Error = fmt.Sprintf("РћС€РёР±РєР° СЃРѕС…СЂР°РЅРµРЅРёСЏ: %s", saveErr.Error())
+		data.Error = fmt.Sprintf("Ошибка сохранения: %s", saveErr.Error())
 	} else {
 		data.FieldsSaved = true
 		data.FieldsSavedEntity = "panel-backup"
-		data.BackupMessage = "РќР°СЃС‚СЂРѕР№РєРё Р±СЌРєР°РїР° СЃРѕС…СЂР°РЅРµРЅС‹"
+		data.BackupMessage = "Настройки бэкапа сохранены"
 	}
 	renderCfg(w, r, data)
 }
@@ -210,7 +210,7 @@ func (h *handler) backupUpload(w http.ResponseWriter, r *http.Request) {
 	file, header, err := r.FormFile("backup_file")
 	if err != nil {
 		data := h.loadCfgData(r.Context(), b, "backup")
-		data.Error = "РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё: " + err.Error()
+		data.Error = "Ошибка загрузки: " + err.Error()
 		renderCfg(w, r, data)
 		return
 	}
@@ -221,7 +221,7 @@ func (h *handler) backupUpload(w http.ResponseWriter, r *http.Request) {
 	f, err := os.Create(outPath)
 	if err != nil {
 		data := h.loadCfgData(r.Context(), b, "backup")
-		data.Error = "РћС€РёР±РєР° СЃРѕС…СЂР°РЅРµРЅРёСЏ: " + err.Error()
+		data.Error = "Ошибка сохранения: " + err.Error()
 		renderCfg(w, r, data)
 		return
 	}
@@ -231,7 +231,7 @@ func (h *handler) backupUpload(w http.ResponseWriter, r *http.Request) {
 	data := h.loadCfgData(r.Context(), b, "backup")
 	data.FieldsSaved = true
 	data.FieldsSavedEntity = "panel-backup"
-	data.BackupMessage = "Р¤Р°Р№Р» Р·Р°РіСЂСѓР¶РµРЅ: " + name
+	data.BackupMessage = "Файл загружен: " + name
 	renderCfg(w, r, data)
 }
 
@@ -246,7 +246,7 @@ func (h *handler) backupRestore(w http.ResponseWriter, r *http.Request) {
 	fp := filepath.Join(dir, file)
 	if _, err := os.Stat(fp); err != nil {
 		data := h.loadCfgData(r.Context(), b, "backup")
-		data.Error = "Р¤Р°Р№Р» РЅРµ РЅР°Р№РґРµРЅ: " + file
+		data.Error = "Файл не найден: " + file
 		renderCfg(w, r, data)
 		return
 	}
@@ -267,11 +267,11 @@ func (h *handler) backupRestore(w http.ResponseWriter, r *http.Request) {
 	restoreErr := restoreForBase(r.Context(), b, fp)
 	data := h.loadCfgData(r.Context(), b, "backup")
 	if restoreErr != nil {
-		data.Error = "РћС€РёР±РєР° РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРёСЏ: " + restoreErr.Error()
+		data.Error = "Ошибка восстановления: " + restoreErr.Error()
 	} else {
 		data.FieldsSaved = true
 		data.FieldsSavedEntity = "panel-backup"
-		msg := "Р‘Р°Р·Р° РґР°РЅРЅС‹С… РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅР° РёР·: " + file
+		msg := "База данных восстановлена из: " + file
 		if wasRunning {
 			msg += ". База остановлена — запустите её заново для применения изменений."
 		}
@@ -415,7 +415,7 @@ func (h *handler) backupFullImport(w http.ResponseWriter, r *http.Request) {
 	file, _, err := r.FormFile("obz_file")
 	if err != nil {
 		data := h.loadCfgData(r.Context(), b, "backup")
-		data.Error = "РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё С„Р°Р№Р»Р°: " + err.Error()
+		data.Error = "Ошибка загрузки файла: " + err.Error()
 		renderCfg(w, r, data)
 		return
 	}
@@ -424,7 +424,7 @@ func (h *handler) backupFullImport(w http.ResponseWriter, r *http.Request) {
 	dtData, err := io.ReadAll(file)
 	if err != nil {
 		data := h.loadCfgData(r.Context(), b, "backup")
-		data.Error = "РћС€РёР±РєР° С‡С‚РµРЅРёСЏ С„Р°Р№Р»Р°: " + err.Error()
+		data.Error = "Ошибка чтения файла: " + err.Error()
 		renderCfg(w, r, data)
 		return
 	}
@@ -432,7 +432,7 @@ func (h *handler) backupFullImport(w http.ResponseWriter, r *http.Request) {
 	reader, err := zip.NewReader(bytes.NewReader(dtData), int64(len(dtData)))
 	if err != nil {
 		data := h.loadCfgData(r.Context(), b, "backup")
-		data.Error = "РќРµРІРµСЂРЅС‹Р№ С„РѕСЂРјР°С‚ С„Р°Р№Р»Р° .obz: " + err.Error()
+		data.Error = "Неверный формат файла .obz: " + err.Error()
 		renderCfg(w, r, data)
 		return
 	}
