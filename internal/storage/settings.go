@@ -16,6 +16,11 @@ const DefaultListPageSize = 100
 // жёстким лимитом в parseListParams, чтобы UI и URL-параметры были согласованы.
 const MaxListPageSize = 1000
 
+// DefaultNavCollapsible — сворачиваемы ли группы левого меню по умолчанию.
+// При true тяжёлые группы (Отчёты/Регистры/Обработки/…) сворачиваются, чтобы
+// меню не растягивало страницу. Хранится в _settings (ui.collapsible_nav).
+const DefaultNavCollapsible = true
+
 // AuditSettings — настройки журнала регистрации (аналог «Журнала регистрации»
 // в 1С). Это свойство конкретной информационной базы, а не git-версионируемой
 // конфигурации, поэтому хранится в служебной таблице _settings.
@@ -120,6 +125,47 @@ func (db *DB) SaveListPageSize(ctx context.Context, n int) error {
 		d.Placeholder(1), d.Placeholder(2))
 	if _, err := db.Exec(ctx, q, "ui.list_page_size", strconv.Itoa(n)); err != nil {
 		return fmt.Errorf("settings: save ui.list_page_size: %w", err)
+	}
+	return nil
+}
+
+// GetNavCollapsible читает флаг сворачиваемых групп меню из _settings.
+// Отсутствие ключа/таблицы или нераспознанное значение → DefaultNavCollapsible.
+func (db *DB) GetNavCollapsible(ctx context.Context) bool {
+	d := db.dialect
+	var v string
+	err := db.QueryRow(ctx,
+		`SELECT value FROM _settings WHERE key = `+d.Placeholder(1),
+		"ui.collapsible_nav").Scan(&v)
+	if err != nil {
+		return DefaultNavCollapsible
+	}
+	switch strings.TrimSpace(v) {
+	case "1", "true", "True", "TRUE":
+		return true
+	case "0", "false", "False", "FALSE":
+		return false
+	default:
+		return DefaultNavCollapsible
+	}
+}
+
+// SaveNavCollapsible сохраняет флаг сворачиваемых групп меню в _settings.
+func (db *DB) SaveNavCollapsible(ctx context.Context, on bool) error {
+	if err := db.EnsureSettingsSchema(ctx); err != nil {
+		return err
+	}
+	v := "0"
+	if on {
+		v = "1"
+	}
+	d := db.dialect
+	q := fmt.Sprintf(
+		`INSERT INTO _settings (key, value) VALUES (%s, %s)
+		 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+		d.Placeholder(1), d.Placeholder(2))
+	if _, err := db.Exec(ctx, q, "ui.collapsible_nav", v); err != nil {
+		return fmt.Errorf("settings: save ui.collapsible_nav: %w", err)
 	}
 	return nil
 }

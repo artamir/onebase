@@ -337,6 +337,12 @@ aside{width:210px;background:#1e293b;color:#fff;padding:16px 0;flex-shrink:0;ove
 aside .sec{font-size:11px;text-transform:uppercase;color:#94a3b8;margin:14px 12px 4px;letter-spacing:.05em}
 aside a{display:block;padding:6px 14px;color:#cbd5e1;text-decoration:none;font-size:14px;margin:1px 6px;border-radius:5px;line-height:1.3;overflow-wrap:break-word}
 aside a:hover{background:#334155;color:#fff}
+aside details.navsec{margin:0}
+aside details.navsec>summary{font-size:11px;text-transform:uppercase;color:#94a3b8;margin:14px 12px 4px;letter-spacing:.05em;cursor:pointer;list-style:none;user-select:none}
+aside details.navsec>summary::-webkit-details-marker{display:none}
+aside details.navsec>summary::before{content:"\25B8";display:inline-block;width:1em;color:#64748b}
+aside details.navsec[open]>summary::before{content:"\25BE"}
+aside details.navsec>summary:hover{color:#cbd5e1}
 main{flex:1;padding:28px;overflow-y:auto}
 h2{font-size:22px;font-weight:600;margin-bottom:20px;color:#1e293b}
 h3{font-size:16px;font-weight:600;margin:24px 0 10px;color:#1e293b}
@@ -487,11 +493,35 @@ const tplNav = `
 <div class="app-body">
 <aside>
   {{if not .Subsystems}}<a href="/ui/" style="display:block;padding:12px 14px 8px;color:#7dd3fc;font-weight:700;font-size:15px;text-decoration:none">{{t $.Lang "Главная"}}</a>{{end}}
+  {{if .CollapsibleNav}}
+  {{range .Nav}}
+  <details class="navsec" data-navsec="{{.Kind}}"{{if .Open}} open{{end}}>
+    <summary>{{.Kind}}</summary>
+    {{range .Items}}<a href="{{.URL}}" title="{{.Label}}">{{navLabel .Label}}</a>
+    {{end}}
+  </details>
+  {{end}}
+  {{else}}
   {{range .Nav}}
   <div class="sec">{{.Kind}}</div>
   {{range .Items}}<a href="{{.URL}}" title="{{.Label}}">{{navLabel .Label}}</a>
   {{end}}{{end}}
+  {{end}}
 </aside>
+{{if .CollapsibleNav}}
+<script>
+(function(){
+  try{
+    document.querySelectorAll('aside details.navsec').forEach(function(d){
+      var key='navsec:'+d.getAttribute('data-navsec');
+      var saved=localStorage.getItem(key);
+      if(saved==='1')d.open=true; else if(saved==='0')d.open=false;
+      d.addEventListener('toggle',function(){localStorage.setItem(key,d.open?'1':'0');});
+    });
+  }catch(e){}
+})();
+</script>
+{{end}}
 {{end}}
 `
 

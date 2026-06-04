@@ -278,12 +278,20 @@ type navItem struct {
 type navGroup struct {
 	Kind  string
 	Items []navItem
+	// Open — раскрыта ли группа по умолчанию, когда меню рендерится
+	// сворачиваемым. Лёгкие группы (Справочники/Документы) открыты, тяжёлые
+	// (Регистры/Отчёты/Обработки/Журналы) свёрнуты, чтобы меню не растягивалось.
+	Open bool
 }
 
 func (s *Server) buildNav(r *http.Request, sub string) []navGroup {
-	// Нейтральный старт: на глобальной главной (подсистема не выбрана) показываем
-	// плоский список всех объектов и не привязываемся к конкретной подсистеме.
 	if sub == "" {
+		// Глобальная «Главная». Если в config/home_page.yaml задан блок nav —
+		// меню скоупится по нему (как у подсистемы). Иначе — плоский список
+		// всех читаемых объектов («нейтральный старт»).
+		if hp := s.reg.HomePage(); hp != nil && hp.Nav != nil && !hp.Nav.IsEmpty() {
+			return s.buildNavFromContents(r, hp.Nav, "")
+		}
 		return s.buildFlatNav(r)
 	}
 	if cur := s.reg.GetSubsystem(sub); cur != nil {
@@ -301,13 +309,19 @@ func strSet(names []string) map[string]bool {
 }
 
 func (s *Server) buildNavForSubsystem(r *http.Request, sub *metadata.Subsystem, subName string) []navGroup {
+	return s.buildNavFromContents(r, &sub.Contents, "?subsystem="+subName)
+}
+
+// buildNavFromContents строит левое меню по набору объектов (contents),
+// фильтруя их по правам пользователя (s.can). q — суффикс URL (например
+// "?subsystem=Продажи") для сохранения контекста подсистемы в ссылках.
+func (s *Server) buildNavFromContents(r *http.Request, contents *metadata.SubsystemContents, q string) []navGroup {
 	lang := s.resolveLang(r)
-	q := "?subsystem=" + subName
 	var nav []navGroup
 
-	if len(sub.Contents.Catalogs) > 0 || len(sub.Contents.Documents) > 0 {
-		catSet := strSet(sub.Contents.Catalogs)
-		docSet := strSet(sub.Contents.Documents)
+	if len(contents.Catalogs) > 0 || len(contents.Documents) > 0 {
+		catSet := strSet(contents.Catalogs)
+		docSet := strSet(contents.Documents)
 		entities := s.reg.Entities()
 		sort.Slice(entities, func(i, j int) bool { return entities[i].Name < entities[j].Name })
 		var catalogs, documents []navItem
@@ -323,15 +337,15 @@ func (s *Server) buildNavForSubsystem(r *http.Request, sub *metadata.Subsystem, 
 			}
 		}
 		if len(catalogs) > 0 {
-			nav = append(nav, navGroup{Kind: s.tr(lang, "Справочники"), Items: catalogs})
+			nav = append(nav, navGroup{Kind: s.tr(lang, "Справочники"), Items: catalogs, Open: true})
 		}
 		if len(documents) > 0 {
-			nav = append(nav, navGroup{Kind: s.tr(lang, "Документы"), Items: documents})
+			nav = append(nav, navGroup{Kind: s.tr(lang, "Документы"), Items: documents, Open: true})
 		}
 	}
 
-	if len(sub.Contents.Registers) > 0 {
-		regSet := strSet(sub.Contents.Registers)
+	if len(contents.Registers) > 0 {
+		regSet := strSet(contents.Registers)
 		registers := s.reg.Registers()
 		sort.Slice(registers, func(i, j int) bool { return registers[i].Name < registers[j].Name })
 		var regItems []navItem
@@ -356,8 +370,8 @@ func (s *Server) buildNavForSubsystem(r *http.Request, sub *metadata.Subsystem, 
 		}
 	}
 
-	if len(sub.Contents.InfoRegs) > 0 {
-		irSet := strSet(sub.Contents.InfoRegs)
+	if len(contents.InfoRegs) > 0 {
+		irSet := strSet(contents.InfoRegs)
 		inforegs := s.reg.InfoRegisters()
 		sort.Slice(inforegs, func(i, j int) bool { return inforegs[i].Name < inforegs[j].Name })
 		var irItems []navItem
@@ -379,8 +393,8 @@ func (s *Server) buildNavForSubsystem(r *http.Request, sub *metadata.Subsystem, 
 		}
 	}
 
-	if len(sub.Contents.Reports) > 0 {
-		repSet := strSet(sub.Contents.Reports)
+	if len(contents.Reports) > 0 {
+		repSet := strSet(contents.Reports)
 		reps := s.reg.Reports()
 		sort.Slice(reps, func(i, j int) bool { return reps[i].Name < reps[j].Name })
 		var repItems []navItem
@@ -402,13 +416,16 @@ func (s *Server) buildNavForSubsystem(r *http.Request, sub *metadata.Subsystem, 
 		}
 	}
 
-	if len(sub.Contents.Processors) > 0 {
-		procSet := strSet(sub.Contents.Processors)
+	if len(contents.Processors) > 0 {
+		procSet := strSet(contents.Processors)
 		procs := s.reg.Processors()
 		sort.Slice(procs, func(i, j int) bool { return procs[i].Name < procs[j].Name })
 		var procItems []navItem
 		for _, proc := range procs {
 			if !procSet[proc.Name] {
+				continue
+			}
+			if !s.can(r, "processor", proc.Name, "run") {
 				continue
 			}
 			label := proc.Title
@@ -422,8 +439,8 @@ func (s *Server) buildNavForSubsystem(r *http.Request, sub *metadata.Subsystem, 
 		}
 	}
 
-	if len(sub.Contents.Journals) > 0 {
-		jSet := strSet(sub.Contents.Journals)
+	if len(contents.Journals) > 0 {
+		jSet := strSet(contents.Journals)
 		journals := s.reg.Journals()
 		sort.Slice(journals, func(i, j int) bool { return journals[i].Name < journals[j].Name })
 		var jItems []navItem
@@ -479,10 +496,10 @@ func (s *Server) buildFlatNav(r *http.Request) []navGroup {
 
 	var nav []navGroup
 	if len(catalogs) > 0 {
-		nav = append(nav, navGroup{Kind: s.tr(lang, "Справочники"), Items: catalogs})
+		nav = append(nav, navGroup{Kind: s.tr(lang, "Справочники"), Items: catalogs, Open: true})
 	}
 	if len(documents) > 0 {
-		nav = append(nav, navGroup{Kind: s.tr(lang, "Документы"), Items: documents})
+		nav = append(nav, navGroup{Kind: s.tr(lang, "Документы"), Items: documents, Open: true})
 	}
 	if len(regItems) > 0 {
 		nav = append(nav, navGroup{Kind: s.tr(lang, "Регистры"), Items: regItems})
@@ -529,6 +546,9 @@ func (s *Server) buildFlatNav(r *http.Request) []navGroup {
 	sort.Slice(procs, func(i, j int) bool { return procs[i].Name < procs[j].Name })
 	var procItems []navItem
 	for _, proc := range procs {
+		if !s.can(r, "processor", proc.Name, "run") {
+			continue
+		}
 		label := proc.DisplayName(lang)
 		procItems = append(procItems, navItem{
 			Label: label,

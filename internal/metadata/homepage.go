@@ -25,6 +25,9 @@ type HomePage struct {
 	Layout  string            `yaml:"layout"` // grid | rows (default rows)
 	Rows    []HomePageRow     `yaml:"rows"`
 	Widgets []HomePageWidget  `yaml:"widgets"` // flat list, used when layout=grid
+	// Nav опционально ограничивает левое меню глобальной «Главной» так же, как
+	// contents подсистемы. nil/пусто = плоский список всех читаемых объектов.
+	Nav *SubsystemContents `yaml:"nav,omitempty"`
 }
 
 // DisplayTitle возвращает заголовок главной страницы с учётом языка.

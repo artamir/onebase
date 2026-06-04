@@ -136,6 +136,18 @@ func CheckCrossRefs(proj *project.Project, roles []*auth.Role) []Issue {
 		checkHomePageWidgets("subsystems", s.Name, s.HomePage)
 	}
 
+	// Главная страница → блок nav (опциональное ограничение левого меню).
+	if proj.HomePage != nil && proj.HomePage.Nav != nil {
+		c := proj.HomePage.Nav
+		checkRefs("config/home_page.yaml", "home_page.nav", "Главная страница", c.Documents, docs, "документ")
+		checkRefs("config/home_page.yaml", "home_page.nav", "Главная страница", c.Catalogs, cats, "справочник")
+		checkRefs("config/home_page.yaml", "home_page.nav", "Главная страница", c.Reports, reports, "отчёт")
+		checkRefs("config/home_page.yaml", "home_page.nav", "Главная страница", c.InfoRegs, inforegs, "регистр сведений")
+		checkRefs("config/home_page.yaml", "home_page.nav", "Главная страница", c.Registers, registers, "регистр")
+		checkRefs("config/home_page.yaml", "home_page.nav", "Главная страница", c.Processors, processors, "обработка")
+		checkRefs("config/home_page.yaml", "home_page.nav", "Главная страница", c.Journals, journals, "журнал")
+	}
+
 	// Печатные формы → документ/справочник-источник и табличная часть.
 	for _, pf := range proj.PrintForms {
 		// «general» — зарезервированный источник для форм без привязки к
@@ -182,6 +194,7 @@ func CheckCrossRefs(proj *project.Project, roles []*auth.Role) []Issue {
 		checkRefs("roles", r.Name, "Роль", keys(r.Permissions.Registers), registers, "регистр")
 		checkRefs("roles", r.Name, "Роль", keys(r.Permissions.InfoRegs), inforegs, "регистр сведений")
 		checkRefs("roles", r.Name, "Роль", keys(r.Permissions.Reports), reports, "отчёт")
+		checkRefs("roles", r.Name, "Роль", keys(r.Permissions.Processors), processors, "обработка")
 	}
 
 	return issues

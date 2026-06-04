@@ -17,7 +17,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
-	"golang.org/x/text/encoding/charmap"
 	"github.com/google/uuid"
 	"github.com/ivantit66/onebase/internal/auth"
 	"github.com/ivantit66/onebase/internal/dsl/ast"
@@ -35,6 +34,7 @@ import (
 	"github.com/ivantit66/onebase/internal/runtime"
 	"github.com/ivantit66/onebase/internal/storage"
 	"github.com/ivantit66/onebase/internal/widget"
+	"golang.org/x/text/encoding/charmap"
 )
 
 func (s *Server) about(w http.ResponseWriter, r *http.Request) {
@@ -1619,6 +1619,9 @@ func (s *Server) getProcessor(w http.ResponseWriter, r *http.Request) *processor
 		http.Error(w, "unknown processor: "+name, 404)
 		return nil
 	}
+	if !s.requirePerm(w, r, "processor", proc.Name, "run") {
+		return nil
+	}
 	return proc
 }
 
@@ -2427,6 +2430,9 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string, dat
 		data["Nav"] = s.buildNav(r, sub)
 		data["Subsystems"] = s.reg.Subsystems()
 		data["CurrentSubsystem"] = sub
+	}
+	if _, ok := data["CollapsibleNav"]; !ok {
+		data["CollapsibleNav"] = s.store.GetNavCollapsible(r.Context())
 	}
 	if _, ok := data["IsAdmin"]; !ok {
 		data["IsAdmin"] = s.isAdmin(r)
