@@ -457,14 +457,20 @@ window._tpRefOpts = {{jsJSON .TPRefOptions}};
     });
   }
 
-  // obFilePick — при выборе файла подставляет путь в текстовое поле.
-  // file.path доступен в webview/Electron; fallback на file.name.
+  // obFilePick — при выборе файла читает содержимое и подставляет в поле.
+  // В webview/Electron — используется file.path, в браузере — FileReader.
   window.obFilePick = function(input, targetId) {
     const file = input.files[0];
     if (!file) return;
     const target = document.getElementById(targetId);
     if (!target) return;
-    target.value = file.path || file.name;
+    if (file.path) {
+      target.value = file.path;
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = function() { target.value = reader.result; };
+    reader.readAsText(file);
   };
 
   window.obFire = async function(elementName, eventName){
