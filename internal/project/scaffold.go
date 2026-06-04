@@ -14,20 +14,12 @@ func Scaffold(dir, name string) error {
 		}
 	}
 
+	// Создаём только пустую валидную конфигурацию: каталог структуры + app.yaml.
+	// Демонстрационные объекты (Контрагент/Счёт) намеренно НЕ создаются — раньше
+	// они подмешивались как «рудименты» в новые и импортируемые конфигурации
+	// (issue #16). Пустая конфигурация — чистый старт, как пустая ИБ в 1С.
 	files := map[string]string{
 		filepath.Join(dir, "config", "app.yaml"): "name: " + name + "\nversion: \"1.0\"\n",
-		filepath.Join(dir, "catalogs", "контрагент.yaml"): "name: Контрагент\nfields:\n" +
-			"  - name: Наименование\n    type: string\n" +
-			"  - name: ИНН\n    type: string\n",
-		filepath.Join(dir, "documents", "счёт.yaml"): "name: Счёт\nfields:\n" +
-			"  - name: Номер\n    type: string\n" +
-			"  - name: Дата\n    type: date\n" +
-			"  - name: Контрагент\n    type: reference:Контрагент\n",
-		filepath.Join(dir, "src", "счёт.os"): "Процедура ПриЗаписи()\n" +
-			"  Если this.Номер = \"\" Тогда\n" +
-			"    Error(\"Номер обязателен\");\n" +
-			"  КонецЕсли;\n" +
-			"КонецПроцедуры\n",
 	}
 
 	for path, content := range files {

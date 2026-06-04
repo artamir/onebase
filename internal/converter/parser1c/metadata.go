@@ -240,6 +240,19 @@ func ParseDir(dir string) (*ConfigDump, error) {
 		case "ConfigDumpInfo.xml", "config.xml", "Languages":
 			// служебный файл / языки — пропускаем
 
+		case "CommonPictures", "Styles", "StyleItems", "Interfaces",
+			"WebServices", "HTTPServices", "WSReferences", "XDTOPackages",
+			"CommonCommandGroups", "CommandInterfaces":
+			// ресурсы оформления/интеграции — не прикладные данные. Раньше они
+			// попадали в default-ветку и конвертировались в справочники
+			// (issue #16: «логотип» из CommonPictures становился справочником).
+			objects, _ := os.ReadDir(subDir)
+			for _, obj := range objects {
+				if obj.IsDir() {
+					dump.SkippedDirs = append(dump.SkippedDirs, SkippedItem{Kind: kind, Name: obj.Name()})
+				}
+			}
+
 		case "CommonModules":
 			mods, err := parseCommonModules(subDir)
 			if err != nil {
