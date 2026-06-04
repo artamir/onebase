@@ -457,8 +457,9 @@ window._tpRefOpts = {{jsJSON .TPRefOptions}};
     });
   }
 
-  // obFilePick — при выборе файла читает содержимое и подставляет в поле.
-  // В webview/Electron — используется file.path, в браузере — FileReader.
+  // obFilePick — при выборе файла читает содержимое (FileReader + TextDecoder
+  // для UTF-8 / Windows-1251) и сохраняет в data-file-content. В поле показываем
+  // только имя файла. В webview/Electron — file.path вместо содержимого.
   window.obFilePick = function(input, targetId) {
     const file = input.files[0];
     if (!file) return;
@@ -466,11 +467,22 @@ window._tpRefOpts = {{jsJSON .TPRefOptions}};
     if (!target) return;
     if (file.path) {
       target.value = file.path;
+      delete target.dataset.fileContent;
       return;
     }
+    target.value = file.name;
     const reader = new FileReader();
-    reader.onload = function() { target.value = reader.result; };
-    reader.readAsText(file);
+    reader.onload = function() {
+      const bytes = new Uint8Array(reader.result);
+      let text;
+      try {
+        text = new TextDecoder('utf-8', {fatal: true}).decode(bytes);
+      } catch(e) {
+        text = new TextDecoder('windows-1251').decode(bytes);
+      }
+      target.dataset.fileContent = text;
+    };
+    reader.readAsArrayBuffer(file);
   };
 
   window.obFire = async function(elementName, eventName){
@@ -482,7 +494,14 @@ window._tpRefOpts = {{jsJSON .TPRefOptions}};
     fd.set('_kind', 'object');
     if (DOC_ID) fd.set('_id', DOC_ID);
     const body = new URLSearchParams();
-    fd.forEach((v, k) => body.append(k, typeof v === 'string' ? v : ''));
+    fd.forEach((v, k) => {
+      const el = form.querySelector('[name="'+k+'"]');
+      if (el && el.dataset.fileContent !== undefined) {
+        body.append(k, el.dataset.fileContent);
+      } else {
+        body.append(k, typeof v === 'string' ? v : '');
+      }
+    });
     try {
       const res = await fetch(URL, {
         method: 'POST',
