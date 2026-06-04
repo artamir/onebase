@@ -144,6 +144,15 @@ func (s *Server) handleManagedFormEvent(w http.ResponseWriter, r *http.Request) 
 	vars["Объект"] = thisObj
 	vars["ЭтотОбъект"] = thisObj
 
+	// Передаём все процедуры формы, чтобы обработчик мог вызывать
+	// вспомогательные функции из того же .form.os (evalCall ищет
+	// их по ключу __form_procs__).
+	formProcs := make(map[string]*ast.ProcedureDecl, len(program.Procedures))
+	for _, p := range program.Procedures {
+		formProcs[strings.ToLower(p.Name.Literal)] = p
+	}
+	vars["__form_procs__"] = formProcs
+
 	// Выполнение процедуры. Ошибка DSL отдаётся в JSON, не как 500 —
 	// клиент покажет красный баннер и не закроет форму.
 	if runErr := s.interp.Run(decl, thisObj, vars); runErr != nil {

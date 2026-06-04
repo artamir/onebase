@@ -374,6 +374,9 @@ window._tpRefOpts = {{jsJSON .TPRefOptions}};
     if (!form) return;
     Object.keys(values).forEach(function(k){
       const v = values[k];
+      // Пропускаем файловые поля: не подставляем содержимое в поле пути
+      const fc = form.querySelector('[name="_fc_' + (window.CSS && CSS.escape ? CSS.escape(k) : k) + '"]');
+      if (fc) return;
       const inp = form.querySelector('[name="' + (window.CSS && CSS.escape ? CSS.escape(k) : k) + '"]');
       if (!inp) return;
       if (inp.type === 'checkbox') {

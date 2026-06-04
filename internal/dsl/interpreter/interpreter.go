@@ -605,6 +605,16 @@ func (i *Interpreter) evalCall(c *ast.CallExpr, e *env) any {
 				return i.callUserProc(proc, e, args)
 			}
 		}
+		// Процедуры формы (.form.os): vars["__form_procs__"] —
+		// map[string]*ProcedureDecl (lowercase → AST). Позволяет
+		// обработчикам формы вызывать функции из того же .form.os.
+		if fpAny, ok2 := e.get("__form_procs__"); ok2 {
+			if fp, ok3 := fpAny.(map[string]*ast.ProcedureDecl); ok3 {
+				if proc, ok4 := fp[strings.ToLower(fnName)]; ok4 {
+					return i.callUserProc(proc, e, args)
+				}
+			}
+		}
 		fn, ok := builtins[strings.ToLower(fnName)]
 		if !ok {
 			// Factory-вызов без Новый: ЧтениеТекста(Путь), Запрос(Текст), …
