@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -376,5 +377,82 @@ func TestAttachmentsExportRestore(t *testing.T) {
 	})
 	if !bytes.Equal(restoredContent, attContent) {
 		t.Errorf("restored content mismatch: got %q, want %q", restoredContent, attContent)
+	}
+}
+
+func TestSkipConfigPath(t *testing.T) {
+	cases := []struct {
+		rel  string
+		skip bool
+	}{
+		{"metadata/Номенклатура.yaml", false},
+		{".gitignore", false},          // file, not the .git dir
+		{"sub/.gitignore", false},      // whole-segment match only
+		{".git", true},                 // the directory itself
+		{".git/objects/00/abc", true},  // read-only object that breaks restore
+		{"deep/.git/config", true},     // nested repo
+		{".svn/entries", true},         // other VCS
+		{".hg/store", true},            // other VCS
+		{"backups/full.obz", true},     // backups are not config
+		{"backupsX/keep.yaml", false},  // prefix must be the backups/ dir
+	}
+	for _, c := range cases {
+		if got := skipConfigPath(c.rel); got != c.skip {
+			t.Errorf("skipConfigPath(%q) = %v, want %v", c.rel, got, c.skip)
+		}
+	}
+}
+
+// TestExportConfig_FileSourceExcludesGit verifies that a file-source config
+// export prunes the project's .git tree (and other VCS metadata) so that a
+// later restore never tries to overwrite read-only git objects — the
+// "Access is denied" bug on Windows.
+func TestExportConfig_FileSourceExcludesGit(t *testing.T) {
+	configDir := t.TempDir()
+	write := func(rel, content string) {
+		p := filepath.Join(configDir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("metadata/Товар.yaml", "name: Товар")
+	write(".gitignore", "*.db")
+	write(".git/objects/00/abcdef", "binary-git-object")
+	write(".git/HEAD", "ref: refs/heads/main")
+	write("backups/old.obz", "archive")
+
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	if err := exportConfig(context.Background(), nil, "file", configDir, zw); err != nil {
+		t.Fatalf("exportConfig: %v", err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, f := range zr.File {
+		got[f.Name] = true
+	}
+	for name := range got {
+		if strings.Contains(name, "/.git/") || strings.HasSuffix(name, "/.git") {
+			t.Errorf("archive must not contain .git entries, found %q", name)
+		}
+		if strings.Contains(name, "backups/") {
+			t.Errorf("archive must not contain backups entries, found %q", name)
+		}
+	}
+	if !got["config/metadata/Товар.yaml"] {
+		t.Errorf("expected config metadata to be exported, entries: %v", got)
+	}
+	if !got["config/.gitignore"] {
+		t.Errorf(".gitignore (a regular file) should be exported, entries: %v", got)
 	}
 }

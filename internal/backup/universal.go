@@ -361,6 +361,23 @@ func numericToString(n pgtype.Numeric) string {
 	return result
 }
 
+// skipConfigPath reports whether a slash-separated relative path inside the
+// configuration directory must be excluded from backup and restore. Version
+// control metadata and the backups/ directory are not part of the
+// configuration; in particular, read-only .git object files break a file-mode
+// restore on Windows with "Access is denied" when restore tries to overwrite
+// them. The check matches whole path segments so files like ".gitignore" are
+// preserved while the ".git" directory tree is pruned.
+func skipConfigPath(rel string) bool {
+	for _, seg := range strings.Split(rel, "/") {
+		switch seg {
+		case ".git", ".svn", ".hg":
+			return true
+		}
+	}
+	return strings.HasPrefix(rel, "backups/")
+}
+
 // exportConfig writes config files into the config/ directory inside zw.
 func exportConfig(ctx context.Context, db *storage.DB, configSource, configDir string, zw *zip.Writer) error {
 	if configSource == "database" {
@@ -387,12 +404,18 @@ func exportConfig(ctx context.Context, db *storage.DB, configSource, configDir s
 
 	// File source: walk configDir.
 	return filepath.WalkDir(configDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+		if err != nil {
 			return nil
 		}
 		rel, _ := filepath.Rel(configDir, path)
 		rel = strings.ReplaceAll(rel, `\`, "/")
-		if strings.HasPrefix(rel, "backups/") {
+		if skipConfigPath(rel) {
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
 			return nil
 		}
 		content, err := os.ReadFile(path)
@@ -599,10 +622,21 @@ func importConfig(ctx context.Context, db *storage.DB, configDest, cfgFileDir, c
 	}
 	// File destination: copy YAML files to cfgFileDir.
 	return filepath.WalkDir(configDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+		if err != nil {
 			return nil
 		}
 		rel, _ := filepath.Rel(configDir, path)
+		// Defensive: older archives may have bundled the project's .git tree.
+		// Skip it so restore does not try to overwrite read-only git objects.
+		if skipConfigPath(filepath.ToSlash(rel)) {
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
 		dst := filepath.Join(cfgFileDir, rel)
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 			return err
