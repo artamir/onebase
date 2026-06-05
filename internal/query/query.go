@@ -585,7 +585,13 @@ func (tr *translator) translateFilterTokens(tokens []tok) string {
 				}
 			}
 		case tStr:
-			parts = append(parts, "'"+strings.ReplaceAll(t.val, "'", "''")+"'")
+			escaped := "'" + strings.ReplaceAll(t.val, "'", "''") + "'"
+			// PG: when a string literal is compared (=/!=/IN) to an identifier,
+			// add ::text to prevent "operator does not exist: uuid = text" errors.
+			if dialectName(tr.opts.Dialect) == "postgres" && isComparisonContext(tokens, i) {
+				escaped += "::text"
+			}
+			parts = append(parts, escaped)
 		case tNum, tOp, tStar:
 			parts = append(parts, t.val)
 		case tComma:
@@ -1514,6 +1520,7 @@ func translate(tokens []tok, opts CompileOpts) (Result, error) {
 	// расширяем НачалоДня/Год/Месяц/... в SQL-эквиваленты
 	// до основной трансляции, чтобы остальные шаги ничего не знали о них.
 	tokens = rewriteDateFuncs(tokens, dialectName(opts.Dialect))
+	tokens = rewriteStrftime(tokens, dialectName(opts.Dialect))
 	tr := &translator{
 		tokens:      tokens,
 		params:      map[string]int{},
