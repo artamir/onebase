@@ -10,13 +10,13 @@ import (
 	"github.com/ivantit66/onebase/internal/storage"
 )
 
-// authTables — таблицы авторизации, которые никогда не сбрасываются при демо-сбросе.
+// authTables — таблицы, пропускаемые при демо-сбросе.
+// Сессии не импортируем — пользователю всё равно нужно логиниться заново.
+// Историю запусков регл.заданий оставляем.
+// Пользователи, роли и связи импортируются из бэкапа — демо-сайт должен
+// показывать тех же пользователей, что и в исходной конфигурации.
 var authTables = map[string]bool{
-	"_users":      true,
-	"_sessions":   true,
-	"_roles":      true,
-	"_user_roles": true,
-	// историю запусков регл.заданий тоже оставляем
+	"_sessions":       true,
 	"_scheduled_runs": true,
 }
 
@@ -78,6 +78,15 @@ func DemoReset(ctx context.Context, db *storage.DB, backupPath string) (*ImportR
 		return report, fmt.Errorf("demo reset: disable FK: %w", err)
 	}
 	defer fkCleanup()
+
+	// Импортируем конфигурацию из config/ (каталоги, формы, отчёты и т.д.).
+	// Для --config-source database конфиг запишется в _onebase_config.
+	configDir := filepath.Join(tmpDir, "config")
+	if _, err := os.Stat(configDir); err == nil {
+		if err := importConfig(ctx, db, "database", "", configDir); err != nil {
+			return report, fmt.Errorf("demo reset config: %w", err)
+		}
+	}
 
 	// Импортируем data/ и system/, пропуская таблицы авторизации
 	dataDir := filepath.Join(tmpDir, "data")

@@ -299,6 +299,54 @@ func detectJSONCols(ctx context.Context, db *storage.DB, tableName string) (map[
 	return result, nil
 }
 
+// detectBoolCols returns the set of columns with boolean type (PG bool / SQLite INTEGER affinity used as bool).
+func detectBoolCols(ctx context.Context, db *storage.DB, tableName string) (map[string]bool, error) {
+	result := make(map[string]bool)
+	if db.IsSQLite() {
+		return result, nil
+	}
+	rows, err := db.Query(ctx,
+		`SELECT column_name FROM information_schema.columns
+		 WHERE table_schema='public' AND table_name=$1 AND data_type='boolean'`,
+		tableName)
+	if err != nil {
+		return result, nil
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var col string
+		if rows.Scan(&col) == nil {
+			result[col] = true
+		}
+	}
+	return result, nil
+}
+
+// detectByteaCols returns the set of columns with bytea type in PostgreSQL.
+// Used during import to decide whether to base64-decode btype values:
+// only true bytea columns get decoded; text/jsonb columns keep the original string.
+func detectByteaCols(ctx context.Context, db *storage.DB, tableName string) (map[string]bool, error) {
+	result := make(map[string]bool)
+	if db.IsSQLite() {
+		return result, nil
+	}
+	rows, err := db.Query(ctx,
+		`SELECT column_name FROM information_schema.columns
+		 WHERE table_schema='public' AND table_name=$1 AND data_type='bytea'`,
+		tableName)
+	if err != nil {
+		return result, nil
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var col string
+		if rows.Scan(&col) == nil {
+			result[col] = true
+		}
+	}
+	return result, nil
+}
+
 // marshalValue converts a scanned DB value to a JSON-safe Go value.
 // For bytes columns, returns base64 string. For Numeric, returns exact decimal string.
 func marshalValue(v any, isBytesCol bool) any {
@@ -359,6 +407,41 @@ func numericToString(n pgtype.Numeric) string {
 		result = "-" + result
 	}
 	return result
+}
+
+// stripMonoClock normalises timestamp strings produced by Go's time.Time.String().
+// SQLite backups may contain values like
+//
+//	"2026-05-20 21:47:08.5675381 +0300 MSK m=+103.079963701"
+//
+// PostgreSQL rejects both the monotonic clock suffix ("m=+...") and the
+// timezone abbreviation ("MSK"). We strip the monotonic part, then try to
+// parse the Go layout and reformat as RFC 3339 which PG accepts natively.
+// Non-timestamp strings are returned unchanged.
+func stripMonoClock(s string) string {
+	// Fast check: timestamp-like strings start with "YYYY-".
+	if len(s) < 6 || s[4] != '-' {
+		return s
+	}
+
+	// Step 1: strip monotonic clock suffix ("m=+N...") if present.
+	cleaned := s
+	if i := strings.LastIndex(s, " m="); i != -1 {
+		cleaned = s[:i]
+	}
+
+	// Step 2: try Go time format with timezone abbreviation.
+	for _, layout := range []string{
+		"2006-01-02 15:04:05.999999999 -0700 MST",
+		"2006-01-02 15:04:05 -0700 MST",
+	} {
+		if t, err := time.Parse(layout, cleaned); err == nil {
+			return t.Format(time.RFC3339Nano)
+		}
+	}
+
+	// Not a timestamp we recognise — return with monotonic already stripped.
+	return cleaned
 }
 
 // skipConfigPath reports whether a slash-separated relative path inside the
@@ -776,6 +859,12 @@ func importTableJSONL(ctx context.Context, db *storage.DB, tableName, filePath s
 	// Detect JSON/JSONB columns so we can cast values on insert.
 	jsonCols, _ := detectJSONCols(ctx, db, tableName)
 
+	// Detect boolean columns so we can convert numeric 0/1 → bool (PG OID 16).
+	boolCols, _ := detectBoolCols(ctx, db, tableName)
+
+	// Detect bytea columns so we only base64-decode btypes for actual binary columns.
+	byteaCols, _ := detectByteaCols(ctx, db, tableName)
+
 	// Clear existing data — we do a full replace.
 	if _, err := db.Exec(ctx, "DELETE FROM "+quotedIdent(db, tableName)); err != nil {
 		return 0, fmt.Errorf("clear table %s: %w", tableName, err)
@@ -807,7 +896,7 @@ func importTableJSONL(ctx context.Context, db *storage.DB, tableName, filePath s
 			}
 		}
 
-		if err := insertRow(ctx, db, tableName, raw, btypes, existingCols, jsonCols); err != nil {
+		if err := insertRow(ctx, db, tableName, raw, btypes, existingCols, jsonCols, boolCols, byteaCols); err != nil {
 			return n, fmt.Errorf("insert row %d into %s: %w", n+1, tableName, err)
 		}
 		n++
@@ -820,7 +909,9 @@ func importTableJSONL(ctx context.Context, db *storage.DB, tableName, filePath s
 // columns not in this set are skipped (handles source/target schema differences).
 // jsonCols is the set of JSON/JSONB columns — their raw string value is passed
 // directly so PostgreSQL can parse it as JSON.
-func insertRow(ctx context.Context, db *storage.DB, tableName string, raw map[string]json.RawMessage, btypes map[string]bool, existingCols map[string]bool, jsonCols map[string]bool) error {
+// boolCols is the set of boolean columns — numeric 0/1 values are converted to bool
+// so that the PG driver does not fail with "cannot find encode plan for bool (OID 16)".
+func insertRow(ctx context.Context, db *storage.DB, tableName string, raw map[string]json.RawMessage, btypes map[string]bool, existingCols map[string]bool, jsonCols map[string]bool, boolCols map[string]bool, byteaCols map[string]bool) error {
 	d := db.Dialect()
 
 	cols := make([]string, 0, len(raw))
@@ -836,19 +927,30 @@ func insertRow(ctx context.Context, db *storage.DB, tableName string, raw map[st
 
 		if string(rawVal) == "null" {
 			goVal = nil
-		} else if btypes[col] {
+		} else if btypes[col] && byteaCols[col] {
+			// Column is in btypes AND is bytea in target PG — decode base64 → raw bytes.
 			var b64 string
 			if err := json.Unmarshal(rawVal, &b64); err != nil {
 				return fmt.Errorf("col %s: base64 unmarshal: %w", col, err)
 			}
 			decoded, err := base64.StdEncoding.DecodeString(b64)
 			if err != nil {
-				// Старые бэкапы могли хранить этот столбец как обычный TEXT
-				// (например, _audit.old_value/new_value до перехода на BLOB/JSONB):
-				// значение — валидная строка, но не base64. Сохраняем как есть.
 				goVal = b64
 			} else {
 				goVal = decoded
+			}
+		} else if btypes[col] {
+			// Column is in btypes but target is NOT bytea (text/jsonb).
+			// Keep the original string — do NOT base64-decode it.
+			if jsonCols[col] {
+				// JSONB column: pass raw JSON string directly.
+				goVal = string(rawVal)
+			} else {
+				var s string
+				if err := json.Unmarshal(rawVal, &s); err != nil {
+					return fmt.Errorf("col %s: string unmarshal: %w", col, err)
+				}
+				goVal = stripMonoClock(s)
 			}
 		} else if jsonCols[col] {
 			// JSON/JSONB column: pass raw JSON string directly.
@@ -870,6 +972,20 @@ func insertRow(ctx context.Context, db *storage.DB, tableName string, raw map[st
 				} else {
 					goVal = tv
 				}
+				// Boolean columns: numeric 0/1 must become Go bool,
+				// otherwise the PG driver rejects int64 for OID 16.
+				if boolCols[col] {
+					switch iv := goVal.(type) {
+					case int64:
+						goVal = iv != 0
+					case float64:
+						goVal = iv != 0
+					}
+				}
+			case string:
+				goVal = stripMonoClock(tv)
+			case bool:
+				goVal = tv
 			default:
 				goVal = v
 			}
