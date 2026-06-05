@@ -46,3 +46,6 @@ docs/
 *.db
 *.db-shm
 *.db-wal
+
+# Бэкапы
+*.obz
