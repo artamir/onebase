@@ -578,17 +578,11 @@ func (tr *translator) translateFilterTokens(tokens []tok) string {
 				parts = append(parts, agg)
 			} else {
 				lower := strings.ToLower(t.val)
-				col := lower
-				if c, ok := tr.colMap[lower]; ok {
-					col = c
+				if col, ok := tr.colMap[lower]; ok {
+					parts = append(parts, col)
+				} else {
+					parts = append(parts, lower)
 				}
-				sql := col
-				// PG: cast to ::text before = / != / IN when the right side is
-				// a string literal or another identifier.
-				if dialectName(tr.opts.Dialect) == "postgres" && isNextCompareToString(tokens, i) {
-					sql += "::text"
-				}
-				parts = append(parts, sql)
 			}
 		case tStr:
 			parts = append(parts, "'"+strings.ReplaceAll(t.val, "'", "''")+"'")
