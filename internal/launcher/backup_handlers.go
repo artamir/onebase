@@ -31,6 +31,28 @@ func (h *handler) backupDir(b *Base) string {
 	return filepath.Join(home, ".onebase", "backups", b.ID)
 }
 
+// safeBackupPath joins dir and file, guaranteeing the result stays inside dir.
+// Protects against path traversal (../, absolute paths) in the {file} URL param.
+func safeBackupPath(dir, file string) (string, error) {
+	if file == "" || strings.ContainsRune(file, 0) {
+		return "", fmt.Errorf("недопустимое имя файла")
+	}
+	// reject any path separators / traversal — backup files are flat names.
+	if strings.ContainsAny(file, `/\`) || file == ".." || strings.Contains(file, "..") {
+		return "", fmt.Errorf("недопустимое имя файла: %s", file)
+	}
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	fp := filepath.Join(absDir, file)
+	rel, err := filepath.Rel(absDir, fp)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("недопустимое имя файла: %s", file)
+	}
+	return fp, nil
+}
+
 func (h *handler) loadBackupDirSetting(b *Base) string {
 	if b.ConfigSource == "database" {
 		db, err := OpenDB(context.Background(), b)
@@ -124,7 +146,11 @@ func (h *handler) backupDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	file := chi.URLParam(r, "file")
 	dir := h.backupDir(b)
-	fp := filepath.Join(dir, file)
+	fp, err := safeBackupPath(dir, file)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
 	if _, err := os.Stat(fp); err != nil {
 		http.NotFound(w, r)
 		return
@@ -140,7 +166,9 @@ func (h *handler) backupDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	file := chi.URLParam(r, "file")
-	os.Remove(filepath.Join(h.backupDir(b), file))
+	if fp, err := safeBackupPath(h.backupDir(b), file); err == nil {
+		os.Remove(fp)
+	}
 	data := h.loadCfgData(r.Context(), b, "backup")
 	data.FieldsSaved = true
 	data.FieldsSavedEntity = "panel-backup"
@@ -216,8 +244,14 @@ func (h *handler) backupUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	name := header.Filename
-	outPath := filepath.Join(dir, name)
+	name := filepath.Base(header.Filename)
+	outPath, err := safeBackupPath(dir, name)
+	if err != nil {
+		data := h.loadCfgData(r.Context(), b, "backup")
+		data.Error = "Недопустимое имя файла"
+		renderCfg(w, r, data)
+		return
+	}
 	f, err := os.Create(outPath)
 	if err != nil {
 		data := h.loadCfgData(r.Context(), b, "backup")
@@ -243,7 +277,13 @@ func (h *handler) backupRestore(w http.ResponseWriter, r *http.Request) {
 	}
 	file := chi.URLParam(r, "file")
 	dir := h.backupDir(b)
-	fp := filepath.Join(dir, file)
+	fp, err := safeBackupPath(dir, file)
+	if err != nil {
+		data := h.loadCfgData(r.Context(), b, "backup")
+		data.Error = "Недопустимое имя файла"
+		renderCfg(w, r, data)
+		return
+	}
 	if _, err := os.Stat(fp); err != nil {
 		data := h.loadCfgData(r.Context(), b, "backup")
 		data.Error = "Файл не найден: " + file
