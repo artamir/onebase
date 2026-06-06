@@ -621,12 +621,19 @@ const cfgFoot = `{{define "cfg-foot"}}
 var _cfgNewTitles = {catalog:'Новый справочник', document:'Новый документ', register:'Новый регистр', inforeg:'Новый регистр сведений', accountreg:'Новый регистр бухгалтерии', enum:'Новое перечисление', subsystem:'Новая подсистема', widget:'Новый виджет', module:'Новый общий модуль', processor:'Новая обработка'};
 function cfgNewObj(kind) {
   if (kind === 'printform') { cfgNewPrintFormShow(); return; }
+  // Вставляем форму сразу после кликнутой группы (+ кнопка)
+  var addBtn = event && event.target;
+  var group = addBtn && addBtn.closest('details');
   var f = document.getElementById('cfg-new-form');
   document.getElementById('cfg-new-title').textContent = _cfgNewTitles[kind] || 'Новый объект';
   document.getElementById('cfg-new-kind-inp').value = kind;
   document.getElementById('cfg-new-name').value = '';
   f.style.display = 'block';
   document.getElementById('cfg-new-form-pf').style.display = 'none';
+  if (group && group.parentNode) {
+    group.parentNode.insertBefore(f, group.nextSibling);
+  }
+  f.scrollIntoView({block:'nearest',behavior:'smooth'});
   document.getElementById('cfg-new-name').focus();
 }
 function cfgHideNew() {
