@@ -41,6 +41,8 @@ Thumbs.db
 
 # Рабочие материалы / документация (не в публичном репо)
 docs/
+!docs/forms.md
+!docs/forms-1c-converter.md
 
 # Локальные базы SQLite
 *.db
