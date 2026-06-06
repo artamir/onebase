@@ -322,7 +322,12 @@ func (i *Interpreter) execStmt(s ast.Stmt, e *env) {
 	case *ast.NumericForStmt:
 		start := toFloatOr0(i.evalExpr(v.Start, e))
 		end := toFloatOr0(i.evalExpr(v.End, e))
+		iter := 0
 		for counter := start; counter <= end; counter++ {
+			iter++
+			if iter > maxWhileIter {
+				RaiseUserError("Цикл «Для»: превышено максимальное число итераций — вероятно, ошибка в границах цикла")
+			}
 			e.set(v.Var.Literal, counter)
 			if !i.execLoopBody(v.Body, e) {
 				break
@@ -563,10 +568,14 @@ func (i *Interpreter) evalBinary(b *ast.BinaryExpr, e *env) any {
 	case token.SLASH:
 		ld, lok := toDecimal(l)
 		rd, rok := toDecimal(r)
-		if lok && rok && !rd.IsZero() {
+		// Деление на ноль — исключение (как в 1С), а не молчаливый nil.
+		if rok && rd.IsZero() && (lok || l == nil) {
+			panic(userError{Msg: "Деление на ноль", Line: b.Op.Line})
+		}
+		if lok && rok {
 			return ld.Div(rd)
 		}
-		if l == nil && rok && !rd.IsZero() {
+		if l == nil && rok {
 			return decimal.Zero
 		}
 	}

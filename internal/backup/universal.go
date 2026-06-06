@@ -647,6 +647,11 @@ func ImportUniversal(
 			continue
 		}
 		outPath := filepath.Join(tmpDir, filepath.FromSlash(f.Name))
+		// Zip-slip guard: ensure the resolved path stays within tmpDir.
+		if rel, err := filepath.Rel(tmpDir, outPath); err != nil ||
+			rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return nil, fmt.Errorf("недопустимый путь в архиве: %s", f.Name)
+		}
 		if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
 			return nil, err
 		}

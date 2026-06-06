@@ -930,6 +930,29 @@ func (s *Server) postDocument(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, docURL, http.StatusSeeOther)
 }
 
+// clearMovements removes all register movements (accumulation, info, account)
+// recorded by the given document, across every register. Passing nil rows to the
+// register writers performs only the DELETE-by-recorder step, so iterating all
+// registers is safe even for those the document never wrote to.
+func (s *Server) clearMovements(ctx context.Context, entityName string, id uuid.UUID) error {
+	for _, reg := range s.reg.Registers() {
+		if err := s.store.WriteMovements(ctx, reg.Name, entityName, id, nil, reg, nil); err != nil {
+			return err
+		}
+	}
+	for _, ir := range s.reg.InfoRegisters() {
+		if err := s.store.WriteInfoMovements(ctx, ir.Name, entityName, id, nil, ir, nil); err != nil {
+			return err
+		}
+	}
+	for _, ar := range s.reg.AccountRegisters() {
+		if err := s.store.WriteAccountMovements(ctx, ar.Name, entityName, id, nil, ar, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // unpostDocument clears movements and sets posted=false.
 func (s *Server) unpostDocument(w http.ResponseWriter, r *http.Request) {
 	entity := s.getEntity(w, r)
@@ -946,10 +969,8 @@ func (s *Server) unpostDocument(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.store.WithTx(r.Context(), func(ctx context.Context) error {
-		for _, reg := range s.reg.Registers() {
-			if err := s.store.WriteMovements(ctx, reg.Name, entity.Name, id, nil, reg, nil); err != nil {
-				return err
-			}
+		if err := s.clearMovements(ctx, entity.Name, id); err != nil {
+			return err
 		}
 		return s.store.SetPosted(ctx, entity.Name, id, false)
 	}); err != nil {
@@ -1003,10 +1024,8 @@ func (s *Server) deleteRecord(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.store.WithTx(r.Context(), func(ctx context.Context) error {
 		if entity.Posting {
-			for _, reg := range s.reg.Registers() {
-				if err := s.store.WriteMovements(ctx, reg.Name, entity.Name, id, nil, reg, nil); err != nil {
-					return err
-				}
+			if err := s.clearMovements(ctx, entity.Name, id); err != nil {
+				return err
 			}
 		}
 		return s.store.Delete(ctx, entity.Name, id)
@@ -1054,8 +1073,8 @@ func (s *Server) deleteMarkedAll(w http.ResponseWriter, r *http.Request) {
 				}
 				s.store.WithTx(r.Context(), func(ctx context.Context) error {
 					if entity.Posting {
-						for _, reg := range s.reg.Registers() {
-							s.store.WriteMovements(ctx, reg.Name, entity.Name, id, nil, reg, nil)
+						if err := s.clearMovements(ctx, entity.Name, id); err != nil {
+							return err
 						}
 					}
 					for _, tp := range entity.TableParts {
@@ -1135,8 +1154,8 @@ func (s *Server) deleteMarked(w http.ResponseWriter, r *http.Request) {
 		}
 		s.store.WithTx(r.Context(), func(ctx context.Context) error {
 			if entity.Posting {
-				for _, reg := range s.reg.Registers() {
-					s.store.WriteMovements(ctx, reg.Name, entity.Name, id, nil, reg, nil)
+				if err := s.clearMovements(ctx, entity.Name, id); err != nil {
+					return err
 				}
 			}
 			return s.store.Delete(ctx, entity.Name, id)

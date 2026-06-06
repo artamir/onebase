@@ -11,25 +11,39 @@ type txKey struct{}
 
 // WithTx runs fn inside a transaction. On fn error the transaction is rolled
 // back; on success it is committed.
-func (db *DB) WithTx(ctx context.Context, fn func(context.Context) error) error {
+func (db *DB) WithTx(ctx context.Context, fn func(context.Context) error) (err error) {
 	if db.sqlDB != nil {
-		tx, err := db.sqlDB.BeginTx(ctx, nil)
-		if err != nil {
-			return err
+		tx, berr := db.sqlDB.BeginTx(ctx, nil)
+		if berr != nil {
+			return berr
 		}
+		// Roll back on panic so a panicking fn does not leave the connection
+		// stuck in an open transaction (fatal for SQLite with MaxOpenConns(1)).
+		defer func() {
+			if p := recover(); p != nil {
+				_ = tx.Rollback()
+				panic(p)
+			}
+		}()
 		txCtx := context.WithValue(ctx, txKey{}, tx)
-		if err := fn(txCtx); err != nil {
+		if err = fn(txCtx); err != nil {
 			_ = tx.Rollback()
 			return err
 		}
 		return tx.Commit()
 	}
-	tx, err := db.pool.Begin(ctx)
-	if err != nil {
-		return err
+	tx, berr := db.pool.Begin(ctx)
+	if berr != nil {
+		return berr
 	}
+	defer func() {
+		if p := recover(); p != nil {
+			_ = tx.Rollback(ctx)
+			panic(p)
+		}
+	}()
 	txCtx := context.WithValue(ctx, txKey{}, tx)
-	if err := fn(txCtx); err != nil {
+	if err = fn(txCtx); err != nil {
 		tx.Rollback(ctx)
 		return err
 	}

@@ -157,10 +157,8 @@ func (p *docProxy) DeleteRef(uuidStr string) error {
 	}
 	ctx := p.ctx()
 	if p.entity.Posting {
-		for _, reg := range p.s.reg.Registers() {
-			if err := p.s.store.WriteMovements(ctx, reg.Name, p.entity.Name, id, nil, reg, nil); err != nil {
-				return fmt.Errorf("очистка движений %s: %w", reg.Name, err)
-			}
+		if err := p.s.clearMovements(ctx, p.entity.Name, id); err != nil {
+			return fmt.Errorf("очистка движений: %w", err)
 		}
 	}
 	return p.s.store.Delete(ctx, p.entity.Name, id)
