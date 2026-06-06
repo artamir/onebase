@@ -251,7 +251,7 @@ const tplForm = `
     <div class="fg" id="path-row" style="{{if ne .Base.ConfigSource "file"}}display:none{{end}}">
       <label>{{t $.Lang "Путь к папке конфигурации"}}</label>
       <div class="input-browse">
-        <input id="inp-path" name="path" value="{{.Base.Path}}" placeholder="/home/user/my-app">
+        <input id="inp-path" name="path" value="{{.Base.Path}}" placeholder="/home/user/my-app" onblur="autoFillSQLitePath(this.value)">
         <button type="button" class="btn-browse" onclick="pickDir('inp-path','Выберите папку конфигурации')">📁</button>
       </div>
       <div class="hint">{{t $.Lang "Папка должна содержать catalogs/, documents/ и т.д."}}</div>
@@ -311,8 +311,14 @@ function togglePath(v) {
 function toggleDB(v) {
   var dsn = document.getElementById('dsn-row');
   var dbp = document.getElementById('dbpath-row');
-  if (v === 'sqlite') { dsn.style.display='none'; dbp.style.display=''; }
-  else { dsn.style.display=''; dbp.style.display='none'; }
+  if (v === 'sqlite') {
+    dsn.style.display='none'; dbp.style.display='';
+    // Автозаполнение пути SQLite из папки конфигурации
+    var configPath = document.getElementById('inp-path');
+    if (configPath && (configPath.value || '').trim()) {
+      autoFillSQLitePath(configPath.value);
+    }
+  } else { dsn.style.display=''; dbp.style.display='none'; }
 }
 function pickDir(inputId, title) {
   var btn = event.target;
@@ -322,9 +328,23 @@ function pickDir(inputId, title) {
   fetch('/browse-dir?title=' + encodeURIComponent(title) + '&initial_path=' + encodeURIComponent(cur))
     .then(function(r){ return r.json(); })
     .then(function(d){
-      if (d.path) document.getElementById(inputId).value = d.path;
+      if (!d.path) return;
+      document.getElementById(inputId).value = d.path;
+      // Автозаполнение пути SQLite при выборе папки конфигурации
+      autoFillSQLitePath(d.path);
     })
     .finally(function(){ btn.disabled = false; btn.textContent = '📁'; });
+}
+function autoFillSQLitePath(configPath) {
+  var dbType = document.querySelector('select[name=db_type]');
+  if (!dbType || dbType.value !== 'sqlite') return;
+  var dbp = document.getElementById('inp-dbpath');
+  if (!dbp || (dbp.value || '').trim()) return;
+  var name = (document.querySelector('input[name=name]').value || 'database')
+    .replace(/[\\/:*?"<>|]/g, '_').trim() || 'database';
+  var sep = configPath.indexOf('/') >= 0 && configPath.indexOf('\\') < 0 ? '/' : '\\';
+  var trimmed = configPath.replace(/[\\/]+$/, '');
+  dbp.value = trimmed + sep + name + '.db';
 }
 function pickFile(inputId, title, filter) {
   var btn = event.target;
