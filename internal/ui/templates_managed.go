@@ -419,11 +419,30 @@ window._tpRefOpts = {{jsJSON .TPRefOptions}};
     const palette = kind === 'err'
       ? 'background:#fee2e2;color:#991b1b;border:1px solid #fecaca'
       : 'background:#d1fae5;color:#065f46;border:1px solid #a7f3d0';
-    d.style.cssText = palette + ';padding:8px 12px;border-radius:6px;font-size:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);pointer-events:auto;cursor:pointer';
-    d.textContent = text;
-    d.onclick = () => d.remove();
+    d.style.cssText = palette + ';padding:8px 28px 8px 12px;border-radius:6px;font-size:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);pointer-events:auto;cursor:copy;position:relative;white-space:pre-wrap;word-break:break-word';
+    const msg = document.createElement('span');
+    msg.textContent = text;
+    d.appendChild(msg);
+    // Клик по тосту — скопировать текст в буфер (удобно для ошибок). Тост не
+    // закрывается по клику; для закрытия — крестик.
+    d.title = 'Клик — скопировать текст';
+    d.onclick = function(){
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text); }
+        else { const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+        const prev = d.style.boxShadow; d.style.boxShadow='0 0 0 2px #16a34a';
+        setTimeout(function(){ d.style.boxShadow=prev; }, 600);
+      } catch(e){}
+    };
+    const x = document.createElement('span');
+    x.textContent = '×';
+    x.style.cssText = 'position:absolute;top:4px;right:8px;cursor:pointer;font-weight:700;opacity:.55;font-size:14px;line-height:1';
+    x.onclick = function(ev){ ev.stopPropagation(); d.remove(); };
+    d.appendChild(x);
     b.appendChild(d);
-    setTimeout(() => d.remove(), kind === 'err' ? 9000 : 5000);
+    // Ошибки держим до закрытия крестиком (чтобы успеть прочитать/скопировать);
+    // info-сообщения сами исчезают через 5 c.
+    if (kind !== 'err') setTimeout(() => d.remove(), 5000);
   }
   // Доступно другим скриптам (например, грид-IIFE показывает ошибки настройки).
   window.obFlash = flash;
@@ -602,7 +621,11 @@ window._tpRefOpts = {{jsJSON .TPRefOptions}};
       // Plan 48: check if SlickGrid exists for this TP
       var obg = (window._obGrids || {})[extraParams._tp];
       if (obg) {
-        var sel = obg.grid.getSelectedRows();
+        // getSelectedRows бросает «Selection model is not set», если модель
+        // выделения не установлена (плагин не завендорен). Командам подбора/
+        // пересчёта/очистки выделение не нужно — гасим ошибку и шлём пусто.
+        var sel = [];
+        try { sel = obg.grid.getSelectedRows() || []; } catch (e) { sel = []; }
         body.append('_tp_selected', sel.join(','));
       } else {
         // Legacy: read from DOM checkboxes
@@ -1056,10 +1079,14 @@ window._tpRefOpts = {{jsJSON .TPRefOptions}};
     if (!g) return;
     var _lk = g.grid.getEditorLock && g.grid.getEditorLock();
     if (_lk && _lk.isActive()) _lk.commitCurrentEdit();
-    var sel = g.grid.getSelectedRows();
-    if (!sel || !sel.length) return;
+    // Без плагина выделения getSelectedRows бросает исключение — удаляем
+    // активную (текущую) строку, как в обычной таблице.
+    var sel = [];
+    try { sel = g.grid.getSelectedRows() || []; } catch (e) { sel = []; }
+    if (!sel.length) { var ac = g.grid.getActiveCell(); if (ac) sel = [ac.row]; }
+    if (!sel.length) return;
     var items = g.dataView.getItems();
-    var toRemove = sel.map(function(r) { return items[r]; });
+    var toRemove = sel.map(function(r) { return items[r]; }).filter(Boolean);
     for (var i = 0; i < toRemove.length; i++) g.dataView.deleteItem(toRemove[i].id);
     window._obFormDirty = true;
     g.grid.invalidate();
@@ -1186,19 +1213,30 @@ window._tpRefOpts = {{jsJSON .TPRefOptions}};
       grid.invalidate(); grid.render();
     });
 
-    // Клиентский авторасчёт «как в старой таблице» (recalcTpRow): если в ТЧ
-    // РОВНО три числовые колонки (количество, цена, сумма) — третья = первая ×
-    // вторая. Это мгновенная подсказка; сервер пересчитает точно (decimal) при
-    // записи/проведении или по кнопке «Пересчитать»/обработчику ПриИзменении.
-    var numCols = colsRaw.filter(function(c) { return c.type === "number"; });
+    // Клиентский авторасчёт «как в старой таблице»: Сумма = Количество × Цена.
+    // Колонки определяем ПО ИМЕНИ (а не «ровно 3 числовые»), чтобы работало и
+    // когда в ТЧ есть доп. числовые колонки (НДС и т.п.). Это мгновенная
+    // подсказка по основной колонке; полный пересчёт (НДС, итоги шапки —
+    // decimal) делает сервер по кнопке «Пересчитать»/при записи/проведении.
     function num(v) { var n = Number(String(v == null ? "" : v).replace(/\s/g, "").replace(",", ".")); return isNaN(n) ? 0 : n; }
+    function findColId(variants) {
+      for (var i = 0; i < colsRaw.length; i++) {
+        var nm = String(colsRaw[i].name || colsRaw[i].id).toLowerCase();
+        for (var j = 0; j < variants.length; j++) { if (nm === variants[j]) return colsRaw[i].id; }
+      }
+      return null;
+    }
+    var colQty = findColId(["количество", "кол-во", "колво", "кол", "quantity", "qty"]);
+    var colPrice = findColId(["цена", "price"]);
+    var colSum = findColId(["сумма", "amount", "sum"]);
     grid.onCellChange.subscribe(function(e, args) {
       window._obFormDirty = true;
-      if (numCols.length === 3 && args && args.item && args.cell != null) {
+      if (colQty && colPrice && colSum && args && args.item && args.cell != null) {
         var changed = columns[args.cell] && columns[args.cell].field;
-        // Не перетираем сумму, если правят саму сумму (3-ю колонку).
-        if (changed !== numCols[2].id) {
-          args.item[numCols[2].id] = num(args.item[numCols[0].id]) * num(args.item[numCols[1].id]);
+        // Пересчитываем сумму при правке количества/цены; саму сумму не трогаем,
+        // если её правят вручную.
+        if (changed === colQty || changed === colPrice) {
+          args.item[colSum] = num(args.item[colQty]) * num(args.item[colPrice]);
           grid.invalidateRow(args.row); grid.render();
         }
       }
@@ -1208,13 +1246,15 @@ window._tpRefOpts = {{jsJSON .TPRefOptions}};
     // Delete key removes selected rows
     grid.onKeyDown.subscribe(function(e) {
       if (e.key === 'Delete' && !grid.getEditorLock().isActive()) {
-        var sel = grid.getSelectedRows();
-        if (sel && sel.length) {
+        var sel = [];
+        try { sel = grid.getSelectedRows() || []; } catch (er) { sel = []; }
+        if (!sel.length) { var ac = grid.getActiveCell(); if (ac) sel = [ac.row]; }
+        if (sel.length) {
           var its = dataView.getItems();
-          var toRemove = sel.map(function(r) { return its[r]; });
+          var toRemove = sel.map(function(r) { return its[r]; }).filter(Boolean);
           for (var i = 0; i < toRemove.length; i++) dataView.deleteItem(toRemove[i].id);
+          window._obFormDirty = true;
           grid.invalidate();
-          grid.setSelectedRows([]);
           e.stopImmediatePropagation();
         }
       }
