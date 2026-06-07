@@ -17,4 +17,6 @@ func mountStatic(r chi.Router) {
 	// Monaco editor — инструменты разработчика (консоль кода/запросов, отладчик)
 	// грузят его офлайн вместо CDN.
 	r.Handle("/vendor/monaco/*", http.StripPrefix("/vendor/monaco/", webassets.MonacoHandler()))
+	// PWA: манифест, service worker, офлайн-страница, иконки (этап 45).
+	mountPWA(r)
 }
