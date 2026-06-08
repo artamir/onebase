@@ -779,10 +779,25 @@ window._tpRefOpts = {{jsJSON .TPRefOptions}};
   };
 
   // Отслеживание «грязной» формы — чтобы Esc/закрытие спрашивало подтверждение
-  // только при наличии несохранённых изменений.
+  // только при наличии несохранённых изменений. Плюс пометка несохранённого
+  // документа звёздочкой в заголовке вкладки браузера (аналог «*» в 1С) и
+  // предупреждение при ЛЮБОМ уходе со страницы — крестик, клик по ссылке,
+  // закрытие/обновление вкладки.
   window._obFormDirty = false;
-  document.addEventListener('input',  function(e){ if (e.target && e.target.closest && e.target.closest('#main-form')) window._obFormDirty = true; }, true);
-  document.addEventListener('change', function(e){ if (e.target && e.target.closest && e.target.closest('#main-form')) window._obFormDirty = true; }, true);
+  var _obBaseTitle = document.title;
+  function _obMarkDirty(){
+    window._obFormDirty = true;
+    if (document.title.charAt(0) !== '●') document.title = '● ' + _obBaseTitle;
+  }
+  document.addEventListener('input',  function(e){ if (e.target && e.target.closest && e.target.closest('#main-form')) _obMarkDirty(); }, true);
+  document.addEventListener('change', function(e){ if (e.target && e.target.closest && e.target.closest('#main-form')) _obMarkDirty(); }, true);
+  // Сохранение формы (Записать/Провести) сбрасывает «грязный» флаг — иначе
+  // beforeunload спрашивал бы подтверждение даже при штатной отправке.
+  var _obMainForm = document.getElementById('main-form');
+  if (_obMainForm) _obMainForm.addEventListener('submit', function(){ window._obFormDirty = false; });
+  window.addEventListener('beforeunload', function(e){
+    if (window._obFormDirty) { e.preventDefault(); e.returnValue = ''; return ''; }
+  });
 
   // Esc — отмена незаконченного ввода / закрытие формы (как в 1С). Порядок:
   //   1) открыт модальный диалог (подбор/выбор ссылки) → закрыть его;

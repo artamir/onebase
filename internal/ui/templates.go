@@ -1215,6 +1215,25 @@ const tplForm = `
 <form id="form-unpost" method="POST" action="/ui/{{lower (str .Entity.Kind)}}/{{lower .Entity.Name}}/{{.ID}}/unpost"></form>
 {{end}}
 {{end}}
+<script>
+// Несохранённые изменения: звёздочка в заголовке вкладки браузера (аналог «*» в
+// 1С) и предупреждение при любом уходе со страницы (крестик, клик по ссылке,
+// закрытие/обновление). Сохранение формы сбрасывает флаг.
+(function(){
+  window._obFormDirty = false;
+  var base = document.title;
+  function mark(){ window._obFormDirty = true; if (document.title.charAt(0) !== '●') document.title = '● ' + base; }
+  var f = document.getElementById('main-form');
+  if (f) {
+    f.addEventListener('input',  mark, true);
+    f.addEventListener('change', mark, true);
+    f.addEventListener('submit', function(){ window._obFormDirty = false; });
+  }
+  window.addEventListener('beforeunload', function(e){
+    if (window._obFormDirty) { e.preventDefault(); e.returnValue = ''; return ''; }
+  });
+})();
+</script>
 {{if and (not .IsNew) (not .IsPopup)}}
 <div class="card" style="margin-top:16px">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
