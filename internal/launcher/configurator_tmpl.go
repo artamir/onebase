@@ -4482,84 +4482,15 @@ const cfgTabTree = `{{define "tab-tree"}}
 {{$fSaved := .FieldsSaved}}
 {{$fSavedEnt := .FieldsSavedEntity}}
 
-{{/* Module section — outside the fields form to avoid nested <form> elements */}}
-<details open><summary class="section-hd" style="cursor:pointer">{{t $.Lang "Модули"}}</summary>
-<div class="module-editor-wrap">
-  <div class="module-tabs">
-    <div class="module-tab active" onclick="modTab(this,'mp-obj-{{$e.Name}}')">📝 {{t $.Lang "Модуль объекта"}}</div>
-    {{if eq $e.Kind "Документ"}}<div class="module-tab" onclick="modTab(this,'mp-post-{{$e.Name}}')">✅ {{t $.Lang "ОбработкаПроведения"}}</div>{{end}}
-    <div class="module-tab" onclick="modTab(this,'mp-mgr-{{$e.Name}}')">📋 {{t $.Lang "Модуль менеджера"}}</div>
+<div class="obj-editor">
+  <div class="obj-tabs">
+    <div class="obj-tab active" onclick="cfgObjTab(this,'ot-data-{{$e.Name}}')">{{t $.Lang "Данные"}}</div>
+    <div class="obj-tab" onclick="cfgObjTab(this,'ot-forms-{{$e.Name}}')">{{t $.Lang "Формы"}}</div>
+    <div class="obj-tab" onclick="cfgObjTab(this,'ot-print-{{$e.Name}}')">{{t $.Lang "Печатные формы"}}</div>
+    <div class="obj-tab" onclick="cfgObjTab(this,'ot-modules-{{$e.Name}}')">{{t $.Lang "Модули"}}</div>
   </div>
 
-  <div class="module-pane active" id="mp-obj-{{$e.Name}}">
-    <form method="POST" action="/bases/{{.BaseID}}/configurator/module">
-      <input type="hidden" name="entity" value="{{$e.Name}}">
-      <input type="hidden" name="module_type" value="object">
-      <div class="code-wrap" title="{{t $.Lang "Кликните для редактирования"}}">
-        <pre class="os-code clickable-code" id="pre-{{$e.Name}}"
-             onclick="startEdit('{{$e.Name}}')">{{if $e.Source}}{{$e.Source}}{{else}}// Кликните для редактирования&#10;Процедура ПриЗаписи()&#10;&#10;КонецПроцедуры{{end}}</pre>
-        <textarea class="os-edit" id="ta-{{$e.Name}}" name="source"
-                  style="display:none"
-                  onblur="endEdit('{{$e.Name}}')">{{$e.Source}}</textarea>
-      </div>
-      <div class="module-save-row">
-        <button class="btn-save" type="submit">{{t $.Lang "Сохранить"}}</button>
-        <button type="button" class="btn-check" onclick="runCheck('dsl','{{$e.Name}}','{{$e.Name}}')">{{t $.Lang "Проверить"}}</button>
-        <span class="check-result" id="check-{{$e.Name}}"></span>
-        <span class="edit-hint">✎ {{t $.Lang "кликните на код для редактирования"}}</span>
-        {{if and $.ModuleSaved (eq $.ModuleSavedEntity $e.Name)}}<span class="save-ok">{{t $.Lang "✓ Сохранено"}}</span>{{end}}
-      </div>
-    </form>
-  </div>
-
-  {{if eq $e.Kind "Документ"}}
-  <div class="module-pane" id="mp-post-{{$e.Name}}">
-    <div style="font-size:11px;color:#64748b;margin-bottom:6px">{{t $.Lang "Процедура"}} <b>{{t $.Lang "ОбработкаПроведения"}}()</b> — {{t $.Lang "вызывается при нажатии «Провести». Активируется флагом"}} <b>{{t $.Lang "Проводится"}}</b> {{t $.Lang "в свойствах документа. Здесь пишите движения регистров."}}</div>
-    <form method="POST" action="/bases/{{.BaseID}}/configurator/module">
-      <input type="hidden" name="entity" value="{{$e.Name}}">
-      <input type="hidden" name="module_type" value="posting">
-      <div class="code-wrap" title="{{t $.Lang "Кликните для редактирования"}}">
-        <pre class="os-code clickable-code" id="pre-post-{{$e.Name}}"
-             onclick="startEdit('post-{{$e.Name}}')">{{if $e.PostingSource}}{{$e.PostingSource}}{{else}}Процедура ОбработкаПроведения()&#10;  // Движения.ИмяРегистра.Очистить()&#10;  // Дв = Движения.ИмяРегистра.Добавить()&#10;  // Дв.ВидДвижения = "Приход"&#10;  // Дв.Номенклатура = Строка.Номенклатура&#10;  // Дв.Количество = Строка.Количество&#10;КонецПроцедуры{{end}}</pre>
-        <textarea class="os-edit" id="ta-post-{{$e.Name}}" name="source"
-                  style="display:none"
-                  onblur="endEdit('post-{{$e.Name}}')">{{$e.PostingSource}}</textarea>
-      </div>
-      <div class="module-save-row">
-        <button class="btn-save" type="submit">{{t $.Lang "Сохранить"}}</button>
-        <button type="button" class="btn-check" onclick="runCheck('dsl','post-{{$e.Name}}','{{$e.Name}}-ОбработкаПроведения')">{{t $.Lang "Проверить"}}</button>
-        <span class="check-result" id="check-post-{{$e.Name}}"></span>
-        <span class="edit-hint">✎ {{t $.Lang "кликните на код для редактирования"}}</span>
-        {{if and $.ModuleSaved (eq $.ModuleSavedEntity $e.Name)}}<span class="save-ok">{{t $.Lang "✓ Сохранено"}}</span>{{end}}
-      </div>
-    </form>
-  </div>
-  {{end}}
-
-  <div class="module-pane" id="mp-mgr-{{$e.Name}}">
-    <div style="font-size:11px;color:#64748b;margin-bottom:6px">{{t $.Lang "Экспортные процедуры и функции этого модуля вызываются как"}} <b>{{if eq $e.Kind "Документ"}}{{t $.Lang "Документы"}}{{else}}{{t $.Lang "Справочники"}}{{end}}.{{$e.Name}}.{{t $.Lang "Метод"}}(…)</b> — {{t $.Lang "по аналогии с 1С:Предприятие. Здесь размещают функции уровня типа объекта: печать, поиск, сервисные расчёты."}}</div>
-    <form method="POST" action="/bases/{{.BaseID}}/configurator/module">
-      <input type="hidden" name="entity" value="{{$e.Name}}">
-      <input type="hidden" name="module_type" value="manager">
-      <div class="code-wrap" title="{{t $.Lang "Кликните для редактирования"}}">
-        <pre class="os-code clickable-code" id="pre-mgr-{{$e.Name}}"
-             onclick="startEdit('mgr-{{$e.Name}}')">{{if $e.ManagerSource}}{{$e.ManagerSource}}{{else}}Функция Пример(Параметр)&#10;  Возврат Параметр;&#10;КонецФункции{{end}}</pre>
-        <textarea class="os-edit" id="ta-mgr-{{$e.Name}}" name="source"
-                  style="display:none"
-                  onblur="endEdit('mgr-{{$e.Name}}')">{{$e.ManagerSource}}</textarea>
-      </div>
-      <div class="module-save-row">
-        <button class="btn-save" type="submit">{{t $.Lang "Сохранить"}}</button>
-        <button type="button" class="btn-check" onclick="runCheck('dsl','mgr-{{$e.Name}}','{{$e.Name}}-Менеджер')">{{t $.Lang "Проверить"}}</button>
-        <span class="check-result" id="check-mgr-{{$e.Name}}"></span>
-        <span class="edit-hint">✎ {{t $.Lang "кликните на код для редактирования"}}</span>
-        {{if and $.ModuleSaved (eq $.ModuleSavedEntity $e.Name)}}<span class="save-ok">{{t $.Lang "✓ Сохранено"}}</span>{{end}}
-      </div>
-    </form>
-  </div>
-</div>
-
-</details>
+  <div class="obj-pane active" id="ot-data-{{$e.Name}}">
 
 <form method="POST" action="/bases/{{$baseID}}/configurator/fields">
 <input type="hidden" name="entity" value="{{$e.Name}}">
@@ -4740,21 +4671,10 @@ const cfgTabTree = `{{define "tab-tree"}}
 </details>
 {{end}}
 
-{{/* Linked print forms */}}
-{{if $e.LinkedPrintForms}}
-<div class="section-hd" style="margin-top:18px">{{t $.Lang "Печатные формы"}}</div>
-<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
-  {{range $e.LinkedPrintForms}}
-  <a href="#" onclick="cfgSelectPanel('pf-{{.Name}}');return false"
-     style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;background:#f0f4ff;border:1px solid #c8d4f0;border-radius:4px;font-size:12px;color:#1a4a80;text-decoration:none">
-    🖨 {{.Name}}
-  </a>
-  {{end}}
-</div>
-{{end}}
+  </div>{{/* end ot-data */}}
 
-{{/* Forms section */}}
-<div class="section-hd" style="margin-top:18px">{{t $.Lang "Формы"}}</div>
+  <div class="obj-pane" id="ot-forms-{{$e.Name}}">
+
 <form method="POST" action="/bases/{{$baseID}}/configurator/form">
 <input type="hidden" name="entity" value="{{$e.Name}}">
 
@@ -4819,7 +4739,6 @@ const cfgTabTree = `{{define "tab-tree"}}
 </form>
 
 {{/* ── Управляемые формы (план 37, этап 4) ────────────────────────────── */}}
-<div class="section-hd" style="margin-top:18px">◇ Управляемая форма</div>
 <div style="background:#f8fafc;border:1px dashed #c8d4f0;border-radius:6px;padding:12px 14px;font-size:12px;color:#475569;line-height:1.5">
   <p style="margin:0 0 8px">
     Управляемая форма — декларативное описание UI в YAML, переопределяющее
@@ -4873,6 +4792,105 @@ const cfgTabTree = `{{define "tab-tree"}}
     </a>
   </div>
 </div>
+
+  </div>{{/* end ot-forms */}}
+
+  <div class="obj-pane" id="ot-print-{{$e.Name}}">
+    {{if $e.LinkedPrintForms}}
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+      {{range $e.LinkedPrintForms}}
+      <a href="#" onclick="cfgSelectPanel('pf-{{.Name}}');return false"
+         style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;background:#f0f4ff;border:1px solid #c8d4f0;border-radius:4px;font-size:12px;color:#1a4a80;text-decoration:none">
+        🖨 {{.Name}}
+      </a>
+      {{end}}
+    </div>
+    {{else}}
+    <div style="color:#94a3b8;font-size:12px;padding:8px 0">
+      {{t $.Lang "Печатных форм нет."}}
+      <a href="#" onclick="cfgNewObj('printform');return false" style="color:#1a4a80">{{t $.Lang "Создать печатную форму"}}</a>
+    </div>
+    {{end}}
+  </div>{{/* end ot-print */}}
+
+  <div class="obj-pane" id="ot-modules-{{$e.Name}}">
+<div class="module-editor-wrap">
+  <div class="module-tabs">
+    <div class="module-tab active" onclick="modTab(this,'mp-obj-{{$e.Name}}')">📝 {{t $.Lang "Модуль объекта"}}</div>
+    {{if eq $e.Kind "Документ"}}<div class="module-tab" onclick="modTab(this,'mp-post-{{$e.Name}}')">✅ {{t $.Lang "ОбработкаПроведения"}}</div>{{end}}
+    <div class="module-tab" onclick="modTab(this,'mp-mgr-{{$e.Name}}')">📋 {{t $.Lang "Модуль менеджера"}}</div>
+  </div>
+
+  <div class="module-pane active" id="mp-obj-{{$e.Name}}">
+    <form method="POST" action="/bases/{{.BaseID}}/configurator/module">
+      <input type="hidden" name="entity" value="{{$e.Name}}">
+      <input type="hidden" name="module_type" value="object">
+      <div class="code-wrap" title="{{t $.Lang "Кликните для редактирования"}}">
+        <pre class="os-code clickable-code" id="pre-{{$e.Name}}"
+             onclick="startEdit('{{$e.Name}}')">{{if $e.Source}}{{$e.Source}}{{else}}// Кликните для редактирования&#10;Процедура ПриЗаписи()&#10;&#10;КонецПроцедуры{{end}}</pre>
+        <textarea class="os-edit" id="ta-{{$e.Name}}" name="source"
+                  style="display:none"
+                  onblur="endEdit('{{$e.Name}}')">{{$e.Source}}</textarea>
+      </div>
+      <div class="module-save-row">
+        <button class="btn-save" type="submit">{{t $.Lang "Сохранить"}}</button>
+        <button type="button" class="btn-check" onclick="runCheck('dsl','{{$e.Name}}','{{$e.Name}}')">{{t $.Lang "Проверить"}}</button>
+        <span class="check-result" id="check-{{$e.Name}}"></span>
+        <span class="edit-hint">✎ {{t $.Lang "кликните на код для редактирования"}}</span>
+        {{if and $.ModuleSaved (eq $.ModuleSavedEntity $e.Name)}}<span class="save-ok">{{t $.Lang "✓ Сохранено"}}</span>{{end}}
+      </div>
+    </form>
+  </div>
+
+  {{if eq $e.Kind "Документ"}}
+  <div class="module-pane" id="mp-post-{{$e.Name}}">
+    <div style="font-size:11px;color:#64748b;margin-bottom:6px">{{t $.Lang "Процедура"}} <b>{{t $.Lang "ОбработкаПроведения"}}()</b> — {{t $.Lang "вызывается при нажатии «Провести». Активируется флагом"}} <b>{{t $.Lang "Проводится"}}</b> {{t $.Lang "в свойствах документа. Здесь пишите движения регистров."}}</div>
+    <form method="POST" action="/bases/{{.BaseID}}/configurator/module">
+      <input type="hidden" name="entity" value="{{$e.Name}}">
+      <input type="hidden" name="module_type" value="posting">
+      <div class="code-wrap" title="{{t $.Lang "Кликните для редактирования"}}">
+        <pre class="os-code clickable-code" id="pre-post-{{$e.Name}}"
+             onclick="startEdit('post-{{$e.Name}}')">{{if $e.PostingSource}}{{$e.PostingSource}}{{else}}Процедура ОбработкаПроведения()&#10;  // Движения.ИмяРегистра.Очистить()&#10;  // Дв = Движения.ИмяРегистра.Добавить()&#10;  // Дв.ВидДвижения = "Приход"&#10;  // Дв.Номенклатура = Строка.Номенклатура&#10;  // Дв.Количество = Строка.Количество&#10;КонецПроцедуры{{end}}</pre>
+        <textarea class="os-edit" id="ta-post-{{$e.Name}}" name="source"
+                  style="display:none"
+                  onblur="endEdit('post-{{$e.Name}}')">{{$e.PostingSource}}</textarea>
+      </div>
+      <div class="module-save-row">
+        <button class="btn-save" type="submit">{{t $.Lang "Сохранить"}}</button>
+        <button type="button" class="btn-check" onclick="runCheck('dsl','post-{{$e.Name}}','{{$e.Name}}-ОбработкаПроведения')">{{t $.Lang "Проверить"}}</button>
+        <span class="check-result" id="check-post-{{$e.Name}}"></span>
+        <span class="edit-hint">✎ {{t $.Lang "кликните на код для редактирования"}}</span>
+        {{if and $.ModuleSaved (eq $.ModuleSavedEntity $e.Name)}}<span class="save-ok">{{t $.Lang "✓ Сохранено"}}</span>{{end}}
+      </div>
+    </form>
+  </div>
+  {{end}}
+
+  <div class="module-pane" id="mp-mgr-{{$e.Name}}">
+    <div style="font-size:11px;color:#64748b;margin-bottom:6px">{{t $.Lang "Экспортные процедуры и функции этого модуля вызываются как"}} <b>{{if eq $e.Kind "Документ"}}{{t $.Lang "Документы"}}{{else}}{{t $.Lang "Справочники"}}{{end}}.{{$e.Name}}.{{t $.Lang "Метод"}}(…)</b> — {{t $.Lang "по аналогии с 1С:Предприятие. Здесь размещают функции уровня типа объекта: печать, поиск, сервисные расчёты."}}</div>
+    <form method="POST" action="/bases/{{.BaseID}}/configurator/module">
+      <input type="hidden" name="entity" value="{{$e.Name}}">
+      <input type="hidden" name="module_type" value="manager">
+      <div class="code-wrap" title="{{t $.Lang "Кликните для редактирования"}}">
+        <pre class="os-code clickable-code" id="pre-mgr-{{$e.Name}}"
+             onclick="startEdit('mgr-{{$e.Name}}')">{{if $e.ManagerSource}}{{$e.ManagerSource}}{{else}}Функция Пример(Параметр)&#10;  Возврат Параметр;&#10;КонецФункции{{end}}</pre>
+        <textarea class="os-edit" id="ta-mgr-{{$e.Name}}" name="source"
+                  style="display:none"
+                  onblur="endEdit('mgr-{{$e.Name}}')">{{$e.ManagerSource}}</textarea>
+      </div>
+      <div class="module-save-row">
+        <button class="btn-save" type="submit">{{t $.Lang "Сохранить"}}</button>
+        <button type="button" class="btn-check" onclick="runCheck('dsl','mgr-{{$e.Name}}','{{$e.Name}}-Менеджер')">{{t $.Lang "Проверить"}}</button>
+        <span class="check-result" id="check-mgr-{{$e.Name}}"></span>
+        <span class="edit-hint">✎ {{t $.Lang "кликните на код для редактирования"}}</span>
+        {{if and $.ModuleSaved (eq $.ModuleSavedEntity $e.Name)}}<span class="save-ok">{{t $.Lang "✓ Сохранено"}}</span>{{end}}
+      </div>
+    </form>
+  </div>
+</div>
+  </div>{{/* end ot-modules */}}
+
+</div>{{/* end obj-editor */}}
 {{end}}`
 
 // ── Register detail (editable) ────────────────────────────────────────────────
