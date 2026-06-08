@@ -148,7 +148,8 @@ var tmpl = template.Must(template.New("root").Funcs(template.FuncMap{
 		}
 		found := false
 		form.Walk(func(el *metadata.FormElement) bool {
-			if el != nil && el.Kind == metadata.FormElementTablePart && el.UseGrid {
+			// SlickGrid включён для ТЧ по умолчанию; no_grid возвращает простую таблицу.
+			if el != nil && el.Kind == metadata.FormElementTablePart && !el.NoGrid {
 				found = true
 				return false
 			}

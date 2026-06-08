@@ -132,7 +132,7 @@ const tplManagedForm = `
   {{$tpRows := index $ctx.TablePartRows $tpName}}
   {{$tpRef := index $ctx.TPRefOptions $tpName}}
   {{$tpCmds := tpCommandButtons $el}}
-  <h3 style="margin:18px 0 8px;font-size:14px">{{fieldTitleRU $el.TitleMap $tpName}}</h3>
+  <h3 style="margin:18px 0 8px;font-size:14px">{{fieldTitleRU $el.TitleMap (or $tpMeta.Title $tpName)}}</h3>
   {{if $tpMeta}}
   {{if $tpCmds}}
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
@@ -144,7 +144,7 @@ const tplManagedForm = `
     {{end}}
   </div>
   {{end}}
-  {{if $el.UseGrid}}
+  {{if not $el.NoGrid}}
   <div id="sg-{{$tpName}}" class="ob-grid" style="height:{{if gt (len $tpRows) 8}}300{{else}}200{{end}}px;width:100%"
        data-sg-tp="{{$tpName}}"
        data-sg-el="{{$el.Name}}"
@@ -215,7 +215,7 @@ const tplManagedForm = `
   {{if $vtCols}}
   {{$vtRows := index $ctx.TablePartRows $tpName}}
   {{$vtCmds := tpCommandButtons $el}}
-  <h3 style="margin:18px 0 8px;font-size:14px">{{fieldTitleRU $el.TitleMap $tpName}}</h3>
+  <h3 style="margin:18px 0 8px;font-size:14px">{{fieldTitleRU $el.TitleMap (or $tpMeta.Title $tpName)}}</h3>
   {{if $vtCmds}}
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
     {{range $vtCmds}}
@@ -1178,6 +1178,14 @@ function addVtRow(vtName, fields) {
             return "<span>" + String(value) + "</span>";
           };
         })(c.id);
+      } else if (c.type === "bool") {
+        col.cssClass = "ob-bool";
+        col.editor = Slick.Editors.Checkbox;
+        col.formatter = function(row, cell, value) {
+          var on = (value === true || value === "true" || value === 1 || value === "1");
+          return on ? '<span style="color:#16a34a;font-weight:700">✓</span>'
+                    : '<span style="color:#cbd5e1">—</span>';
+        };
       } else {
         col.editor = Slick.Editors.Text;
       }
@@ -1333,7 +1341,9 @@ function addVtRow(vtName, fields) {
       enableCellNavigation: true,
       enableColumnReorder: false,
       editable: !readOnly,
-      autoEdit: !readOnly,
+      // autoEdit:false — как в 1С: клик выделяет ячейку, в редактирование входим
+      // по Enter / двойному клику / началу ввода (а не сразу по одиночному клику).
+      autoEdit: false,
       autoHeight: false,
       rowHeight: 28,
       headerRowHeight: 30,

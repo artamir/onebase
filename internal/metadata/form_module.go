@@ -113,7 +113,8 @@ type FormElement struct {
 	HorizontalAlign string            `yaml:"halign,omitempty"`            // left|center|right|stretch
 	VerticalAlign   string            `yaml:"valign,omitempty"`            // top|center|bottom
 	ReadOnly        bool              `yaml:"readonly,omitempty"`          // только чтение
-	UseGrid         bool              `yaml:"use_grid,omitempty"`          // SlickGrid для ТЧ (план 48)
+	UseGrid         bool              `yaml:"use_grid,omitempty"`          // (устар.) SlickGrid теперь включён по умолчанию
+	NoGrid          bool              `yaml:"no_grid,omitempty"`           // отключить SlickGrid у ТЧ (вернуть простую таблицу)
 	Hint            string            `yaml:"hint,omitempty"`              // всплывающая подсказка
 	Mask            string            `yaml:"mask,omitempty"`              // маска ввода
 	Type            string            `yaml:"type,omitempty"`              // "file" для файлового поля, и т.п.
