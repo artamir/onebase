@@ -1,0 +1,101 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+OneBase — 1С-подобная бизнес-платформа на Go: единый бинарь исполняет прикладные
+конфигурации (метаданные YAML + DSL `.os`) поверх PostgreSQL или SQLite.
+
+## Сборка и запуск
+
+```bash
+# CLI + сервер (без CGo) — основной бинарь
+go build -o onebase.exe ./cmd/onebase          # или build.bat / build.sh
+
+# GUI с нативным окном (CGo + WebView2 на Windows)
+go build -tags webview -ldflags="-H windowsgui" -o onebase-gui.exe ./cmd/onebase
+```
+
+> **Windows:** запущенный `onebase.exe` (сервер) держит файл залоченным — `go build`
+> молча не обновит бинарь. Перед пересборкой останови сервер: `taskkill /IM onebase.exe /F`.
+
+## Тесты
+
+```bash
+go test ./...                                   # юнит-тесты
+go test ./internal/storage/ -run TestAccountReg # один пакет / один тест (-run regexp)
+
+# Интеграционные (нужен PostgreSQL):
+export TEST_DATABASE_URL=postgres://localhost/onebase_test
+go test -tags=integration ./...
+```
+Большинство storage/query-тестов используют SQLite через `ConnectSQLite(ctx, tmpfile)`
+и не требуют PostgreSQL.
+
+## Работа с конфигурацией (прикладной слой)
+
+```bash
+onebase init <dir>                              # скелет проекта (+ AGENTS.md, CLAUDE.md)
+onebase check --project <dir>                   # ВАЛИДАЦИЯ — запускать после каждой правки
+onebase migrate --project <dir> --sqlite <f>    # создать/обновить схему БД
+onebase run  --project <dir> --sqlite <f> --port N   # сервер UI+REST (--watch для hot-reload)
+onebase procrun --project <dir> --sqlite <f> --proc <Имя>  # запустить обработку headless
+onebase describe --project <dir>                # вся структура конфигурации в JSON
+```
+
+`onebase check` не только парсит, но **компилирует и исполняет** запросы модулей —
+ловит `no such column`/`no such table` ещё до рантайма. Это основной инструмент
+отладки конфигураций. Примеры конфигураций — в `examples/` (trade — самый полный).
+
+## Архитектура движка (`internal/`)
+
+Конвейер исполнения прикладной логики:
+
+- **`dsl/`** — язык модулей: `lexer` → `parser` → `interpreter`. Русскоязычный,
+  регистронезависимый. Встроенные функции в `interpreter/builtins*.go`. Объекты
+  доступа (`Документы`, `Справочники`, `Запрос`, `Движения`) инжектируются как
+  extraVars при `Interp.Run(proc, this, vars)`.
+- **`metadata/`** — модель данных, грузится из YAML: `Entity` (справочник/документ
+  с `Posting`, `TableParts`, `Numerator`), `Register` (накопления), `InfoRegister`
+  (сведений), `ChartOfAccounts` + `AccountRegister` (план счетов и бухрегистр с
+  блоком `Subconto`), `FormModule` (управляемые формы).
+- **`storage/`** — DDL и доступ к данным (PostgreSQL и SQLite за интерфейсом
+  `Dialect`). Имена таблиц: сущность → `lower(name)`, регистр накопления → `рег_*`,
+  сведений → `инфо_*`, бухрегистр → `акк_*`, ТЧ → `<entity>_<tp>`.
+- **`query/`** — компилятор DSL-запросов в SQL (`query.go`). Виртуальные таблицы
+  `.Остатки()/.Обороты()/.СрезПоследних()` разворачиваются в подзапросы; для
+  бухрегистра — с разворотом по субконто.
+- **`runtime/`** — `Registry` (загруженная конфигурация), `MovementsCollector`
+  (`Движения.X.Добавить()` копит проводки во время `ОбработкаПроведения`,
+  записываются после хука).
+- **`entityservice/`** — оркестрация записи/проведения документа (`Save`): запускает
+  `OnWrite`/`OnPost`, пишет движения, ставит признак проведения.
+- **`ui/`** — формы (autogen `templates.go` и managed `templates_managed.go`),
+  виджеты/дашборды, REST. `dsl_documents.go` — путь `Документы.X` из DSL
+  (`Создать/Записать/Провести/НайтиПоНомеру/ПолучитьОбъект`), отдельный от
+  `entityservice.Save`. ТЧ в managed-формах рендерятся **SlickGrid** (vendored в
+  `webassets/slickgrid/`).
+- **`cli/`** — команды cobra. `launcher/` + `configdb/` — лаунчер баз и хранение
+  конфигурации в БД. `converter/` + `onec_forms/` — импорт XML-выгрузки 1С и обмен
+  управляемыми формами.
+
+### Связь конфигурации с движком
+Документ (`documents/<имя>.yaml`) проводится модулем `src/<имя>.posting.os`
+(`Процедура ОбработкаПроведения`). Управляемая форма лежит в
+**`forms/<имя-сущности-в-нижнем-регистре>/<форма>.form.yaml`** (+ опционально
+одноимённый `.form.os` с обработчиками `Нажатие`/`ПриОткрытииФормы`) — плоское
+размещение `forms/X.form.yaml` НЕ подхватывается.
+
+## Соглашения
+
+- **Ветки:** `feature/*`, `fix/*` от `main`; не коммить напрямую в `main` (см.
+  `GIT_WORKFLOW.md`). Коммиты — `тип(scope): описание` по-русски.
+- **Pre-commit hook** `i18ncheck` печатает отчёт о переводах шаблонов — это
+  предупреждение, не блокирует коммит.
+- **DSL-грабли** (полный список — в `AGENTS.md`, который генерируется
+  `onebase ai-guide`): виртуальные таблицы только со скобками; `number` на SQLite
+  хранится как TEXT → оборачивай сырые колонки в `CAST(... AS NUMERIC)`; служебное
+  поле периода в запросах — `period`; имя переменной `Перем` зарезервировано.
+- **`Plans/`** — нумерованные планы фич (например `44-account-subconto.md`); ветка
+  обычно называется по плану.
+- **`DEVELOPER.md`** — справочник по форматам объектов конфигурации (план счетов,
+  регистр бухгалтерии, субконто и т.п.).
