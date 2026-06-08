@@ -240,11 +240,11 @@ const tplManagedForm = `
         <td>
           {{$v := index $row $c.Name}}
           {{if eq (lower $c.TypeRef) "number"}}
-            <input type="number" step="any" name="vt.{{$tpName}}.{{$i}}.{{$c.Name}}" value="{{$v}}" data-vt-num="{{$c.Name}}" oninput="recalcTpRow(this)">
+            <input type="number" step="any" name="vt.{{$tpName}}.{{$i}}.{{$c.Name}}" value="{{$v}}" data-vt-num="{{$c.Name}}">
           {{else if eq (lower $c.TypeRef) "bool"}}
             <input type="checkbox" name="vt.{{$tpName}}.{{$i}}.{{$c.Name}}" value="true" {{if eq (str $v) "true"}}checked{{end}}>
           {{else}}
-            <input type="text" name="vt.{{$tpName}}.{{$i}}.{{$c.Name}}" value="{{$v}}" oninput="recalcTpRow(this)">
+            <input type="text" name="vt.{{$tpName}}.{{$i}}.{{$c.Name}}" value="{{$v}}">
           {{end}}
         </td>
         {{end}}
@@ -636,14 +636,12 @@ window._tpRefOpts = {{jsJSON .TPRefOptions}};
           if (f.type === 'number') {
             inp.type = 'number'; inp.step = 'any';
             inp.setAttribute('data-vt-num', f.name);
-            inp.setAttribute('oninput', 'recalcTpRow(this)');
             inp.value = (v == null ? '' : v);
           } else if (f.type === 'bool') {
             inp.type = 'checkbox'; inp.value = 'true';
             if (String(v) === 'true') inp.checked = true;
           } else {
             inp.type = 'text';
-            inp.setAttribute('oninput', 'recalcTpRow(this)');
             inp.value = (v == null ? '' : v);
           }
           td.appendChild(inp);
@@ -840,7 +838,6 @@ function addVtRow(vtName, fields) {
     if (ft === "number") {
       inp.type = "number"; inp.step = "any";
       inp.setAttribute("data-vt-num", fn);
-      inp.setAttribute("oninput", "recalcTpRow(this)");
     } else if (ft === "bool") {
       inp.type = "checkbox"; inp.value = "true";
     } else {
@@ -931,7 +928,7 @@ function addVtRow(vtName, fields) {
 
   // Custom ref editor with dropdown search and picker button (plan 48, phase 4).
   function ObRefEditor(refField, refOptsList, args) {
-    var wrapper, input, dropBtn, list, isOpen = false, selectedId = '', defaultValue = '';
+    var wrapper, input, dropBtn, list, isOpen = false, selectedId = '', defaultValue = '', pickerInterval = null;
 
     function label(id) {
       for (var k = 0; k < refOptsList.length; k++) {
@@ -1039,7 +1036,7 @@ function addVtRow(vtName, fields) {
         var origPicker = window.openRefPicker;
         window.openRefPicker(selEl);
         // Poll for picker result via the select value
-        var pickerInterval = setInterval(function() {
+        pickerInterval = setInterval(function() {
           var modal = document.getElementById('_ref-picker-modal');
           if (!modal) {
             clearInterval(pickerInterval);
@@ -1065,6 +1062,9 @@ function addVtRow(vtName, fields) {
       // было перейти на другую). Закрываем выпадающий список напрямую по
       // editor-scoped переменным list/isOpen.
       isOpen = false;
+      // Гасим polling-таймер пикера: иначе он переживёт редактор и попытается
+      // закоммитить значение в уже уничтоженную ячейку.
+      if (pickerInterval) { clearInterval(pickerInterval); pickerInterval = null; }
       if (list && list.parentElement) list.remove();
       if (wrapper && wrapper.parentElement) wrapper.remove();
     };
@@ -1221,9 +1221,11 @@ function addVtRow(vtName, fields) {
     g.dataView.addItem(item);
     window._obFormDirty = true;
     g.grid.invalidate();
-    g.grid.scrollRowIntoView(nextId);
+    // scrollRowIntoView ждёт ИНДЕКС отображаемой строки, не id записи —
+    // после удалений они расходятся. Берём индекс из getRowById.
     var rowIdx = g.dataView.getRowById(nextId);
     if (rowIdx !== undefined && g.columns.length > 0) {
+      g.grid.scrollRowIntoView(rowIdx);
       g.grid.setActiveCell(rowIdx, 0);
       g.grid.editActiveCell();
     }
@@ -1265,7 +1267,8 @@ function addVtRow(vtName, fields) {
       var cols = g.columnsMeta || [];
       var items = rows.map(function(r, idx) {
         var item = {id: idx, _ord: idx};
-        for (var i = 0; i < cols.length; i++) item[cols[i].id] = r[cols[i].id] || "";
+        // == null (не || "") — иначе число 0 / false терялись бы как пустая строка.
+        for (var i = 0; i < cols.length; i++) item[cols[i].id] = (r[cols[i].id] == null ? "" : r[cols[i].id]);
         return item;
       });
       g.dataView.setItems(items);
@@ -1302,7 +1305,8 @@ function addVtRow(vtName, fields) {
     // строки документа (у табличной части порядок значим).
     var items = rowsRaw.map(function(r, idx) {
       var item = {id: idx, _ord: idx};
-      for (var i = 0; i < colsRaw.length; i++) item[colsRaw[i].id] = r[colsRaw[i].id] || "";
+      // == null (не || "") — иначе сохранённое числовое 0 грузилось бы пустым.
+      for (var i = 0; i < colsRaw.length; i++) item[colsRaw[i].id] = (r[colsRaw[i].id] == null ? "" : r[colsRaw[i].id]);
       return item;
     });
 

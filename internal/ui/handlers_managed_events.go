@@ -468,7 +468,12 @@ func parseValueTableRows(r *http.Request, form *metadata.FormModule) map[string]
 			}
 			converted := make(map[string]any, len(row))
 			for _, col := range attr.Columns {
-				raw := fmt.Sprintf("%v", row[col.Name])
+				// row[col.Name] может отсутствовать (колонка не пришла в форме) —
+				// fmt.Sprintf("%v", nil) дал бы "<nil>". Берём "" при отсутствии.
+				raw := ""
+				if v, ok := row[col.Name]; ok {
+					raw = fmt.Sprintf("%v", v)
+				}
 				switch strings.ToLower(col.TypeRef) {
 				case "number":
 					if n, err := strconv.ParseFloat(raw, 64); err == nil {
