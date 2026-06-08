@@ -193,6 +193,15 @@ summary.cfg-group-hd[draggable=true]{cursor:grab}
 .module-pane{display:none;margin-top:0}
 .module-pane.active{display:block}
 
+/* ── Object editor tabs (issue #35) ─────────────────── */
+.obj-editor{margin-top:4px}
+.obj-tabs{display:flex;gap:2px;border-bottom:2px solid #d0d7e3;margin:10px 0 14px}
+.obj-tab{padding:7px 16px;cursor:pointer;font-size:13px;color:#666;border:1px solid transparent;border-bottom:none;border-radius:6px 6px 0 0;margin-bottom:-2px;user-select:none}
+.obj-tab:hover{color:#1a4a80;background:#f5f8ff}
+.obj-tab.active{color:#1a4a80;border-color:#d0d7e3;border-bottom:2px solid #fff;background:#fff;font-weight:600}
+.obj-pane{display:none}
+.obj-pane.active{display:block}
+
 .module-editor-wrap{position:relative;margin-top:8px}
 pre.os-code{
   background:#1e1e2e;color:#cdd6f4;
@@ -1564,6 +1573,16 @@ function modTab(el, panelId) {
   wrap.querySelectorAll('.module-pane').forEach(function(p){p.classList.remove('active')});
   el.classList.add('active');
   document.getElementById(panelId).classList.add('active');
+}
+
+// Вкладки редактора объекта (issue #35). Скоуп — ближайший .obj-editor,
+// чтобы не конфликтовать с вложенными modTab/formTab.
+function cfgObjTab(el, paneId){
+  var box = el.closest('.obj-editor');
+  box.querySelectorAll('.obj-tab').forEach(function(t){t.classList.remove('active')});
+  box.querySelectorAll('.obj-pane').forEach(function(p){p.classList.remove('active')});
+  el.classList.add('active');
+  document.getElementById(paneId).classList.add('active');
 }
 
 // ── Layout Editor ─────────────────────────────────────────────────
