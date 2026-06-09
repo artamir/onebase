@@ -825,6 +825,13 @@ func migrateSchema(ctx context.Context, db *storage.DB, configDest, cfgFileDir s
 	if err := db.MigrateConstants(ctx, proj.Constants); err != nil {
 		return fmt.Errorf("migrate constants: %w", err)
 	}
+	// _accounts не экспортируется (ни в data/, ни в system/) — таблицу нужно
+	// создать здесь, иначе SyncAccounts падает с "no such table: _accounts" на
+	// конфигурациях с планом счетов. Остальные пути (run/migrate/deploy/dev)
+	// вызывают EnsureAccountsTable явно — импорт обязан делать то же самое.
+	if err := db.EnsureAccountsTable(ctx); err != nil {
+		return fmt.Errorf("ensure accounts table: %w", err)
+	}
 	if err := db.SyncAccounts(ctx, proj.ChartsOfAccounts); err != nil {
 		return fmt.Errorf("sync accounts: %w", err)
 	}

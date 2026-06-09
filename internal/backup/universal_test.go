@@ -775,3 +775,53 @@ func TestInsertRow_BlobSourceValidJSONPassesThrough(t *testing.T) {
 		t.Errorf("new_value double-wrapped:\n got  %s\n want %s", got, want)
 	}
 }
+
+// TestMigrateSchema_CreatesAccountsTable is a regression test for the .obz
+// restore failure reported as:
+//
+//	import: schema migration: sync accounts: sync accounts Хозрасчётный.00:
+//	SQL logic error: no such table: _accounts (1)
+//
+// The import path (migrateSchema) called SyncAccounts without first creating
+// the _accounts table — unlike run/migrate/deploy/dev/check, which all call
+// EnsureAccountsTable first. _accounts is never exported (it's filtered out of
+// data/ by the "_" prefix and absent from systemTables), so it must be created
+// during schema migration and repopulated from the config's chart of accounts.
+// Any backup whose configuration declared a chart of accounts therefore failed
+// to restore. This pins down that migrateSchema creates and fills _accounts.
+func TestMigrateSchema_CreatesAccountsTable(t *testing.T) {
+	ctx := context.Background()
+	cfgDir := t.TempDir()
+	accDir := filepath.Join(cfgDir, "accounts")
+	if err := os.MkdirAll(accDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Mirror the user's failing config: a plan named "Хозрасчётный" with an
+	// account coded "00".
+	chart := "name: Хозрасчётный\n" +
+		"title: Хозрасчётный план счетов\n" +
+		"accounts:\n" +
+		"  - code: \"00\"\n" +
+		"    name: Вспомогательный счёт\n" +
+		"    kind: active_passive\n" +
+		"  - code: \"01\"\n" +
+		"    name: Основные средства\n" +
+		"    kind: active\n"
+	if err := os.WriteFile(filepath.Join(accDir, "хозрасчётный.yaml"), []byte(chart), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	db := newSQLite(t, "migrate-accounts")
+	if err := migrateSchema(ctx, db, "file", cfgDir); err != nil {
+		t.Fatalf("migrateSchema: %v", err)
+	}
+
+	var n int
+	if err := db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM _accounts WHERE plan='Хозрасчётный'`).Scan(&n); err != nil {
+		t.Fatalf("query _accounts: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("_accounts rows for plan Хозрасчётный: got %d, want 2", n)
+	}
+}
