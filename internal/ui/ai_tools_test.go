@@ -1,0 +1,122 @@
+package ui
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/ivantit66/onebase/internal/auth"
+	"github.com/ivantit66/onebase/internal/llm"
+	"github.com/ivantit66/onebase/internal/metadata"
+	"github.com/ivantit66/onebase/internal/storage"
+)
+
+func aiToolsTestServer(t *testing.T) *Server {
+	t.Helper()
+	cat := &metadata.Entity{
+		Name: "Товар",
+		Kind: metadata.KindCatalog,
+		Fields: []metadata.Field{
+			{Name: "Наименование", Type: metadata.FieldTypeString},
+			{Name: "Цена", Type: metadata.FieldTypeNumber},
+		},
+	}
+	s, _ := newSubmitTestServer(t, []*metadata.Entity{cat})
+	return s
+}
+
+func TestAISchemaText(t *testing.T) {
+	s := aiToolsTestServer(t)
+	txt := s.aiSchemaText()
+	if !strings.Contains(txt, "Товар") {
+		t.Fatalf("в описании нет справочника Товар: %s", txt)
+	}
+	if !strings.Contains(txt, "Наименование") || !strings.Contains(txt, "Цена") {
+		t.Fatalf("в описании нет полей: %s", txt)
+	}
+}
+
+func TestAIRunQueryValid(t *testing.T) {
+	s := aiToolsTestServer(t)
+	res := s.aiRunQuery(context.Background(), llm.ToolCall{
+		ID:    "q1",
+		Input: map[string]any{"запрос": "ВЫБРАТЬ Наименование ИЗ Справочник.Товар"},
+	})
+	if res.IsError {
+		t.Fatalf("валидный запрос дал ошибку: %s", res.Content)
+	}
+	if !strings.Contains(res.Content, "строк") {
+		t.Fatalf("в результате нет поля строк: %s", res.Content)
+	}
+}
+
+func TestAIRunQueryInvalid(t *testing.T) {
+	s := aiToolsTestServer(t)
+	res := s.aiRunQuery(context.Background(), llm.ToolCall{
+		ID:    "q2",
+		Input: map[string]any{"запрос": "это не запрос"},
+	})
+	if !res.IsError {
+		t.Fatalf("ожидалась ошибка на некорректный запрос, получено: %s", res.Content)
+	}
+}
+
+func TestAIRunQueryEmpty(t *testing.T) {
+	s := aiToolsTestServer(t)
+	res := s.aiRunQuery(context.Background(), llm.ToolCall{ID: "q3", Input: map[string]any{"запрос": "   "}})
+	if !res.IsError {
+		t.Fatal("ожидалась ошибка на пустой запрос")
+	}
+}
+
+// TestAITools_NonAdminGetsNoTools проверяет, что не-администратор не получает
+// инструменты ИИ-чата. Для этого создаётся реальный authRepo со схемой и одним
+// пользователем (HasUsers()==true), а запрос не несёт пользователя в контексте
+// → UserFromContext==nil → isAdmin==false → aiTools возвращает (nil, nil).
+func TestAITools_NonAdminGetsNoTools(t *testing.T) {
+	ctx := context.Background()
+
+	// Поднимаем отдельную БД для auth-репо.
+	authDB, err := storage.ConnectSQLite(ctx, filepath.Join(t.TempDir(), "auth.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { authDB.Close() })
+
+	repo := auth.NewRepo(authDB)
+	if err := repo.EnsureSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// Создаём пользователя: теперь HasUsers()==true.
+	if _, err := repo.Create(ctx, "testuser", "password1", "Test User", false); err != nil {
+		t.Fatal(err)
+	}
+
+	// Строим сервер аналогично aiToolsTestServer, но с authRepo.
+	s, _ := newSubmitTestServer(t, nil)
+	s.authRepo = repo
+
+	// Запрос без пользователя в контексте → isAdmin==false.
+	r := httptest.NewRequest(http.MethodPost, "/ui/ai/chat", nil)
+	tools, exec := s.aiTools(r)
+	if tools != nil || exec != nil {
+		t.Fatalf("не-админ не должен получать инструменты ИИ: tools=%v exec!=nil=%v", tools, exec != nil)
+	}
+}
+
+// TestAITools_AdminGetsTools — положительный контраст: сервер без authRepo
+// (эквивалент открытого доступа/администратора) возвращает непустой набор инструментов.
+func TestAITools_AdminGetsTools(t *testing.T) {
+	s := aiToolsTestServer(t) // authRepo == nil → isAdmin всегда true
+	r := httptest.NewRequest(http.MethodPost, "/ui/ai/chat", nil)
+	tools, exec := s.aiTools(r)
+	if tools == nil {
+		t.Fatal("администратор должен получать инструменты ИИ, получено nil")
+	}
+	if exec == nil {
+		t.Fatal("администратор должен получать исполнитель инструментов, получено nil")
+	}
+}
