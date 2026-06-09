@@ -118,6 +118,42 @@ func (p *docProxy) CallMethod(method string, args []any) any {
 			interpreter.RaiseUserError("Удалить(" + p.entity.Name + "): " + err.Error())
 		}
 		return nil
+	case "отменитьпроведение", "unpost":
+		if len(args) == 0 {
+			interpreter.RaiseUserError("ОтменитьПроведение(" + p.entity.Name + "): не передана ссылка")
+		}
+		ref, ok := args[0].(*interpreter.Ref)
+		if !ok {
+			interpreter.RaiseUserError(fmt.Sprintf("ОтменитьПроведение(%s): ожидается ссылка, получено %T", p.entity.Name, args[0]))
+		}
+		if err := p.unpostRef(ref.UUID); err != nil {
+			interpreter.RaiseUserError("ОтменитьПроведение(" + p.entity.Name + "): " + err.Error())
+		}
+		return nil
+	case "пометитьнаудаление", "markfordeletion":
+		if len(args) == 0 {
+			interpreter.RaiseUserError("ПометитьНаУдаление(" + p.entity.Name + "): не передана ссылка")
+		}
+		ref, ok := args[0].(*interpreter.Ref)
+		if !ok {
+			interpreter.RaiseUserError(fmt.Sprintf("ПометитьНаУдаление(%s): ожидается ссылка, получено %T", p.entity.Name, args[0]))
+		}
+		if err := p.markRef(ref.UUID, true); err != nil {
+			interpreter.RaiseUserError("ПометитьНаУдаление(" + p.entity.Name + "): " + err.Error())
+		}
+		return nil
+	case "снятьпометку", "unmarkdeletion":
+		if len(args) == 0 {
+			interpreter.RaiseUserError("СнятьПометку(" + p.entity.Name + "): не передана ссылка")
+		}
+		ref, ok := args[0].(*interpreter.Ref)
+		if !ok {
+			interpreter.RaiseUserError(fmt.Sprintf("СнятьПометку(%s): ожидается ссылка, получено %T", p.entity.Name, args[0]))
+		}
+		if err := p.markRef(ref.UUID, false); err != nil {
+			interpreter.RaiseUserError("СнятьПометку(" + p.entity.Name + "): " + err.Error())
+		}
+		return nil
 	}
 	// Fallback на модуль менеджера: Документы.X.МойМетод(…).
 	if result, found, err := p.s.callManagerProc(p.ctx(), p.entity.Name, method, args); found {
@@ -163,6 +199,33 @@ func (p *docProxy) DeleteRef(uuidStr string) error {
 		}
 	}
 	return p.s.store.Delete(ctx, p.entity.Name, id)
+}
+
+// unpostRef отменяет проведение документа: чистит движения по всем регистрам и
+// снимает posted (аналог UI-хендлера unpostDocument). Использует живой ctx (как
+// DeleteRef) — участвует в открытой DSL-транзакции, если она есть.
+func (p *docProxy) unpostRef(uuidStr string) error {
+	id, err := uuid.Parse(uuidStr)
+	if err != nil {
+		return fmt.Errorf("неверный идентификатор ссылки: %q", uuidStr)
+	}
+	ctx := p.ctx()
+	if p.entity.Posting {
+		if err := p.s.clearMovements(ctx, p.entity.Name, id); err != nil {
+			return fmt.Errorf("очистка движений: %w", err)
+		}
+	}
+	return p.s.store.SetPosted(ctx, p.entity.Name, id, false)
+}
+
+// markRef помечает/снимает пометку на удаление (с авто-отменой проведения при
+// пометке проведённого документа). Использует живой ctx.
+func (p *docProxy) markRef(uuidStr string, mark bool) error {
+	id, err := uuid.Parse(uuidStr)
+	if err != nil {
+		return fmt.Errorf("неверный идентификатор ссылки: %q", uuidStr)
+	}
+	return p.s.markForDeletion(p.ctx(), p.entity, id, mark)
 }
 
 // LoadObject реализует interpreter.RefManager — загружает существующий документ

@@ -159,3 +159,38 @@ func TestServerMarkForDeletion_AutoUnposts(t *testing.T) {
 		t.Error("пометка должна быть снята")
 	}
 }
+
+// DSL-методы менеджера документов: ОтменитьПроведение / ПометитьНаУдаление / СнятьПометку.
+func TestDocsRoot_UnpostAndMarkMethods(t *testing.T) {
+	ctx, db, _, dp, _ := newPostingDoc(t)
+	_ = postOne(t, dp)
+	ref := dp.CallMethod("найтипономеру", []any{"ПОС-001"}).(*interpreter.Ref)
+
+	// ОтменитьПроведение → движения 0, posted false.
+	dp.CallMethod("отменитьпроведение", []any{ref})
+	var mov int
+	db.QueryRow(ctx, "SELECT COUNT(*) FROM рег_остаткитоваров").Scan(&mov)
+	if mov != 0 {
+		t.Errorf("после ОтменитьПроведение движений 0 ожидалось, получили %d", mov)
+	}
+	var posted bool
+	db.QueryRow(ctx, "SELECT posted FROM поступлениетоваров LIMIT 1").Scan(&posted)
+	if posted {
+		t.Error("posted=false ожидался после ОтменитьПроведение")
+	}
+
+	// ПометитьНаУдаление → deletion_mark true.
+	dp.CallMethod("пометитьнаудаление", []any{ref})
+	var marked bool
+	db.QueryRow(ctx, "SELECT deletion_mark FROM поступлениетоваров LIMIT 1").Scan(&marked)
+	if !marked {
+		t.Error("документ должен быть помечен после ПометитьНаУдаление")
+	}
+
+	// СнятьПометку → deletion_mark false.
+	dp.CallMethod("снятьпометку", []any{ref})
+	db.QueryRow(ctx, "SELECT deletion_mark FROM поступлениетоваров LIMIT 1").Scan(&marked)
+	if marked {
+		t.Error("пометка должна быть снята после СнятьПометку")
+	}
+}
