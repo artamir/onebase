@@ -719,9 +719,19 @@ func (s *Server) formEdit(w http.ResponseWriter, r *http.Request) {
 		}
 		vals[f.Name] = fmt.Sprintf("%v", v)
 	}
-	// Include posted status for documents
+	// Include posted status + deletion mark for documents
 	if entity.Kind == metadata.KindDocument {
 		vals["posted"] = fmt.Sprintf("%v", row["posted"])
+		// deletion_mark нормализуем к каноничным "true"/"false": GetByID гонит его
+		// через normalizeValue, и на SQLite помеченный документ приходит как
+		// int64(1) (а не bool). Шаблон формы сравнивает с литералом "true"
+		// (скрыть «Провести», показать «Снять пометку»), поэтому сырое "1"
+		// ломало бы UI на SQLite. asBool понимает bool/int/int64 одинаково.
+		if asBool(row["deletion_mark"]) {
+			vals["deletion_mark"] = "true"
+		} else {
+			vals["deletion_mark"] = "false"
+		}
 	}
 	// _version нужен на форме как hidden — для оптимистической блокировки
 	// при последующем POST'е в submitEdit. См. storage.UpsertVersioned.
@@ -903,6 +913,15 @@ func (s *Server) postDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if asBool(row["deletion_mark"]) {
+		// Помеченный на удаление документ проводить нельзя.
+		http.Redirect(w, r,
+			"/ui/"+strings.ToLower(string(entity.Kind))+"/"+entity.Name+"/"+id.String()+
+				"?posting_error="+url.QueryEscape("Документ помечен на удаление: проведение невозможно"),
+			http.StatusSeeOther)
+		return
+	}
+
 	obj := &runtime.Object{ID: id, Type: entity.Name, Kind: entity.Kind, Fields: make(map[string]any)}
 	for _, f := range entity.Fields {
 		obj.Fields[f.Name] = row[f.Name]
@@ -959,6 +978,29 @@ func (s *Server) clearMovements(ctx context.Context, entityName string, id uuid.
 	return nil
 }
 
+// markForDeletion помечает/снимает пометку на удаление. При пометке проведённого
+// документа сперва отменяет проведение (чистит движения по всем регистрам и
+// снимает posted) — пометка и проведённость взаимоисключающи (как в 1С). Снятие
+// пометки проведение НЕ возвращает. Транзакцию метод не открывает: HTTP-вызовы
+// оборачивают его в store.WithTx, DSL-путь использует живой ctx (как DeleteRef).
+func (s *Server) markForDeletion(ctx context.Context, entity *metadata.Entity, id uuid.UUID, mark bool) error {
+	if mark && entity.Posting {
+		row, err := s.store.GetByID(ctx, entity.Name, id, entity)
+		if err != nil {
+			return err
+		}
+		if asBool(row["posted"]) {
+			if err := s.clearMovements(ctx, entity.Name, id); err != nil {
+				return err
+			}
+			if err := s.store.SetPosted(ctx, entity.Name, id, false); err != nil {
+				return err
+			}
+		}
+	}
+	return s.store.MarkForDeletion(ctx, entity.Name, id, mark)
+}
+
 // unpostDocument clears movements and sets posted=false.
 func (s *Server) unpostDocument(w http.ResponseWriter, r *http.Request) {
 	entity := s.getEntity(w, r)
@@ -1003,11 +1045,24 @@ func (s *Server) deleteRecord(w http.ResponseWriter, r *http.Request) {
 
 	user := auth.UserFromContext(r.Context())
 	isAdmin := user == nil || user.IsAdmin // no auth configured → treat as admin
-	markOnly := r.URL.Query().Get("mark") == "1"
+	markParam := r.URL.Query().Get("mark")
 
-	if !isAdmin || markOnly {
-		// Non-admin or explicit mark-only: mark for deletion
-		if err := s.store.MarkForDeletion(r.Context(), entity.Name, id, true); err != nil {
+	// Снятие пометки на удаление (mark=0) — без возврата проведения.
+	if markParam == "0" {
+		if err := s.store.MarkForDeletion(r.Context(), entity.Name, id, false); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		http.Redirect(w, r, listURL(entity), http.StatusSeeOther)
+		return
+	}
+
+	if !isAdmin || markParam == "1" {
+		// Non-admin или явная пометка: пометить на удаление с авто-отменой
+		// проведения для проведённого документа (в одной транзакции).
+		if err := s.store.WithTx(r.Context(), func(ctx context.Context) error {
+			return s.markForDeletion(ctx, entity, id, true)
+		}); err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
