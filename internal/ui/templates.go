@@ -545,9 +545,9 @@ body{padding-bottom:32px}
         .then(function(r){return r.json();})
         .then(function(d){
           if(d&&d.ok){pend.textContent=d.text;history.push({role:'assistant',content:d.text});}
-          else{pend.className='m err';pend.textContent=(d&&d.error)||'Ошибка';}
+          else{history.pop();pend.className='m err';pend.textContent=(d&&d.error)||'Ошибка';}
         })
-        .catch(function(){pend.className='m err';pend.textContent='Ошибка сети';})
+        .catch(function(){history.pop();pend.className='m err';pend.textContent='Ошибка сети';})
         .finally(function(){busy=false;send.disabled=false;log.scrollTop=log.scrollHeight;input.focus();});
     }
     send.addEventListener('click',doSend);
