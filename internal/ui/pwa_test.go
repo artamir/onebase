@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -47,6 +48,45 @@ func TestMountPWA(t *testing.T) {
 				t.Errorf("пустое тело ответа")
 			}
 		})
+	}
+}
+
+// TestServiceWorkerCacheVersioned проверяет, что при отдаче /sw.js placeholder
+// имени кэша подставлен ревизией сборки — иначе авто-инвалидация при релизе не
+// работает (ревью PR #34: ручной CACHE-bump → залипание vendor-ассетов).
+func TestServiceWorkerCacheVersioned(t *testing.T) {
+	r := chi.NewRouter()
+	mountPWA(r)
+
+	req := httptest.NewRequest(http.MethodGet, "/sw.js", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	if strings.Contains(body, "__OB_CACHE__") {
+		t.Error("в отданном /sw.js остался placeholder __OB_CACHE__ — версия не подставлена")
+	}
+	if !strings.Contains(body, "onebase-") {
+		t.Error("имя кэша должно содержать префикс onebase-")
+	}
+	if !strings.Contains(body, "addEventListener('fetch'") {
+		t.Error("в /sw.js нет обработчика fetch — отдан не тот файл")
+	}
+}
+
+// TestHeadHasPWATags — smoke-тест из плана 45: рендер шаблона head содержит
+// viewport, ссылку на manifest и регистрацию service worker. Защищает от
+// случайного удаления этих тегов при правке tplHead.
+func TestHeadHasPWATags(t *testing.T) {
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "head", map[string]any{"Cfg": Config{}}); err != nil {
+		t.Fatalf("рендер head: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{`name="viewport"`, `rel="manifest"`, "/sw.js"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("head не содержит %q", want)
+		}
 	}
 }
 

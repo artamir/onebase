@@ -1,8 +1,10 @@
 package ui
 
 import (
+	"bytes"
 	"embed"
 	"net/http"
+	"runtime/debug"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -47,8 +49,47 @@ func (s *Server) MountPWA(r chi.Router) { mountPWA(r) }
 // иконки — immutable.
 func mountPWA(r chi.Router) {
 	r.Get("/manifest.webmanifest", servePWAFile("pwa/manifest.webmanifest", "application/manifest+json; charset=utf-8", "public, max-age=3600"))
-	r.Get("/sw.js", servePWAFile("pwa/sw.js", "application/javascript; charset=utf-8", "no-cache"))
+	r.Get("/sw.js", serveSW())
 	r.Get("/offline.html", servePWAFile("pwa/offline.html", "text/html; charset=utf-8", "no-cache"))
 	r.Get("/icons/icon-192.png", servePWAFile("pwa/icons/icon-192.png", "image/png", "public, max-age=31536000, immutable"))
 	r.Get("/icons/icon-512.png", servePWAFile("pwa/icons/icon-512.png", "image/png", "public, max-age=31536000, immutable"))
+}
+
+// serveSW отдаёт service worker, подставив в placeholder __OB_CACHE__ имя кэша
+// с ревизией сборки. Так каждый релиз меняет имя кэша → старые кэши чистятся в
+// activate, vendor-ассеты (URL не версионируются) перетягиваются заново. Без
+// ручного bump'а константы. Подстановка делается один раз при создании хендлера.
+func serveSW() http.HandlerFunc {
+	data, err := pwaFS.ReadFile("pwa/sw.js")
+	if err == nil {
+		data = bytes.ReplaceAll(data, []byte("__OB_CACHE__"), []byte(swCacheName()))
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		_, _ = w.Write(data)
+	}
+}
+
+// swCacheName — имя кэша service worker, привязанное к ревизии git-сборки
+// (debug.BuildInfo). Вне VCS-сборки (go test/run) ревизия пуста — используем
+// стабильный фолбэк, чтобы значение было детерминированным.
+func swCacheName() string {
+	rev := "dev"
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, s := range info.Settings {
+			if s.Key == "vcs.revision" && s.Value != "" {
+				rev = s.Value
+				if len(rev) > 12 {
+					rev = rev[:12]
+				}
+				break
+			}
+		}
+	}
+	return "onebase-" + rev
 }
