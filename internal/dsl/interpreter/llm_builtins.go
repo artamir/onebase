@@ -102,7 +102,7 @@ func NewLLMFunctions(ai AIAssistant) map[string]any {
 
 	// РаспознатьИзображение(ДанныеBase64, ТипMIME, Промпт) — vision по данным из
 	// памяти (загруженный файл/вложение), без записи на диск. Нужна для умной
-	// загрузки документов из UI (план 48, F6).
+	// загрузки документов из UI (план 51, F6).
 	распознатьИзображение := BuiltinFunc(func(args []any, file string, line int) (any, error) {
 		b64 := strArg(args, 0)
 		mime := strArg(args, 1)

@@ -1,6 +1,6 @@
 // Package aiassist связывает DSL-интерфейс ИИ-помощника (interpreter.AIAssistant)
 // с ядром internal/llm и конфигом базы. Вынесен отдельно, чтобы ни interpreter,
-// ни llm не зависели от storage напрямую (план 48).
+// ни llm не зависели от storage напрямую (план 51).
 package aiassist
 
 import (

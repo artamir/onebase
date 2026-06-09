@@ -245,7 +245,7 @@ func (s *Server) Mount(r chi.Router) {
 	r.Get("/ui/messages", s.messagesList)
 	r.Post("/ui/messages/clear", s.messagesClear)
 
-	// AI assistant chat (план 48, F3)
+	// AI assistant chat (план 51, F3)
 	r.Get("/ui/ai/enabled", s.aiEnabled)
 	r.Post("/ui/ai/chat", s.aiChat)
 }

@@ -3459,7 +3459,7 @@ document.querySelectorAll('details.cfg-tree').forEach(function(d){
   d.addEventListener('toggle',u);u();
 });
 </script>
-<!-- ИИ-помощник разработчика (план 48, F5) -->
+<!-- ИИ-помощник разработчика (план 51, F5) -->
 <button id="cfgai-btn" title="ИИ-помощник" style="display:none;position:fixed;right:18px;bottom:18px;z-index:9000;width:48px;height:48px;border-radius:50%;background:#7c3aed;color:#fff;border:none;cursor:pointer;font-size:22px;box-shadow:0 4px 14px rgba(124,58,237,.4)">🤖</button>
 <div id="cfgai-panel" style="display:none;position:fixed;right:18px;bottom:18px;z-index:9001;width:420px;max-width:calc(100vw - 24px);height:560px;max-height:calc(100vh - 40px);background:#fff;border:1px solid #cbd5e1;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.22);flex-direction:column;overflow:hidden;font-family:system-ui,sans-serif">
   <div style="background:#7c3aed;color:#fff;padding:10px 14px;display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px">🤖 ИИ-помощник разработчика<span style="flex:1"></span><button type="button" id="cfgai-close" style="background:none;border:none;color:#fff;cursor:pointer;font-size:18px">×</button></div>
