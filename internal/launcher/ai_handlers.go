@@ -59,11 +59,11 @@ func (h *handler) cfgAdminAI(w http.ResponseWriter, r *http.Request) {
 	if len(cfg.Endpoints) == 0 && len(cfg.Models) == 0 {
 		cfg = starterLLMConfig() // пустую базу заполняем заготовкой
 	}
-	pretty, _ := json.MarshalIndent(cfg, "", "  ")
+	pretty, _ := json.MarshalIndent(cfg.Redacted(), "", "  ")
 
 	page := fmt.Sprintf(`<div style="padding:16px">
   <h3 style="margin:0 0 6px;font-size:15px">ИИ-помощник</h3>
-  <div style="font-size:11px;color:#666;margin-bottom:10px">Провайдеры, модели и маршрутизация по задачам. Распознавание документов идёт на vision-моделях (Gemini) с фолбэком; текстовые задачи — на GLM через z.ai. Задачи: <code>анализ</code>, <code>чат</code>, <code>конфигуратор</code>, <code>документы</code>. Ключи хранятся в служебной таблице базы и не попадают в экспорт конфигурации.</div>
+  <div style="font-size:11px;color:#666;margin-bottom:10px">Провайдеры, модели и маршрутизация по задачам. Распознавание документов идёт на vision-моделях (Gemini) с фолбэком; текстовые задачи — на GLM через z.ai. Задачи: <code>анализ</code>, <code>чат</code>, <code>конфигуратор</code>, <code>документы</code>. Ключи хранятся в служебной таблице базы и не попадают в экспорт конфигурации. API-ключи отображаются замаскированными (<code>****</code>); оставьте маску без изменений — ключ сохранится прежним.</div>
   <textarea id="ai-cfg" spellcheck="false" style="width:100%%;height:340px;font-family:monospace;font-size:12px;padding:8px;border:1px solid #cbd5e1;border-radius:4px;resize:vertical">%s</textarea>
   <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
     <button onclick="aiSave()" style="background:#16a34a;color:#fff;border:none;padding:5px 14px;border-radius:3px;cursor:pointer;font-size:12px">Сохранить</button>
@@ -120,6 +120,9 @@ func (h *handler) cfgAdminAISave(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
+	if prev, err := db.GetLLMConfig(r.Context()); err == nil {
+		cfg = cfg.UnmaskKeys(prev)
+	}
 	if err := db.SaveLLMConfig(r.Context(), cfg); err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
@@ -140,6 +143,16 @@ func (h *handler) cfgAdminAITest(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Task == "" {
 		req.Task = llm.TaskAnalysis
+	}
+	// Восстанавливаем реальные ключи из сохранённого конфига, если форма вернула
+	// маскированные значения (****). При ошибке загрузки базы — тест идёт с тем,
+	// что прислал браузер (позволяет тестировать совершенно новый, ещё не сохранённый конфиг).
+	if b, err := h.store.Get(chi.URLParam(r, "id")); err == nil {
+		if db, err := getAuthDB(r.Context(), b); err == nil {
+			if prev, err := db.GetLLMConfig(r.Context()); err == nil {
+				req.Config = req.Config.UnmaskKeys(prev)
+			}
+		}
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
