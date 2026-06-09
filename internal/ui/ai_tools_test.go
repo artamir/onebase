@@ -2,11 +2,16 @@ package ui
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/ivantit66/onebase/internal/auth"
 	"github.com/ivantit66/onebase/internal/llm"
 	"github.com/ivantit66/onebase/internal/metadata"
+	"github.com/ivantit66/onebase/internal/storage"
 )
 
 func aiToolsTestServer(t *testing.T) *Server {
@@ -64,5 +69,54 @@ func TestAIRunQueryEmpty(t *testing.T) {
 	res := s.aiRunQuery(context.Background(), llm.ToolCall{ID: "q3", Input: map[string]any{"запрос": "   "}})
 	if !res.IsError {
 		t.Fatal("ожидалась ошибка на пустой запрос")
+	}
+}
+
+// TestAITools_NonAdminGetsNoTools проверяет, что не-администратор не получает
+// инструменты ИИ-чата. Для этого создаётся реальный authRepo со схемой и одним
+// пользователем (HasUsers()==true), а запрос не несёт пользователя в контексте
+// → UserFromContext==nil → isAdmin==false → aiTools возвращает (nil, nil).
+func TestAITools_NonAdminGetsNoTools(t *testing.T) {
+	ctx := context.Background()
+
+	// Поднимаем отдельную БД для auth-репо.
+	authDB, err := storage.ConnectSQLite(ctx, filepath.Join(t.TempDir(), "auth.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { authDB.Close() })
+
+	repo := auth.NewRepo(authDB)
+	if err := repo.EnsureSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// Создаём пользователя: теперь HasUsers()==true.
+	if _, err := repo.Create(ctx, "testuser", "password1", "Test User", false); err != nil {
+		t.Fatal(err)
+	}
+
+	// Строим сервер аналогично aiToolsTestServer, но с authRepo.
+	s, _ := newSubmitTestServer(t, nil)
+	s.authRepo = repo
+
+	// Запрос без пользователя в контексте → isAdmin==false.
+	r := httptest.NewRequest(http.MethodPost, "/ui/ai/chat", nil)
+	tools, exec := s.aiTools(r)
+	if tools != nil || exec != nil {
+		t.Fatalf("не-админ не должен получать инструменты ИИ: tools=%v exec!=nil=%v", tools, exec != nil)
+	}
+}
+
+// TestAITools_AdminGetsTools — положительный контраст: сервер без authRepo
+// (эквивалент открытого доступа/администратора) возвращает непустой набор инструментов.
+func TestAITools_AdminGetsTools(t *testing.T) {
+	s := aiToolsTestServer(t) // authRepo == nil → isAdmin всегда true
+	r := httptest.NewRequest(http.MethodPost, "/ui/ai/chat", nil)
+	tools, exec := s.aiTools(r)
+	if tools == nil {
+		t.Fatal("администратор должен получать инструменты ИИ, получено nil")
+	}
+	if exec == nil {
+		t.Fatal("администратор должен получать исполнитель инструментов, получено nil")
 	}
 }
