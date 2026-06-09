@@ -116,6 +116,24 @@ func maskKey(k string) string {
 	return "****" + k[len(k)-4:]
 }
 
+// UnmaskKeys восстанавливает реальные API-ключи для endpoint'ов, чьи ключи пришли
+// замаскированными (префикс "****") — т.е. админ не менял их в форме Redacted().
+// Заданный заново ключ (без префикса "****") и явно очищённый (пустой) сохраняются
+// как есть. prev — ранее сохранённый конфиг (источник реальных ключей).
+func (c Config) UnmaskKeys(prev Config) Config {
+	out := c
+	out.Endpoints = make([]Endpoint, len(c.Endpoints))
+	for i, e := range c.Endpoints {
+		if strings.HasPrefix(e.APIKey, "****") {
+			if pe, ok := prev.endpoint(e.Name); ok {
+				e.APIKey = pe.APIKey
+			}
+		}
+		out.Endpoints[i] = e
+	}
+	return out
+}
+
 func (c Config) endpoint(name string) (Endpoint, bool) {
 	for _, e := range c.Endpoints {
 		if strings.EqualFold(e.Name, name) {
