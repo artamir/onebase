@@ -29,5 +29,7 @@ type ToolResult struct {
 type ToolExecutor func(ctx context.Context, call ToolCall) ToolResult
 
 // MaxToolIterations — предел числа раундов tool-use в одном запросе (защита от
-// зацикливания). После него возвращается то, что есть, либо ошибка.
-const MaxToolIterations = 6
+// зацикливания). После него возвращается то, что есть, либо ошибка. 12 раундов
+// дают модели запас на аналитику (описание_данных + серия выполнить_запрос);
+// обычный вопрос укладывается в 2-4 раунда.
+const MaxToolIterations = 12
