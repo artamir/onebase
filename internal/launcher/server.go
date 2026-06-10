@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/ivantit66/onebase/internal/i18n"
 	"github.com/ivantit66/onebase/internal/webassets"
+	"github.com/ivantit66/onebase/internal/websec"
 )
 
 //go:embed static
@@ -74,6 +75,12 @@ func (s *Server) Close() {
 func (s *Server) ListenAndServe() error {
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
+	// Конфигуратор — чувствительная поверхность (консоль кода, миграции):
+	// те же базовые защитные заголовки и Origin-проверка CSRF, что у базы
+	// (план 53, этап 3). Модальные iframe конфигуратора — same-origin,
+	// frame-ancestors 'self' + localhost их не ломает.
+	r.Use(websec.SecurityHeaders)
+	r.Use(websec.CSRFProtect)
 
 	// Static assets (embedded)
 	r.Handle("/static/*", http.StripPrefix("/static/", staticHTTP))

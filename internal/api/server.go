@@ -16,6 +16,7 @@ import (
 	"github.com/ivantit66/onebase/internal/scheduler"
 	"github.com/ivantit66/onebase/internal/storage"
 	"github.com/ivantit66/onebase/internal/ui"
+	"github.com/ivantit66/onebase/internal/websec"
 )
 
 type Server struct {
@@ -33,6 +34,8 @@ func New(reg *runtime.Registry, store *storage.DB, interp *interpreter.Interpret
 	r := chi.NewRouter()
 	r.Use(requestLogger()) // как middleware.Logger, но режет токены/коды из URI (план 53)
 	r.Use(middleware.Recoverer)
+	r.Use(websec.SecurityHeaders) // nosniff, Referrer-Policy, CSP frame-ancestors (план 53)
+	r.Use(websec.CSRFProtect)     // мутирующие запросы с чужим Origin → 403 (план 53)
 
 	// Public auth routes (no authentication required)
 	authH := &auth.Handlers{
