@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"os"
 	"time"
@@ -24,7 +23,9 @@ type Server struct {
 	handler http.Handler
 }
 
-func New(reg *runtime.Registry, store *storage.DB, interp *interpreter.Interpreter, authRepo *auth.Repo, port int, uiCfg ui.Config, sched *scheduler.Scheduler) *Server {
+// New строит HTTP-сервер базы. host «» = 127.0.0.1 (см. addr.go): наружу
+// сервер выставляется только явным --host 0.0.0.0.
+func New(reg *runtime.Registry, store *storage.DB, interp *interpreter.Interpreter, authRepo *auth.Repo, host string, port int, uiCfg ui.Config, sched *scheduler.Scheduler) *Server {
 	// Debug API защищён внутренним токеном. Без него (плоский `onebase run`,
 	// опубликованная база) debug-маршруты не монтируются вовсе.
 	debugToken := os.Getenv("ONEBASE_DEBUG_TOKEN")
@@ -95,9 +96,8 @@ func New(reg *runtime.Registry, store *storage.DB, interp *interpreter.Interpret
 		uiSrv.MountDebug(r)
 	}
 
-	addr := fmt.Sprintf(":%d", port)
 	return &Server{handler: r, srv: &http.Server{
-		Addr:    addr,
+		Addr:    listenAddr(host, port),
 		Handler: r,
 		// Slowloris-защита: обрываем клиента, который медленно шлёт заголовки,
 		// и закрываем простаивающие keep-alive соединения. ReadTimeout/
