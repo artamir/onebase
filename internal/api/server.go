@@ -31,17 +31,20 @@ func New(reg *runtime.Registry, store *storage.DB, interp *interpreter.Interpret
 	uiSrv := ui.New(reg, store, interp, authRepo, uiCfg, sched)
 	h := &handler{reg: reg, store: store, interp: interp, entitySvc: uiSrv.EntitySvc()}
 	r := chi.NewRouter()
-	r.Use(middleware.Logger)
+	r.Use(requestLogger()) // как middleware.Logger, но режет токены/коды из URI (план 53)
 	r.Use(middleware.Recoverer)
 
 	// Public auth routes (no authentication required)
-	authH := &auth.Handlers{Repo: authRepo, Auditor: store}
+	authH := &auth.Handlers{Repo: authRepo, Auditor: store, Codes: auth.NewOneTimeCodes(30 * time.Second)}
 	r.Get("/login", authH.LoginPage)
 	r.Post("/login", authH.LoginSubmit)
 	r.Post("/logout", authH.Logout)
 	r.Get("/auth/status", authH.Status)
 	r.Post("/auth/login", authH.LoginJSON)
 	r.Get("/auth/bootstrap", authH.Bootstrap)
+	// Одноразовый код для bootstrap (план 53): хендлер сам проверяет session
+	// cookie (401 JSON, без HTML-редиректа auth-мидлвары).
+	r.Post("/auth/one-time-code", authH.IssueOneTimeCode)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 
 	// PWA-ассеты (manifest, service worker, offline-страница, иконки) — публичны.

@@ -194,6 +194,10 @@ func (s *Server) ListenAndServe() error {
 	// На app-стороне debug-запрос дополнительно требует X-OneBase-Debug-Token.
 	r.HandleFunc("/bases/{id}/debug/{action}", s.h.debugProxy) // GET + POST
 
+	// Одноразовый bootstrap-код (план 53) — тоже вне cfgAuth-группы: хендлер
+	// сам проверяет сессию админа и отвечает JSON для JS-fetch.
+	r.Post("/bases/{id}/one-time-code", s.h.oneTimeCodeProxy)
+
 	r.Post("/killall", s.h.killAll)
 	r.Post("/quit", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

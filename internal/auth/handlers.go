@@ -43,8 +43,35 @@ type AuditLogger interface {
 }
 
 type Handlers struct {
-	Repo   *Repo
-	Auditor AuditLogger // optional, set by api.New
+	Repo    *Repo
+	Auditor AuditLogger   // optional, set by api.New
+	Codes   *OneTimeCodes // одноразовые bootstrap-коды (план 53); optional
+}
+
+// IssueOneTimeCode handles POST /auth/one-time-code: выдаёт короткоживущий
+// одноразовый код для текущей сессии (cookie). Конфигуратор обменивает его
+// через /auth/bootstrap?code=... — сессионный токен не попадает в URL.
+func (h *Handlers) IssueOneTimeCode(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if h.Codes == nil {
+		http.Error(w, `{"error":"one-time codes disabled"}`, http.StatusNotFound)
+		return
+	}
+	cookie, err := r.Cookie("onebase_session")
+	if err != nil || cookie.Value == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	if _, err := h.Repo.LookupSession(r.Context(), cookie.Value); err != nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	code, err := h.Codes.Issue(cookie.Value)
+	if err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]any{"code": code})
 }
 
 func (h *Handlers) loginPageData() map[string]any {
@@ -164,17 +191,29 @@ func (h *Handlers) Status(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"requires_auth": hasUsers})
 }
 
-// Bootstrap sets session cookie from token param and redirects.
+// Bootstrap sets the session cookie from a one-time code and redirects.
 // Used by the launcher to pass the session into a new browser window.
 // Optional "return" query param specifies the redirect target (default: /ui).
+// Сырой сессионный токен в query НЕ принимается: токен в URL утекает в логи,
+// Referer и историю браузера (план 53, этап 1) — только одноразовый код,
+// выданный IssueOneTimeCode (single-use, короткий TTL).
 func (h *Handlers) Bootstrap(w http.ResponseWriter, r *http.Request) {
 	returnURL := r.URL.Query().Get("return")
 	if returnURL == "" || !isLocalURL(returnURL) {
 		returnURL = "/ui"
 	}
-	token := r.URL.Query().Get("token")
-	if token == "" {
+	code := r.URL.Query().Get("code")
+	if code == "" {
 		http.Redirect(w, r, returnURL, http.StatusFound)
+		return
+	}
+	if h.Codes == nil {
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return
+	}
+	token, ok := h.Codes.Exchange(code)
+	if !ok {
+		http.Redirect(w, r, "/login", http.StatusFound)
 		return
 	}
 	if _, err := h.Repo.LookupSession(r.Context(), token); err != nil {
