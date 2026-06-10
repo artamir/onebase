@@ -1,22 +1,16 @@
 # План 58 — Входящие интеграции: REST-эндпоинты → DSL-обработчики
 
-**Статус:** ✅ Реализовано (2026-06-10, ветка `feature/inbound-endpoints`)
+**Статус:** ♻ Поглощён планом 61 (HTTP-сервисы, 2026-06-10)
 
-> **Как реализовано.** `metadata.Endpoint` (`endpoints/*.yaml`: path/method/
-> auth/secret/handler/rate_limit, секреты через `${env:VAR}`); обработчик —
-> `src/<handler>.endpoint.os` с процедурой `Обработать(Запрос, Ответ)`
-> (биндинг через `Interp.Call`, полное DSL-окружение как у обработок —
-> Справочники/Документы доступны). Маршрут `/api/hooks/*` — один catch-all
-> (lookup в Registry → hot-reload `--watch` подхватывает изменения), вне
-> auth-группы. Auth: token (X-Webhook-Token) и hmac (X-Webhook-Signature =
-> hex(HMAC-SHA256), поддерживается префикс `sha256=`), сравнение constant-time;
-> rate-limit окно/минута per-endpoint; тело ≤ 10 МиБ. `onebase check` ловит
-> дубли path, отсутствие модуля/процедуры, auth без секрета. Проверено живым
-> curl: 401 без токена, 200 + JSON от DSL с токеном.
-> **Отступления:** DSL-объекты Запрос/Ответ живут в `ui/endpoints.go`
-> (не в interpreter — он не зависит от net/http); песочница DSL (план 57
-> этап 0) не предпосылка: код обработчика пишет владелец конфигурации,
-> недоверенны только данные; журнал `_endpoint_calls` — опциональный follow-up.
+> Первая реализация (`endpoints/*.yaml` + `/api/hooks/*`) жила в main меньше
+> дня: параллельно в PR #47 была сделана более полная версия той же идеи —
+> **HTTP-сервисы** по образцу 1С (`services/*.yaml`, `/hs/<корень>/…`,
+> URL-шаблоны с параметрами, OpenAPI, RapiDoc). При объединении HTTP-сервисы
+> взяты за основу, а отсюда в них портированы: `auth: token` (X-Webhook-Token)
+> и `auth: hmac` (X-Webhook-Signature = hex(HMAC-SHA256), constant-time,
+> префикс `sha256=`), `rate_limit` (окно/минута на сервис), `secret` через
+> `${env:VAR}` и валидация в `onebase check` (`CheckHTTPServices`).
+> См. [61-http-services.md](61-http-services.md).
 **Источник:** `АнализПроекта-2026-06-10.md` §4.2 (killer-feature №2, входящая половина).
 **Приоритет:** 🌟 Стратегический — ниша, где 1С слаба, а малому бизнесу нужно ежедневно.
 

@@ -143,12 +143,12 @@ func runDev(cmd *cobra.Command, _ []string) error {
 		reg.LoadDSLPrintForms(proj.DSLPrintForms)
 		reg.LoadModules(proj.Modules)
 		reg.LoadProcessors(proj.Processors)
+		reg.LoadHTTPServices(proj.HTTPServices)
 		reg.LoadSubsystems(proj.Subsystems)
 		reg.LoadJournals(proj.Journals)
 		reg.LoadAccountRegisters(proj.AccountRegisters, proj.ChartsOfAccounts)
 		reg.LoadWidgets(proj.Widgets)
 		reg.LoadHomePage(proj.HomePage)
-		reg.LoadEndpoints(proj.Endpoints, proj.EndpointPrograms)
 		if loadErr := sched.Reload(proj.ScheduledJobs); loadErr != nil {
 			fmt.Fprintln(os.Stderr, "[dev] scheduler reload error:", loadErr)
 		}

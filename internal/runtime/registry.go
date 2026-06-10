@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/ivantit66/onebase/internal/dsl/ast"
+	"github.com/ivantit66/onebase/internal/httpservice"
 	"github.com/ivantit66/onebase/internal/metadata"
 	"github.com/ivantit66/onebase/internal/printform"
 	"github.com/ivantit66/onebase/internal/processor"
@@ -29,6 +30,7 @@ type Registry struct {
 	moduleProcs     map[string]*ast.ProcedureDecl // flat: proc name → decl
 	moduleByName    map[string]map[string]*ast.ProcedureDecl // lowercase module → procs in it
 	processors      map[string]*processor.Processor
+	httpServices    map[string]*httpservice.Service // lowercase name → HTTP-сервис
 	subsystems      []*metadata.Subsystem // sorted by Order
 	journals        map[string]*metadata.Journal
 	accountRegs     map[string]*metadata.AccountRegister
@@ -41,15 +43,6 @@ type Registry struct {
 	// значение — список *Entity-приёмников, у которых в YAML указан этот
 	// источник в `based_on`. Заполняется в Load(opts).
 	basedOnIndex map[string][]*metadata.Entity
-	// endpoints — входящие REST-эндпоинты (план 58): lowercase path → эндпоинт
-	// с разрешённой процедурой-обработчиком.
-	endpoints map[string]*ResolvedEndpoint
-}
-
-// ResolvedEndpoint — эндпоинт вместе с процедурой Обработать его модуля.
-type ResolvedEndpoint struct {
-	Meta *metadata.Endpoint
-	Proc *ast.ProcedureDecl
 }
 
 func NewRegistry() *Registry {
@@ -68,53 +61,12 @@ func NewRegistry() *Registry {
 		moduleProcs:     make(map[string]*ast.ProcedureDecl),
 		moduleByName:    make(map[string]map[string]*ast.ProcedureDecl),
 		processors:      make(map[string]*processor.Processor),
+		httpServices:    make(map[string]*httpservice.Service),
 		journals:        make(map[string]*metadata.Journal),
 		accountRegs:     make(map[string]*metadata.AccountRegister),
 		chartsOfAccount: make(map[string]*metadata.ChartOfAccounts),
 		widgets:         make(map[string]*metadata.Widget),
-		endpoints:       make(map[string]*ResolvedEndpoint),
 	}
-}
-
-// LoadEndpoints регистрирует входящие эндпоинты (план 58). programs —
-// handler (lower) → программа модуля src/<handler>.endpoint.os; процедура
-// «Обработать» (или Handle) разрешается здесь, при загрузке.
-func (r *Registry) LoadEndpoints(eps []*metadata.Endpoint, programs map[string]*ast.Program) {
-	m := make(map[string]*ResolvedEndpoint, len(eps))
-	for _, ep := range eps {
-		re := &ResolvedEndpoint{Meta: ep}
-		if prog, ok := programs[strings.ToLower(ep.Handler)]; ok {
-			for _, p := range prog.Procedures {
-				low := strings.ToLower(p.Name.Literal)
-				if low == "обработать" || low == "handle" {
-					re.Proc = p
-					break
-				}
-			}
-		}
-		m[strings.ToLower(ep.Path)] = re
-	}
-	r.mu.Lock()
-	r.endpoints = m
-	r.mu.Unlock()
-}
-
-// GetEndpointByPath возвращает эндпоинт по пути (lowercase, точный матч).
-func (r *Registry) GetEndpointByPath(path string) *ResolvedEndpoint {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.endpoints[strings.ToLower(path)]
-}
-
-// Endpoints возвращает все входящие эндпоинты.
-func (r *Registry) Endpoints() []*ResolvedEndpoint {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	out := make([]*ResolvedEndpoint, 0, len(r.endpoints))
-	for _, e := range r.endpoints {
-		out = append(out, e)
-	}
-	return out
 }
 
 // LoadWidgets registers dashboard widgets by name (case-insensitive).
@@ -594,6 +546,50 @@ func (r *Registry) GetProcessor(name string) *processor.Processor {
 	for k, v := range r.processors {
 		if strings.ToLower(k) == nl {
 			return v
+		}
+	}
+	return nil
+}
+
+// LoadHTTPServices регистрирует опубликованные HTTP-сервисы (план 61).
+// Ключ — lowercase имя сервиса; роутер ищет сервис по корневому URL через
+// HTTPServices(), а обработчик — через GetProcedure(serviceName, handlerName).
+func (r *Registry) LoadHTTPServices(services []*httpservice.Service) {
+	m := make(map[string]*httpservice.Service, len(services))
+	for _, s := range services {
+		m[strings.ToLower(s.Name)] = s
+	}
+	r.mu.Lock()
+	r.httpServices = m
+	r.mu.Unlock()
+}
+
+// HTTPServices возвращает все зарегистрированные HTTP-сервисы.
+func (r *Registry) HTTPServices() []*httpservice.Service {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]*httpservice.Service, 0, len(r.httpServices))
+	for _, s := range r.httpServices {
+		out = append(out, s)
+	}
+	return out
+}
+
+// GetHTTPService ищет сервис по имени (регистронезависимо). nil, если нет.
+func (r *Registry) GetHTTPService(name string) *httpservice.Service {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.httpServices[strings.ToLower(name)]
+}
+
+// GetHTTPServiceByRoot ищет сервис по корневому URL (регистронезависимо).
+func (r *Registry) GetHTTPServiceByRoot(root string) *httpservice.Service {
+	root = strings.Trim(root, "/")
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, s := range r.httpServices {
+		if strings.EqualFold(s.RootURL, root) {
+			return s
 		}
 	}
 	return nil

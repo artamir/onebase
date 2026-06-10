@@ -15,6 +15,7 @@ import (
 	"github.com/ivantit66/onebase/internal/dsl/lexer"
 	"github.com/ivantit66/onebase/internal/dsl/loader"
 	"github.com/ivantit66/onebase/internal/dsl/parser"
+	"github.com/ivantit66/onebase/internal/httpservice"
 	"github.com/ivantit66/onebase/internal/llm"
 	"github.com/ivantit66/onebase/internal/webhook"
 	"github.com/ivantit66/onebase/internal/metadata"
@@ -37,9 +38,8 @@ type Project struct {
 	Programs         map[string]*ast.Program  // entity name → parsed DSL (модуль объекта)
 	ManagerPrograms  map[string]*ast.Program  // entity name → parsed DSL (модуль менеджера)
 	Processors       []*processor.Processor
+	HTTPServices     []*httpservice.Service   // план 61: опубликованные HTTP-сервисы
 	Modules          map[string]*ast.Program  // module name → parsed procs
-	Endpoints        []*metadata.Endpoint     // входящие REST-эндпоинты (план 58)
-	EndpointPrograms map[string]*ast.Program  // handler (lower) → parsed DSL (src/*.endpoint.os)
 	Subsystems       []*metadata.Subsystem
 	Journals         []*metadata.Journal
 	ScheduledJobs    []*metadata.ScheduledJob
@@ -179,11 +179,10 @@ func LoadFromDB(ctx context.Context, repo *configdb.Repo) (*Project, error) {
 
 func Load(dir string) (*Project, error) {
 	p := &Project{
-		Dir:              dir,
-		Programs:         make(map[string]*ast.Program),
-		ManagerPrograms:  make(map[string]*ast.Program),
-		Modules:          make(map[string]*ast.Program),
-		EndpointPrograms: make(map[string]*ast.Program),
+		Dir:             dir,
+		Programs:        make(map[string]*ast.Program),
+		ManagerPrograms: make(map[string]*ast.Program),
+		Modules:         make(map[string]*ast.Program),
 	}
 	if err := p.loadMetadata(); err != nil {
 		return nil, err
@@ -203,10 +202,10 @@ func Load(dir string) (*Project, error) {
 	if err := p.loadProcessors(); err != nil {
 		return nil, err
 	}
-	if err := p.loadEndpoints(); err != nil {
+	if err := p.loadProcessorForms(); err != nil {
 		return nil, err
 	}
-	if err := p.loadProcessorForms(); err != nil {
+	if err := p.loadHTTPServices(); err != nil {
 		return nil, err
 	}
 	if err := p.loadSubsystems(); err != nil {
@@ -260,28 +259,17 @@ func (p *Project) loadProcessors() error {
 	return nil
 }
 
-// loadEndpoints читает endpoints/*.yaml (план 58). Секреты поддерживают
-// ${env:VAR} — значение живёт в окружении, не в YAML/git/.obz.
-func (p *Project) loadEndpoints() error {
-	dir := filepath.Join(p.Dir, "endpoints")
-	items, err := os.ReadDir(dir)
-	if os.IsNotExist(err) {
-		return nil
-	}
+// loadHTTPServices читает services/*.yaml (план 61). Секреты (auth token/hmac)
+// поддерживают ${env:VAR} — значение живёт в окружении, не в YAML/git/.obz.
+func (p *Project) loadHTTPServices() error {
+	services, err := httpservice.LoadDir(filepath.Join(p.Dir, "services"))
 	if err != nil {
-		return fmt.Errorf("project: readdir %s: %w", dir, err)
+		return fmt.Errorf("project: load http services: %w", err)
 	}
-	for _, item := range items {
-		if item.IsDir() || (!strings.HasSuffix(item.Name(), ".yaml") && !strings.HasSuffix(item.Name(), ".yml")) {
-			continue
-		}
-		ep, err := metadata.LoadEndpointFile(filepath.Join(dir, item.Name()))
-		if err != nil {
-			return fmt.Errorf("project: load endpoint: %w", err)
-		}
-		ep.Secret = expandEnvRefs(ep.Secret)
-		p.Endpoints = append(p.Endpoints, ep)
+	for _, s := range services {
+		s.Secret = expandEnvRefs(s.Secret)
 	}
+	p.HTTPServices = services
 	return nil
 }
 
@@ -477,7 +465,7 @@ func (p *Project) loadDSL() error {
 		isPosting := strings.HasSuffix(name, ".posting.os")
 		isReport := strings.HasSuffix(name, ".rep.os")
 		isManager := strings.HasSuffix(name, ".manager.os")
-		isEndpoint := strings.HasSuffix(name, ".endpoint.os")
+		isService := strings.HasSuffix(name, ".service.os")
 
 		fullPath := filepath.Join(srcDir, name)
 		data, err := os.ReadFile(fullPath)
@@ -508,16 +496,19 @@ func (p *Project) loadDSL() error {
 			continue
 		}
 
-		if isEndpoint {
-			// Обработчик входящего эндпоинта (план 58): ключ — имя файла без
-			// суффикса в нижнем регистре, на него ссылается handler в yaml.
-			base := strings.ToLower(strings.TrimSuffix(name, ".endpoint.os"))
-			p.EndpointPrograms[base] = prog
-			continue
-		}
-
 		if isProc {
 			base := strings.TrimSuffix(name, ".proc.os")
+			entityName := fileNameToEntityBase(base)
+			p.Programs[entityName] = prog
+			continue
+		}
+		if isService {
+			// Обработчики HTTP-сервиса (план 61). Кладём в Programs под
+			// капитализированным именем файла; роутер достаёт процедуру через
+			// GetProcedure(serviceName, handlerName) с регистронезависимым
+			// фолбэком, поэтому имя файла должно совпадать с именем сервиса
+			// (без учёта регистра).
+			base := strings.TrimSuffix(name, ".service.os")
 			entityName := fileNameToEntityBase(base)
 			p.Programs[entityName] = prog
 			continue
