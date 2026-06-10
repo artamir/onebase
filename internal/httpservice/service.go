@@ -38,9 +38,17 @@ type Service struct {
 	Titles    map[string]string `yaml:"titles"`
 	RootURL   string        `yaml:"root_url"`
 	// Auth — способ аутентификации: «none» (аноним, по умолчанию — удобно для
-	// приёма вебхуков), «basic» (HTTP Basic против пользователей базы) или
-	// «session» (cookie/токен, как у веб-интерфейса).
+	// приёма вебхуков), «basic» (HTTP Basic против пользователей базы),
+	// «session» (cookie/токен, как у веб-интерфейса), «token» (постоянный
+	// секрет в заголовке X-Webhook-Token) или «hmac» (подпись тела:
+	// X-Webhook-Signature = hex(HMAC-SHA256(тело, secret)) — формат платёжек
+	// и Telegram). token/hmac поглощены из плана 58.
 	Auth string `yaml:"auth"`
+	// Secret — секрет для auth token/hmac. Задавайте через ${env:VAR} —
+	// значение живёт в окружении, не в YAML/git/.obz.
+	Secret string `yaml:"secret"`
+	// RateLimit — максимум запросов в минуту на сервис; 0 = без лимита.
+	RateLimit int `yaml:"rate_limit"`
 	// Roles — если непусто, вызов разрешён только аутентифицированному
 	// пользователю с одной из перечисленных ролей (администратор — всегда).
 	// Подразумевает auth basic/session: анонимный вызов отклоняется (403).

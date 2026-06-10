@@ -82,7 +82,7 @@ func (u *User) Has(kind, entity, op string) bool {
 
 // HasAnyRole reports whether the user holds at least one of the named roles
 // (case-insensitive). Admins always pass. Used to gate HTTP-services declaring
-// a `roles:` list (план 52).
+// a `roles:` list (план 61).
 func (u *User) HasAnyRole(names []string) bool {
 	if u.IsAdmin {
 		return true

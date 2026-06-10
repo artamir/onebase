@@ -551,7 +551,7 @@ func (r *Registry) GetProcessor(name string) *processor.Processor {
 	return nil
 }
 
-// LoadHTTPServices регистрирует опубликованные HTTP-сервисы (план 52).
+// LoadHTTPServices регистрирует опубликованные HTTP-сервисы (план 61).
 // Ключ — lowercase имя сервиса; роутер ищет сервис по корневому URL через
 // HTTPServices(), а обработчик — через GetProcedure(serviceName, handlerName).
 func (r *Registry) LoadHTTPServices(services []*httpservice.Service) {

@@ -16,6 +16,7 @@ import (
 	"github.com/ivantit66/onebase/internal/runtime"
 	"github.com/ivantit66/onebase/internal/scheduler"
 	"github.com/ivantit66/onebase/internal/storage"
+	"github.com/ivantit66/onebase/internal/webhook"
 	"github.com/ivantit66/onebase/internal/widget"
 	"time"
 )
@@ -37,6 +38,10 @@ type Config struct {
 	// монтируются (см. api.New). Непустой → каждый запрос к /debug/global/*
 	// должен нести его в заголовке X-OneBase-Debug-Token.
 	DebugToken string
+	// Webhooks — диспетчер исходящих веб-хуков из app.yaml (план 29).
+	// nil = не настроены. Прокидывается в entityservice (save/post) и
+	// используется обработчиками unpost/delete.
+	Webhooks *webhook.Dispatcher
 }
 
 type Server struct {
@@ -53,6 +58,8 @@ type Server struct {
 	widgetCache      *widget.Cache
 	lockMgr          *runtime.LockManager   // #2 managed locks
 	entitySvc        *entityservice.Service // упсёрт + ТЧ + движения + проведение, разделяется с api
+	aiChatLimit      *aiWindowLimiter       // лимит частоты ИИ-чата на пользователя (план 54)
+	endpointLimit    endpointLimiter        // rate-limit HTTP-сервисов (план 61)
 }
 
 func New(reg *runtime.Registry, store *storage.DB, interp *interpreter.Interpreter, authRepo *auth.Repo, cfg Config, sched *scheduler.Scheduler) *Server {
@@ -60,7 +67,7 @@ func New(reg *runtime.Registry, store *storage.DB, interp *interpreter.Interpret
 	if maxBytes <= 0 {
 		maxBytes = 50 * 1024 * 1024
 	}
-	s := &Server{reg: reg, store: store, interp: interp, authRepo: authRepo, cfg: cfg, sched: sched, mailer: cfg.Mailer, maxFileSizeBytes: maxBytes, globalDebug: debugger.NewGlobalDebugController(), messages: NewMessageStore(), widgetCache: widget.NewCache(60 * time.Second), lockMgr: runtime.NewLockManager()}
+	s := &Server{reg: reg, store: store, interp: interp, authRepo: authRepo, cfg: cfg, sched: sched, mailer: cfg.Mailer, maxFileSizeBytes: maxBytes, globalDebug: debugger.NewGlobalDebugController(), messages: NewMessageStore(), widgetCache: widget.NewCache(60 * time.Second), lockMgr: runtime.NewLockManager(), aiChatLimit: newAIWindowLimiter(10, time.Minute)}
 	s.entitySvc = &entityservice.Service{
 		Store:  store,
 		Reg:    reg,
@@ -79,6 +86,19 @@ func New(reg *runtime.Registry, store *storage.DB, interp *interpreter.Interpret
 		MakeThis: func(obj *runtime.Object, e *metadata.Entity) interpreter.This {
 			return &formObjectThis{obj: obj, entity: e}
 		},
+		// Исходящие веб-хуки (план 29): save/post диспетчеризуются из Save.
+		Hooks: cfg.Webhooks,
+	}
+	// Отладчик подключается к исполнению через DebugSource: каждый запуск DSL
+	// захватывает текущую сессию глобального контроллера в свой execCtx.
+	// Устанавливается однократно здесь, до начала обслуживания HTTP, — сам
+	// Interpreter после этого неизменяем (план 52: раньше debug_handlers
+	// мутировали interp.DebugHook на лету, что гонило с конкурентными запусками).
+	interp.DebugSource = func() interpreter.DebugHook {
+		if sess := s.globalDebug.Session(); sess != nil {
+			return sess
+		}
+		return nil
 	}
 	globalBundle = cfg.Bundle
 	if sched != nil {
@@ -184,6 +204,7 @@ func (s *Server) Mount(r chi.Router) {
 
 	// Admin: audit log
 	r.Get("/ui/admin/audit", s.adminAudit)
+	r.Get("/ui/admin/webhooks", s.adminWebhooks)
 	r.Get("/ui/{kind}/{entity}/{id}/history", s.recordHistory)
 
 	// Admin: orphan movements cleanup

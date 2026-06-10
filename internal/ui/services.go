@@ -1,6 +1,6 @@
 package ui
 
-// HTTP-сервисы (план 52) — серверная сторона по аналогии с «HTTPСервис» 1С.
+// HTTP-сервисы (план 61) — серверная сторона по аналогии с «HTTPСервис» 1С.
 // Конфигурация публикует собственные REST-эндпоинты под /hs/<корень>/…, а их
 // обработчики пишутся на DSL (src/<имя>.service.os). Здесь — маршрутизация,
 // аутентификация по сервису и запуск обработчика с полным набором DSL-
@@ -8,12 +8,18 @@ package ui
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -24,6 +30,34 @@ import (
 	"github.com/ivantit66/onebase/internal/runtime"
 	"github.com/ivantit66/onebase/internal/storage"
 )
+
+// endpointLimiter — скользящее окно запросов в минуту на сервис (rate_limit).
+type endpointLimiter struct {
+	mu   sync.Mutex
+	hits map[string][]time.Time
+}
+
+func (l *endpointLimiter) allow(key string, max int) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.hits == nil {
+		l.hits = make(map[string][]time.Time)
+	}
+	now := time.Now()
+	cutoff := now.Add(-time.Minute)
+	kept := l.hits[key][:0]
+	for _, t := range l.hits[key] {
+		if t.After(cutoff) {
+			kept = append(kept, t)
+		}
+	}
+	if len(kept) >= max {
+		l.hits[key] = kept
+		return false
+	}
+	l.hits[key] = append(kept, now)
+	return true
+}
 
 // MountServices монтирует поверхность HTTP-сервисов. Регистрируется на верхнем
 // уровне роутера (вне session-middleware веб-интерфейса): каждый сервис сам
@@ -112,12 +146,29 @@ func (s *Server) serviceDispatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, ok := s.resolveServiceAuth(svc, w, r)
+	// Rate-limit уровня сервиса (поглощено из плана 58): защищает публичные
+	// приёмники вебхуков от спама и cost-DoS.
+	if svc.RateLimit > 0 && !s.endpointLimit.allow(svc.RootURL, svc.RateLimit) {
+		w.Header().Set("Retry-After", "60")
+		writeServiceError(w, http.StatusTooManyRequests, "превышен лимит запросов")
+		return
+	}
+
+	// Тело читаем целиком ДО аутентификации (ограничено maxFileSizeBytes):
+	// auth hmac проверяет подпись тела, а обработчик получает его как
+	// байты/строку без возни с потоком.
+	var body []byte
+	if r.Body != nil {
+		body, _ = io.ReadAll(http.MaxBytesReader(w, r.Body, s.maxFileSizeBytes))
+		r.Body.Close()
+	}
+
+	ctx, ok := s.resolveServiceAuth(svc, w, r, body)
 	if !ok {
 		return // 401 уже отправлен
 	}
 
-	// Авторизация по ролям (план 52). Непустой roles: требует
+	// Авторизация по ролям (план 61). Непустой roles: требует
 	// аутентифицированного пользователя с одной из ролей (админ — всегда).
 	if len(svc.Roles) > 0 {
 		u := auth.UserFromContext(ctx)
@@ -125,14 +176,6 @@ func (s *Server) serviceDispatch(w http.ResponseWriter, r *http.Request) {
 			writeServiceError(w, http.StatusForbidden, "доступ запрещён: требуется роль "+strings.Join(svc.Roles, "/"))
 			return
 		}
-	}
-
-	// Тело читаем целиком (ограничено maxFileSizeBytes) — обработчик получит его
-	// как байты/строку без возни с потоком.
-	var body []byte
-	if r.Body != nil {
-		body, _ = io.ReadAll(http.MaxBytesReader(w, r.Body, s.maxFileSizeBytes))
-		r.Body.Close()
 	}
 
 	procDecl := s.reg.GetProcedure(svc.Name, handlerName)
@@ -160,12 +203,35 @@ func (s *Server) serviceDispatch(w http.ResponseWriter, r *http.Request) {
 	s.writeServiceResult(w, result)
 }
 
-// resolveServiceAuth применяет аутентификацию конкретного сервиса. Возвращает
-// контекст (с вложенным пользователем при успехе) и ok=false, если запрос уже
-// отклонён (401 отправлен).
-func (s *Server) resolveServiceAuth(svc *httpservice.Service, w http.ResponseWriter, r *http.Request) (ctxOut context.Context, ok bool) {
+// resolveServiceAuth применяет аутентификацию конкретного сервиса. body нужен
+// режиму hmac (подпись тела). Возвращает контекст (с вложенным пользователем
+// при успехе) и ok=false, если запрос уже отклонён (401 отправлен).
+func (s *Server) resolveServiceAuth(svc *httpservice.Service, w http.ResponseWriter, r *http.Request, body []byte) (ctxOut context.Context, ok bool) {
 	switch strings.ToLower(strings.TrimSpace(svc.Auth)) {
 	case "", "none":
+		return r.Context(), true
+
+	case "token":
+		// Постоянный секрет в заголовке — простой режим для вебхуков
+		// (поглощено из плана 58). Сравнение constant-time.
+		got := r.Header.Get("X-Webhook-Token")
+		if got == "" || subtle.ConstantTimeCompare([]byte(got), []byte(svc.Secret)) != 1 {
+			writeServiceError(w, http.StatusUnauthorized, "неверный токен")
+			return nil, false
+		}
+		return r.Context(), true
+
+	case "hmac":
+		// Подпись тела — формат платёжек/Telegram: X-Webhook-Signature =
+		// hex(HMAC-SHA256(тело, secret)); допускается префикс "sha256=".
+		mac := hmac.New(sha256.New, []byte(svc.Secret))
+		mac.Write(body)
+		want := hex.EncodeToString(mac.Sum(nil))
+		got := strings.TrimPrefix(strings.ToLower(r.Header.Get("X-Webhook-Signature")), "sha256=")
+		if got == "" || subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
+			writeServiceError(w, http.StatusUnauthorized, "неверная подпись")
+			return nil, false
+		}
 		return r.Context(), true
 
 	case "basic":

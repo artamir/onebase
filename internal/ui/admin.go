@@ -15,7 +15,7 @@ import (
 	"github.com/ivantit66/onebase/internal/storage"
 )
 
-var adminTmpl = template.Must(template.New("admin").Parse(tplAdminUsers + tplAdminUserCard + tplAdminUserForm + tplAdminPasswd + tplAdminSessions + tplAdminCleanup + tplAdminRoles + tplAdminUserRoles + tplAdminAudit))
+var adminTmpl = template.Must(template.New("admin").Parse(tplAdminUsers + tplAdminUserCard + tplAdminUserForm + tplAdminPasswd + tplAdminSessions + tplAdminCleanup + tplAdminRoles + tplAdminUserRoles + tplAdminAudit + tplAdminWebhooks))
 
 const tplAdminUsers = `{{define "admin-users"}}` + adminHead + `
 <main>
@@ -95,7 +95,7 @@ const tplAdminUserCard = `{{define "admin-user-card"}}` + adminHead + `
     <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400">
       <input type="checkbox" name="ai_data_access" value="1" {{if .User.AIDataAccess}}checked{{end}}> Доступ ИИ-чата к данным (без прав администратора)
     </label>
-    <div style="font-size:12px;color:#dc2626;margin-top:4px;margin-left:24px">⚠ ИИ-чат сможет выполнять произвольные запросы на чтение и не ограничен правами на отдельные объекты — пользователь получит доступ к любым данным базы через ассистента.</div>
+    <div style="font-size:12px;color:#dc2626;margin-top:4px;margin-left:24px">⚠ ИИ-чат сможет выполнять произвольные запросы на чтение и не ограничен правами на отдельные объекты — пользователь получит доступ к любым данным базы через ассистента, а результаты запросов передаются внешнему LLM-провайдеру. Обращения записываются в журнал ИИ (_ai_audit).</div>
   </div>
   <button class="btn btn-primary" type="submit">Сохранить</button>
 </form>
@@ -156,7 +156,7 @@ const tplAdminUserForm = `{{define "admin-user-form"}}` + adminHead + `
     <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
       <input type="checkbox" name="ai_data_access" value="1"> Доступ ИИ-чата к данным (без прав администратора)
     </label>
-    <div style="font-size:12px;color:#dc2626;margin-top:4px;margin-left:24px">⚠ ИИ-чат выполняет произвольные запросы на чтение, не ограничен правами на объекты.</div>
+    <div style="font-size:12px;color:#dc2626;margin-top:4px;margin-left:24px">⚠ ИИ-чат выполняет произвольные запросы на чтение, не ограничен правами на объекты; результаты уходят внешнему LLM-провайдеру.</div>
   </div>
   <div style="display:flex;gap:12px;margin-top:8px">
     <button class="btn btn-primary" type="submit">Создать</button>
@@ -921,3 +921,53 @@ const tplAdminCleanup = `{{define "admin-cleanup"}}` + adminHead + `
 {{end}}
 </main></body></html>
 {{end}}`
+
+// tplAdminWebhooks — журнал исходящих веб-хуков (план 29): последние 200
+// вызовов со статусом, ошибкой, длительностью и числом попыток.
+const tplAdminWebhooks = `{{define "admin-webhooks"}}` + adminHead + `
+<main>
+<div class="row-top" style="max-width:1100px">
+  <h2>Журнал веб-хуков</h2>
+</div>
+<div class="card" style="max-width:1100px">
+{{if .Entries}}
+<table style="font-size:13px">
+<thead><tr>
+  <th>Время</th><th>Веб-хук</th><th>Событие</th><th>Сущность</th><th>Статус</th><th>Попыток</th><th>Длительность</th><th>Ошибка</th>
+</tr></thead>
+<tbody>
+{{range .Entries}}
+<tr>
+  <td style="white-space:nowrap">{{.At.Format "02.01.2006 15:04:05"}}</td>
+  <td>{{.Webhook}}</td>
+  <td>{{.Event}}</td>
+  <td>{{.Entity}}</td>
+  <td>{{if and (ge .StatusCode 200) (lt .StatusCode 300)}}<span style="color:#16a34a">{{.StatusCode}}</span>{{else}}<span style="color:#dc2626">{{if .StatusCode}}{{.StatusCode}}{{else}}—{{end}}</span>{{end}}</td>
+  <td>{{.Attempts}}</td>
+  <td>{{.DurationMs}} мс</td>
+  <td style="color:#dc2626;max-width:340px;overflow:hidden;text-overflow:ellipsis">{{.Error}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}
+  <p class="empty">Вызовов веб-хуков ещё не было. Веб-хуки настраиваются в config/app.yaml (блок webhooks).</p>
+{{end}}
+</div>
+</main></body></html>
+{{end}}`
+
+// adminWebhooks показывает журнал исходящих веб-хуков (только админ).
+func (s *Server) adminWebhooks(w http.ResponseWriter, r *http.Request) {
+	if !s.isAdmin(r) {
+		s.renderForbidden(w, r)
+		return
+	}
+	entries, err := s.store.ListWebhookLog(r.Context(), 200)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	adminTmpl.ExecuteTemplate(w, "admin-webhooks", map[string]any{"Entries": entries})
+}
