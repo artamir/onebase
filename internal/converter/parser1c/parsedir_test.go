@@ -389,6 +389,43 @@ func TestMapTypeEnumRef(t *testing.T) {
 	}
 }
 
+const processorXML = `<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject>
+  <DataProcessor>
+    <Properties><Name>ЗагрузкаКурсов</Name></Properties>
+    <ChildObjects/>
+  </DataProcessor>
+</MetaDataObject>`
+
+// Формы обработок поддерживаются платформой (loadProcessorForms грузит их из
+// forms/<обработка>/), но конвертер их не сканировал (issue #48 п.3).
+func TestParseDirProcessorForms(t *testing.T) {
+	src := t.TempDir()
+	writeV83(t, filepath.Join(src, "DataProcessors"), "ЗагрузкаКурсов", processorXML)
+	extDir := filepath.Join(src, "DataProcessors", "ЗагрузкаКурсов", "Forms", "Форма", "Ext")
+	if err := os.MkdirAll(extDir, 0o755); err != nil {
+		t.Fatalf("mkdir form: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(extDir, "Form.xml"), []byte("<Form/>"), 0o644); err != nil {
+		t.Fatalf("write form xml: %v", err)
+	}
+
+	dump, err := ParseDir(src)
+	if err != nil {
+		t.Fatalf("ParseDir: %v", err)
+	}
+	if len(dump.Processors) != 1 {
+		t.Fatalf("ожидалась 1 обработка, получено %d", len(dump.Processors))
+	}
+	p := dump.Processors[0]
+	if len(p.Forms) != 1 {
+		t.Fatalf("ожидалась 1 форма обработки, получено %d", len(p.Forms))
+	}
+	if p.Forms[0].Entity != "ЗагрузкаКурсов" || p.Forms[0].FormName != "Форма" {
+		t.Errorf("источник формы: %+v", p.Forms[0])
+	}
+}
+
 // scanForms находит управляемые формы объекта в Forms/<X>/Ext/Form.xml
 // (issue #26 п.4).
 func TestParseDirFindsForms(t *testing.T) {

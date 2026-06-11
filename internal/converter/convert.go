@@ -133,8 +133,8 @@ func Convert(opts Options) (*writer.ConversionReport, error) {
 	return report, nil
 }
 
-// writeForms импортирует управляемые формы справочников и документов через
-// пакет onec_forms (issue #26 п.4). Формы пишутся в out/forms/<entity>/.
+// writeForms импортирует управляемые формы справочников, документов и обработок через
+// пакет onec_forms (issue #26 п.4, #48 п.3). Формы пишутся в out/forms/<entity>/.
 func writeForms(dump *parser1c.ConfigDump, outDir string, report *writer.ConversionReport) error {
 	var all []parser1c.FormSource
 	for _, c := range dump.Catalogs {
@@ -142,6 +142,9 @@ func writeForms(dump *parser1c.ConfigDump, outDir string, report *writer.Convers
 	}
 	for _, d := range dump.Documents {
 		all = append(all, d.Forms...)
+	}
+	for _, p := range dump.Processors {
+		all = append(all, p.Forms...)
 	}
 
 	for _, f := range all {

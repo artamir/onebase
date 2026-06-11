@@ -717,6 +717,7 @@ func parseDataProcessors(dir string) ([]*ProcessorMeta, error) {
 			}
 		}
 
+		proc.Forms = scanForms(filepath.Join(dir, name), proc.Name)
 		result = append(result, proc)
 	}
 	return result, nil
