@@ -205,7 +205,7 @@ func (s *Server) adminUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	users, err := s.authRepo.List(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, s.errText(r, err), 500)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -491,7 +491,7 @@ func (s *Server) adminRoles(w http.ResponseWriter, r *http.Request) {
 	}
 	roles, err := s.authRepo.ListRoles(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, s.errText(r, err), 500)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -646,7 +646,7 @@ func (s *Server) recordHistory(w http.ResponseWriter, r *http.Request) {
 	}
 	entries, err := s.store.AuditByRecord(r.Context(), entity.Name, id)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, s.errText(r, err), 500)
 		return
 	}
 	s.enrichAuditEntries(r.Context(), entity, entries)
@@ -965,7 +965,7 @@ func (s *Server) adminWebhooks(w http.ResponseWriter, r *http.Request) {
 	}
 	entries, err := s.store.ListWebhookLog(r.Context(), 200)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, s.errText(r, err), 500)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

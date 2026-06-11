@@ -648,5 +648,11 @@
   "Нет подключения к БД": "No database connection",
   "Ошибка загрузки конфигурации": "Configuration load error",
   "Укажите имя подсистемы": "Specify subsystem name",
-  "Укажите путь к папке XML-выгрузки конфигурации": "Specify the path to the 1C XML export folder"
+  "Укажите путь к папке XML-выгрузки конфигурации": "Specify the path to the 1C XML export folder",
+  "Сущность не найдена": "Entity not found",
+  "Файл не найден": "File not found",
+  "Ошибка разбора формы": "Form parsing error",
+  "Нет файла в форме": "No file in the form",
+  "Функция Сформировать() не найдена в %s.os": "Function Сформировать() not found in %s.os",
+  "Процедура должна возвращать ТабличныйДокумент": "The procedure must return a SpreadsheetDocument"
 }

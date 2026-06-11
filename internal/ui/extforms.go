@@ -24,7 +24,7 @@ func (s *Server) adminExtForms(w http.ResponseWriter, r *http.Request) {
 	}
 	recs, err := s.extforms.List(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, s.errText(r, err), 500)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -147,12 +147,12 @@ func (s *Server) adminExtFormExport(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	rec, err := s.extforms.Get(r.Context(), id)
 	if err != nil {
-		http.Error(w, err.Error(), 404)
+		http.Error(w, s.errText(r, err), 404)
 		return
 	}
 	bundle, err := extform.BuildBundle(rec, s.cfg.PlatVersion)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, s.errText(r, err), 500)
 		return
 	}
 	fname := rec.Document + "." + rec.Name + ".obform"
