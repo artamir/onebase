@@ -34,3 +34,28 @@ func TestSanitizeBSL(t *testing.T) {
 		}
 	}
 }
+
+// Краевые случаи: BOM перед первой директивой, CRLF-окончания, табуляция,
+// регистр, директива в конце файла без перевода строки — вырезаются; строки,
+// НЕ начинающиеся с известной директивы (#Использовать, # в коде/комментарии),
+// сохраняются.
+func TestSanitizeBSLEdgeCases(t *testing.T) {
+	const bom = "\xef\xbb\xbf" // UTF-8 BOM (U+FEFF)
+	in := bom + "#Область Сервис\r\n" +
+		"\t#ОБЛАСТЬ Вложенная\r\n" +
+		"а = 1; // #Область в комментарии\r\n" +
+		"#Использовать lib\r\n" +
+		"\t#конецобласти\r\n" +
+		"#КонецОбласти"
+	got := sanitizeBSL(in)
+	for _, want := range []string{"а = 1; // #Область в комментарии", "#Использовать lib"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("потеряна строка %q:\n%s", want, got)
+		}
+	}
+	for _, banned := range []string{"Область Сервис", "ОБЛАСТЬ Вложенная", "конецобласти", "КонецОбласти", bom} {
+		if strings.Contains(got, banned) {
+			t.Fatalf("не вырезано %q:\n%s", banned, got)
+		}
+	}
+}

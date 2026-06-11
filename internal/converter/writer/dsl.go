@@ -20,6 +20,8 @@ var preprocDirectiveLow = regexp.MustCompile(`^\s*#\s*(область|конец
 // DSL OneBase их не поддерживает (issue #48 п.2). Содержимое блоков #Если
 // сохраняется целиком (обе ветки).
 func sanitizeBSL(src string) string {
+	// .bsl из 1С обычно начинается с BOM — без среза первая директива не распознаётся.
+	src = strings.TrimPrefix(src, "\xef\xbb\xbf")
 	lines := strings.Split(src, "\n")
 	out := make([]string, 0, len(lines))
 	for _, line := range lines {
