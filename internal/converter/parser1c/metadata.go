@@ -288,17 +288,38 @@ func ParseDir(dir string) (*ConfigDump, error) {
 	return dump, nil
 }
 
-func parseCatalogs(dir string) ([]*CatalogMeta, error) {
-	var result []*CatalogMeta
+// objectNames возвращает имена объектов раздела выгрузки: объединение имён
+// подкаталогов и одиночных *.xml-файлов (без расширения), без дубликатов.
+// Объект без подчинённых элементов представлен в выгрузке 1С только файлом
+// «Имя.xml» — перебор одних подкаталогов молча терял такие объекты
+// (issue #16 для перечислений, issue #48 п.1 для остальных типов).
+func objectNames(dir string) []string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, nil
+		return nil
+	}
+	seen := make(map[string]bool)
+	var names []string
+	add := func(n string) {
+		if n == "" || seen[n] {
+			return
+		}
+		seen[n] = true
+		names = append(names, n)
 	}
 	for _, e := range entries {
-		if !e.IsDir() {
-			continue
+		if e.IsDir() {
+			add(e.Name())
+		} else if strings.EqualFold(filepath.Ext(e.Name()), ".xml") {
+			add(strings.TrimSuffix(e.Name(), filepath.Ext(e.Name())))
 		}
-		name := e.Name()
+	}
+	return names
+}
+
+func parseCatalogs(dir string) ([]*CatalogMeta, error) {
+	var result []*CatalogMeta
+	for _, name := range objectNames(dir) {
 
 		if v8, _ := parseV83File(filepath.Join(dir, name+".xml")); v8 != nil {
 			obj := v8.Catalog

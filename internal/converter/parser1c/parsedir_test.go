@@ -285,6 +285,36 @@ func TestParseDirCatalogTabularSection(t *testing.T) {
 	}
 }
 
+// Объект без подчинённых элементов (форм, макетов) лежит в выгрузке ОДНИМ
+// файлом «Имя.xml» без папки-компаньона. Раньше все парсеры, кроме
+// parseEnumerations, перебирали только подкаталоги и молча теряли такие
+// объекты (issue #48 п.1: «не импортированы 2 справочника и 4 константы»).
+func TestParseDirFlatCatalog(t *testing.T) {
+	src := t.TempDir()
+	catsDir := filepath.Join(src, "Catalogs")
+	if err := os.MkdirAll(catsDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Одиночный .xml без папки-компаньона.
+	if err := os.WriteFile(filepath.Join(catsDir, "Контрагенты.xml"), []byte(catalogXML), 0o644); err != nil {
+		t.Fatalf("write xml: %v", err)
+	}
+
+	dump, err := ParseDir(src)
+	if err != nil {
+		t.Fatalf("ParseDir: %v", err)
+	}
+	if len(dump.Catalogs) != 1 {
+		t.Fatalf("ожидался 1 справочник из плоского xml, получено %d", len(dump.Catalogs))
+	}
+	if dump.Catalogs[0].Name != "Контрагенты" {
+		t.Errorf("имя справочника: %q", dump.Catalogs[0].Name)
+	}
+	if len(dump.Catalogs[0].Attributes) != 1 || dump.Catalogs[0].Attributes[0].Name != "ИНН" {
+		t.Fatalf("реквизиты не разобраны: %+v", dump.Catalogs[0].Attributes)
+	}
+}
+
 // scanForms находит управляемые формы объекта в Forms/<X>/Ext/Form.xml
 // (issue #26 п.4).
 func TestParseDirFindsForms(t *testing.T) {
