@@ -40,6 +40,8 @@ func Convert(opts Options) (*writer.ConversionReport, error) {
 
 	report := &writer.ConversionReport{}
 
+	downgradeDanglingEnums(dump, report)
+
 	// Справочники
 	if err := writer.WriteCatalogs(dump.Catalogs, opts.OutDir, report); err != nil {
 		return nil, fmt.Errorf("convert: write catalogs: %w", err)
@@ -188,6 +190,72 @@ func writeForms(dump *parser1c.ConfigDump, outDir string, report *writer.Convers
 type appConfig struct {
 	Name    string `yaml:"name"`
 	Version string `yaml:"version"`
+}
+
+// downgradeDanglingEnums деградирует ссылки на перечисления, которых нет в
+// выгрузке, обратно в string: иначе сконвертированная конфигурация падает на
+// metadata.Validate («references unknown enum X»). Сверка по точному имени —
+// так же резолвит перечисления и платформа.
+func downgradeDanglingEnums(dump *parser1c.ConfigDump, report *writer.ConversionReport) {
+	known := map[string]bool{}
+	for _, e := range dump.Enums {
+		known[e.Name] = true
+	}
+	fixAttrs := func(owner string, attrs []parser1c.Attribute) {
+		for i := range attrs {
+			mapped, _ := parser1c.MapType(attrs[i].Type)
+			name, ok := strings.CutPrefix(mapped, "enum:")
+			if !ok || known[name] {
+				continue
+			}
+			attrs[i].Type = parser1c.FieldType{Primary: "String"}
+			report.TypeWarnings = append(report.TypeWarnings,
+				fmt.Sprintf("%s.%s: перечисление %s не найдено в выгрузке → string", owner, attrs[i].Name, name))
+		}
+	}
+	for _, c := range dump.Catalogs {
+		fixAttrs(c.Name, c.Attributes)
+		for _, ts := range c.TabularSections {
+			fixAttrs(c.Name+"."+ts.Name, ts.Attributes)
+		}
+	}
+	for _, d := range dump.Documents {
+		fixAttrs(d.Name, d.Attributes)
+		for _, ts := range d.TabularSections {
+			fixAttrs(d.Name+"."+ts.Name, ts.Attributes)
+		}
+	}
+	for _, r := range dump.Registers {
+		fixAttrs(r.Name, r.Dimensions)
+		fixAttrs(r.Name, r.Resources)
+		fixAttrs(r.Name, r.Attributes)
+	}
+	for _, r := range dump.InfoRegisters {
+		fixAttrs(r.Name, r.Dimensions)
+		fixAttrs(r.Name, r.Resources)
+		fixAttrs(r.Name, r.Attributes)
+	}
+	for _, r := range dump.AccountRegisters {
+		fixAttrs(r.Name, r.Dimensions)
+		fixAttrs(r.Name, r.Resources)
+		fixAttrs(r.Name, r.Attributes)
+	}
+	for _, ch := range dump.ChartsOfAccounts {
+		fixAttrs(ch.Name, ch.Attributes)
+	}
+	for _, p := range dump.Processors {
+		fixAttrs(p.Name, p.Attributes)
+	}
+	for _, c := range dump.Constants {
+		mapped, _ := parser1c.MapType(c.Type)
+		name, ok := strings.CutPrefix(mapped, "enum:")
+		if !ok || known[name] {
+			continue
+		}
+		c.Type = parser1c.FieldType{Primary: "String"}
+		report.TypeWarnings = append(report.TypeWarnings,
+			fmt.Sprintf("константа %s: перечисление %s не найдено в выгрузке → string", c.Name, name))
+	}
 }
 
 func writeAppYAML(outDir, name string) error {
