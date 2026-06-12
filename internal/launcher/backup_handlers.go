@@ -340,10 +340,12 @@ func (h *handler) backupFullExport(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", "attachment; filename="+name)
 
+	lang := resolveLang(r)
+
 	if compatible {
 		db, cerr := OpenDB(r.Context(), b)
 		if cerr != nil {
-			http.Error(w, "DB connect error: "+cerr.Error(), 500)
+			http.Error(w, tr(lang, "Ошибка подключения к БД")+": "+errText(r, cerr), 500)
 			return
 		}
 		defer db.Close()
@@ -372,20 +374,20 @@ func (h *handler) backupFullExport(w http.ResponseWriter, r *http.Request) {
 
 	tmpDir, err := os.MkdirTemp("", "onebase-obz-dump-*")
 	if err != nil {
-		http.Error(w, "Temp dir error: "+err.Error(), 500)
+		http.Error(w, tr(lang, "Ошибка создания временной папки")+": "+errText(r, err), 500)
 		return
 	}
 	defer os.RemoveAll(tmpDir)
 
 	dumpPath, dumpErr := dumpForBase(r.Context(), b, tmpDir)
 	if dumpErr != nil {
-		http.Error(w, "Dump error: "+dumpErr.Error(), 500)
+		http.Error(w, tr(lang, "Ошибка выгрузки дампа")+": "+errText(r, dumpErr), 500)
 		return
 	}
 
 	dumpData, err := os.ReadFile(dumpPath)
 	if err != nil {
-		http.Error(w, "Read dump error: "+err.Error(), 500)
+		http.Error(w, tr(lang, "Ошибка чтения дампа")+": "+errText(r, err), 500)
 		return
 	}
 	dumpEntryName := "database.sql.gz"

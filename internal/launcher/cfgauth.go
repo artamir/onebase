@@ -184,7 +184,7 @@ func (h *handler) cfgLoginSubmit(w http.ResponseWriter, r *http.Request) {
 
 	token, err := repo.CreateSession(r.Context(), user.ID)
 	if err != nil {
-		http.Error(w, "internal error", 500)
+		http.Error(w, tr(lang, "Внутренняя ошибка"), 500)
 		return
 	}
 
