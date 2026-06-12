@@ -1,6 +1,7 @@
 package interpreter
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strconv"
 	"strings"
@@ -254,6 +255,67 @@ func NewSpreadsheetDocument() *SpreadsheetDocument {
 // BackURL делегирует одноимённое поле модели (используется handlers_print.go).
 func (d *SpreadsheetDocument) SetBackURL(url string) { d.Doc.BackURL = url }
 
+// Get обеспечивает чтение свойств страницы из DSL (ТабДок.ОриентацияСтраницы).
+// Метод также делает SpreadsheetDocument реализацией This — на диспетчер
+// методов (CallMethod) это не влияет (методы идут через MethodCallable).
+func (d *SpreadsheetDocument) Get(field string) any {
+	switch strings.ToLower(field) {
+	case "ориентациястраницы", "pageorientation", "orientation":
+		return d.Doc.Page.Orientation
+	case "размерстраницы", "pagesize", "format":
+		return d.Doc.Page.Format
+	}
+	return nil
+}
+
+// Set обеспечивает запись свойств страницы из DSL (план 64, этап 2):
+//   - ОриентацияСтраницы = "Портрет"/"Ландшафт" (и англ. Portrait/Landscape);
+//   - РазмерСтраницы = "A4"/"A5"/"Letter" и т.п.;
+//   - ПоляПечати = число мм (все четыре поля) ЛИБО Массив [верх,низ,лево,право] мм.
+func (d *SpreadsheetDocument) Set(field string, v any) {
+	switch strings.ToLower(field) {
+	case "ориентациястраницы", "pageorientation", "orientation":
+		d.Doc.Page.Orientation = normalizeOrientation(strArg([]any{v}, 0))
+	case "размерстраницы", "pagesize", "format":
+		d.Doc.Page.Format = strings.TrimSpace(strArg([]any{v}, 0))
+	case "поляпечати", "printmargins", "margins":
+		d.setMargins(v)
+	}
+}
+
+// normalizeOrientation приводит DSL-значение ориентации к "portrait"/"landscape".
+func normalizeOrientation(s string) string {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "ландшафт", "альбомная", "landscape", "l":
+		return "landscape"
+	case "портрет", "книжная", "portrait", "p":
+		return "portrait"
+	default:
+		return s
+	}
+}
+
+// setMargins трактует ПоляПечати: число → все поля; Массив [в,н,л,п] → по сторонам.
+func (d *SpreadsheetDocument) setMargins(v any) {
+	if arr, ok := v.(*Array); ok {
+		get := func(i int) float64 {
+			if i < len(arr.items) {
+				return toFloatOr0(arr.items[i])
+			}
+			return d.Doc.Page.MarginsMM.Top
+		}
+		d.Doc.Page.MarginsMM = sheet.Margins{
+			Top:    get(0),
+			Bottom: get(1),
+			Left:   get(2),
+			Right:  get(3),
+		}
+		return
+	}
+	m := toFloatOr0(v)
+	d.Doc.Page.MarginsMM = sheet.Margins{Top: m, Bottom: m, Left: m, Right: m}
+}
+
 func (d *SpreadsheetDocument) CallMethod(name string, args []any) any {
 	switch name {
 	case "вывести", "put":
@@ -425,11 +487,16 @@ func (d *SpreadsheetDocument) writeHTML(fileName string) any {
 	return html
 }
 
-// writePDF exports the document as PDF.
+// writePDF экспортирует документ в PDF и возвращает base64-строку (как
+// ВыгрузитьВExcel) — план 64, этап 2. Кириллица рендерится встроенными
+// PT-шрифтами без транслитерации. При ошибке возвращает пустую строку.
 func (d *SpreadsheetDocument) writePDF(fileName string) any {
-	html := d.Doc.HTMLString()
-	fmt.Printf("// Запись PDF: %s (используется HTML)\n", fileName)
-	return html
+	b, err := d.Doc.PDF(sheet.PDFOptions{Title: fileName})
+	if err != nil {
+		fmt.Printf("// Ошибка записи PDF %s: %v\n", fileName, err)
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(b)
 }
 
 // writeTXT exports the document as plain text.
