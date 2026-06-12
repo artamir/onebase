@@ -694,7 +694,6 @@
   "Бэкап создан": "Sicherung erstellt",
   "Недопустимое имя файла": "Ungültiger Dateiname",
   "Файл загружен": "Datei hochgeladen",
-  "Файл не найден": "Datei nicht gefunden",
   "Ошибка восстановления": "Wiederherstellungsfehler",
   "База данных восстановлена из": "Datenbank wiederhergestellt aus",
   "База остановлена — запустите её заново для применения изменений.": "Die Datenbank wurde gestoppt — starten Sie sie erneut, um die Änderungen anzuwenden.",

@@ -721,7 +721,6 @@
   "Бэкап создан": "Backup created",
   "Недопустимое имя файла": "Invalid file name",
   "Файл загружен": "File uploaded",
-  "Файл не найден": "File not found",
   "Ошибка восстановления": "Restore error",
   "База данных восстановлена из": "Database restored from",
   "База остановлена — запустите её заново для применения изменений.": "The base was stopped — start it again to apply the changes.",
