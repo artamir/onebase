@@ -122,9 +122,17 @@ func cutPrefixFold(s, prefix string) (string, bool) {
 }
 
 // sumColumn суммирует числовую колонку field табличной части tpName.
+// Результат мемоизируется в ctx.sumCache по ключу (ТЧ, поле) — повторные вызовы
+// (например Итог внутри repeat-строки) возвращают кэш без повторного прохода.
 func sumColumn(ctx *RenderContext, tpName, field string) float64 {
 	if ctx == nil {
 		return 0
+	}
+	cacheKey := strings.ToLower(tpName) + "\x00" + field
+	if ctx.sumCache != nil {
+		if v, ok := ctx.sumCache[cacheKey]; ok {
+			return v
+		}
 	}
 	rows := lookupTablePart(ctx, tpName)
 	total := 0.0
@@ -135,6 +143,10 @@ func sumColumn(ctx *RenderContext, tpName, field string) float64 {
 			}
 		}
 	}
+	if ctx.sumCache == nil {
+		ctx.sumCache = make(map[string]float64)
+	}
+	ctx.sumCache[cacheKey] = total
 	return total
 }
 

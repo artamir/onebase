@@ -91,6 +91,9 @@ func renderTable(ts *TableSection, ctx *RenderContext) string {
 			if align != "" {
 				style = "text-align:" + align + ";"
 			}
+			// TODO(этап 4): дублирует binding.ResolveExpr (@row/ПодПоле/ссылки);
+			// удаляется в этапе 4 вместе с renderer.go — legacy YAML-рендер
+			// заменяется декларативным движком (BuildSheet).
 			var val any
 			if col.Field == "@row" {
 				val = i + 1

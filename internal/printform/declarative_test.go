@@ -2,6 +2,7 @@ package printform
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -243,5 +244,121 @@ func TestBuildSheetColumnWidths(t *testing.T) {
 	}
 	if w := doc.ColumnWidth(3); w != 0 {
 		t.Errorf("col3 (auto) width = %v (want 0)", w)
+	}
+}
+
+// areaCellText возвращает текст ячейки области по относительным координатам
+// (r,c) или "" если ячейки нет.
+func areaCellText(sa *sheet.Area, r, c int) string {
+	cell, ok := sa.Cells[fmt.Sprintf("%d,%d", r, c)]
+	if !ok || cell == nil {
+		return ""
+	}
+	return cell.Text
+}
+
+// TestBuildAreaCellsRowSpanShift проверяет, что ячейка следующей строки НЕ
+// затирается позицией, перекрытой RowSpan-ячейкой из строки выше.
+//
+//	Row0: [A rowspan=2] [B]
+//	Row1: [C]
+//
+// C должна встать в (1,1), а не в (1,0) (которую накрывает спан A), иначе при
+// HTML-рендере covered-карта прячет C.
+func TestBuildAreaCellsRowSpanShift(t *testing.T) {
+	area := &LayoutArea{
+		Name: "Шапка",
+		Rows: []LayoutRow{
+			{Cells: []LayoutCell{
+				{Text: "A", RowSpan: 2},
+				{Text: "B"},
+			}},
+			{Cells: []LayoutCell{
+				{Text: "C"},
+			}},
+		},
+	}
+	sa := BuildAreaCells(area)
+
+	if got := areaCellText(sa, 0, 0); got != "A" {
+		t.Errorf("(0,0) = %q (want A)", got)
+	}
+	if got := areaCellText(sa, 0, 1); got != "B" {
+		t.Errorf("(0,1) = %q (want B)", got)
+	}
+	// Главное: C НЕ в (1,0) (накрыта спаном A), а в (1,1).
+	if got := areaCellText(sa, 1, 0); got != "" {
+		t.Errorf("(1,0) = %q (must be empty — covered by rowspan A)", got)
+	}
+	if got := areaCellText(sa, 1, 1); got != "C" {
+		t.Errorf("(1,1) = %q (want C — shifted past rowspan A)", got)
+	}
+
+	// HTML-вывод BuildSheet должен содержать текст C (covered-карта не должна его прятать).
+	lt := &LayoutTemplate{Areas: []*LayoutArea{area}, Binding: &Binding{Sequence: []string{"Шапка"}}}
+	doc, err := BuildSheet(lt, &RenderContext{})
+	if err != nil {
+		t.Fatalf("BuildSheet: %v", err)
+	}
+	html := doc.HTML(sheet.HTMLOptions{})
+	for _, want := range []string{">A<", ">B<", ">C<"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("HTML missing %q\n%s", want, html)
+		}
+	}
+}
+
+// TestBuildAreaCellsTwoLevelHeader моделирует двухуровневую шапку УПД-стиля:
+//
+//	Row0: [A rowspan=2] [B colspan=2]
+//	Row1: [B1] [B2]
+//
+// Все тексты должны попасть в вывод, B1/B2 — под B (колонки 1 и 2),
+// A занимает колонку 0 на обе строки.
+func TestBuildAreaCellsTwoLevelHeader(t *testing.T) {
+	area := &LayoutArea{
+		Name: "ШапкаТаблицы",
+		Rows: []LayoutRow{
+			{Cells: []LayoutCell{
+				{Text: "A", RowSpan: 2},
+				{Text: "B", ColSpan: 2},
+			}},
+			{Cells: []LayoutCell{
+				{Text: "B1"},
+				{Text: "B2"},
+			}},
+		},
+	}
+	sa := BuildAreaCells(area)
+
+	checks := []struct {
+		r, c int
+		want string
+	}{
+		{0, 0, "A"},
+		{0, 1, "B"},
+		{1, 1, "B1"}, // под B colspan — первая колонка после спана A
+		{1, 2, "B2"},
+	}
+	for _, ch := range checks {
+		if got := areaCellText(sa, ch.r, ch.c); got != ch.want {
+			t.Errorf("(%d,%d) = %q (want %q)", ch.r, ch.c, got, ch.want)
+		}
+	}
+	// (1,0) накрыта rowspan A — пусто.
+	if got := areaCellText(sa, 1, 0); got != "" {
+		t.Errorf("(1,0) = %q (must be empty — covered by rowspan A)", got)
+	}
+
+	lt := &LayoutTemplate{Areas: []*LayoutArea{area}, Binding: &Binding{Sequence: []string{"ШапкаТаблицы"}}}
+	doc, err := BuildSheet(lt, &RenderContext{})
+	if err != nil {
+		t.Fatalf("BuildSheet: %v", err)
+	}
+	html := doc.HTML(sheet.HTMLOptions{})
+	for _, want := range []string{">A<", ">B<", ">B1<", ">B2<"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("HTML missing %q\n%s", want, html)
+		}
 	}
 }

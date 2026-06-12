@@ -93,33 +93,28 @@ func BuildSheet(lt *LayoutTemplate, ctx *RenderContext) (*sheet.Document, error)
 // без записи срабатывает автопривязка по одноимённому полю.
 func buildAreaSheet(area *LayoutArea, ctx *RenderContext, row map[string]any, rowNum int, params map[string]string) *sheet.Area {
 	rows := len(area.Rows)
-	cols := 0
-	for _, r := range area.Rows {
-		c := 0
-		for _, cell := range r.Cells {
-			if cell.ColSpan > 1 {
-				c += cell.ColSpan
-			} else {
-				c++
-			}
-		}
-		if c > cols {
-			cols = c
-		}
-	}
 	if rows == 0 {
 		rows = 1
 	}
-	if cols == 0 {
-		cols = 1
-	}
 
-	sa := sheet.NewArea(0, 0, rows-1, cols-1)
+	sa := sheet.NewArea(0, 0, rows-1, 0)
 	sa.Name = area.Name
+
+	// covered — позиции (строка,колонка), накрытые RowSpan/ColSpan ранее
+	// размещённых ячеек. Без этого учёта ячейка следующей строки молча села бы
+	// в позицию под RowSpan-шапкой и при HTML-рендере (covered-карта sheet/html)
+	// исчезла бы. Та же раскладка — общее ядро DSL-пути (BuildAreaCells), поэтому
+	// и Макет.Область() с rowspan-шапкой раскладывается корректно (план 64, этап 3).
+	covered := make(map[sheet.CellKey]bool)
+	maxCol := 0
 
 	for r, lrow := range area.Rows {
 		colIdx := 0
 		for _, ld := range lrow.Cells {
+			// Пропускаем колонки, перекрытые спаном из строк выше.
+			for covered[sheet.CellKey{Row: r, Col: colIdx}] {
+				colIdx++
+			}
 			cell := layoutCellToSheet(ld)
 			// Текст ячейки: параметр > интерполяция text > статический text.
 			if ld.Parameter != "" {
@@ -131,13 +126,31 @@ func buildAreaSheet(area *LayoutArea, ctx *RenderContext, row map[string]any, ro
 			}
 			key := fmt.Sprintf("%d,%d", r, colIdx)
 			sa.Cells[key] = cell
-			step := cell.ColSpan
-			if step < 1 {
-				step = 1
+
+			colSpan := cell.ColSpan
+			if colSpan < 1 {
+				colSpan = 1
 			}
-			colIdx += step
+			rowSpan := cell.RowSpan
+			if rowSpan < 1 {
+				rowSpan = 1
+			}
+			// Помечаем накрытые спаном позиции (кроме самой якорной ячейки).
+			for dr := 0; dr < rowSpan; dr++ {
+				for dc := 0; dc < colSpan; dc++ {
+					if dr == 0 && dc == 0 {
+						continue
+					}
+					covered[sheet.CellKey{Row: r + dr, Col: colIdx + dc}] = true
+				}
+			}
+			if right := colIdx + colSpan - 1; right > maxCol {
+				maxCol = right
+			}
+			colIdx += colSpan
 		}
 	}
+	sa.Right = maxCol
 	return sa
 }
 

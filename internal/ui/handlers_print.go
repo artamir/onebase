@@ -60,7 +60,7 @@ func (s *Server) printDocument(w http.ResponseWriter, r *http.Request) {
 
 	switch ref.Kind {
 	case runtime.PrintFormDeclarative:
-		doc, err := s.buildDeclarativeSheet(r, entity, id, ref.Decl)
+		doc, _, err := s.buildDeclarativeSheet(r, entity, id, ref.Decl)
 		if err != nil {
 			http.Error(w, s.errText(r, err), 500)
 			return
@@ -130,13 +130,47 @@ func (s *Server) loadPrintContext(r *http.Request, entity *metadata.Entity, id u
 }
 
 // buildDeclarativeSheet строит sheet.Document по декларативной форме (макет +
-// binding) и данным записи.
-func (s *Server) buildDeclarativeSheet(r *http.Request, entity *metadata.Entity, id uuid.UUID, lf *printform.LayoutForm) (*sheet.Document, error) {
+// binding) и данным записи. Возвращает также загруженный RenderContext, чтобы
+// вызывающий мог взять номер документа из уже прочитанной записи (имя PDF-файла)
+// без повторного GetByID.
+func (s *Server) buildDeclarativeSheet(r *http.Request, entity *metadata.Entity, id uuid.UUID, lf *printform.LayoutForm) (*sheet.Document, *printform.RenderContext, error) {
 	ctx, err := s.loadPrintContext(r, entity, id)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return printform.BuildSheet(lf.Layout, ctx)
+	doc, err := printform.BuildSheet(lf.Layout, ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	return doc, ctx, nil
+}
+
+// docNumber извлекает поле «Номер» из записи документа (для имени PDF-файла).
+func docNumber(row map[string]any) string {
+	if row == nil {
+		return ""
+	}
+	if num, ok := row["Номер"].(string); ok {
+		return num
+	}
+	return ""
+}
+
+// pdfFileName собирает имя PDF-файла печатной формы: «<форма>_<номер>.pdf» при
+// непустом номере, иначе «<форма>.pdf».
+func pdfFileName(formName, num string) string {
+	if num != "" {
+		return formName + "_" + num + ".pdf"
+	}
+	return formName + ".pdf"
+}
+
+// ensurePDFExt гарантирует расширение .pdf у явного имени файла (DSL).
+func ensurePDFExt(name string) string {
+	if strings.HasSuffix(strings.ToLower(name), ".pdf") {
+		return name
+	}
+	return name + ".pdf"
 }
 
 // buildPrintRefs returns a map of UUID → {fields...} for all reference fields in the entity and table parts.
@@ -248,13 +282,18 @@ func (s *Server) printDocumentPDF(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var pdfBytes []byte
+	// fileName — имя PDF-файла. Берётся из уже загруженного контекста (без
+	// повторного GetByID): номер документа (Declarative/Legacy) либо явное
+	// ТабличныйДокумент.ИмяФайла (DSL), иначе «<форма>.pdf».
+	fileName := ref.Name + ".pdf"
 	switch ref.Kind {
 	case runtime.PrintFormDeclarative:
-		doc, err := s.buildDeclarativeSheet(r, entity, id, ref.Decl)
+		doc, ctx, err := s.buildDeclarativeSheet(r, entity, id, ref.Decl)
 		if err != nil {
 			http.Error(w, s.errText(r, err), 500)
 			return
 		}
+		fileName = pdfFileName(ref.Name, docNumber(ctx.Document))
 		pdfBytes, err = doc.PDF(sheet.PDFOptions{Title: ref.Name})
 		if err != nil {
 			http.Error(w, "PDF error: "+s.errText(r, err), 500)
@@ -265,6 +304,10 @@ func (s *Server) printDocumentPDF(w http.ResponseWriter, r *http.Request) {
 		sd, ok := s.buildDSLPF(w, r, entity, id, ref.Name)
 		if !ok {
 			return
+		}
+		// DSL-форма может сама задать имя файла (ТабличныйДокумент.ИмяФайла).
+		if sd.Doc.FileName != "" {
+			fileName = ensurePDFExt(sd.Doc.FileName)
 		}
 		pdfBytes, err = sd.Doc.PDF(sheet.PDFOptions{Title: ref.Name})
 		if err != nil {
@@ -278,6 +321,7 @@ func (s *Server) printDocumentPDF(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, s.errText(r, err), 404)
 			return
 		}
+		fileName = pdfFileName(ref.Name, docNumber(ctx.Document))
 		pdfBytes, err = printform.RenderPDF(ref.Legacy, ctx)
 		if err != nil {
 			http.Error(w, "PDF error: "+s.errText(r, err), 500)
@@ -285,15 +329,8 @@ func (s *Server) printDocumentPDF(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	origName := ref.Name + ".pdf"
-	if row, err := s.store.GetByID(r.Context(), entity.Name, id, entity); err == nil {
-		if num, ok := row["Номер"].(string); ok && num != "" {
-			origName = ref.Name + "_" + num + ".pdf"
-		}
-	}
-
 	w.Header().Set("Content-Type", "application/pdf")
-	w.Header().Set("Content-Disposition", contentDisposition(origName))
+	w.Header().Set("Content-Disposition", contentDisposition(fileName))
 	w.Write(pdfBytes)
 }
 
@@ -413,6 +450,10 @@ func (s *Server) redirectDSLPrint(w http.ResponseWriter, r *http.Request) {
 	target := fmt.Sprintf("/ui/%s/%s/%s/print/%s", kind, ent, id, pfName)
 	if strings.HasSuffix(r.URL.Path, "/pdf") {
 		target += "/pdf"
+	}
+	// Сохраняем строку запроса (например ?form=...) при 301.
+	if r.URL.RawQuery != "" {
+		target += "?" + r.URL.RawQuery
 	}
 	http.Redirect(w, r, target, http.StatusMovedPermanently)
 }

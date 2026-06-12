@@ -98,3 +98,27 @@ func TestInterpolateText(t *testing.T) {
 		t.Fatalf("InterpolateText = %q (want %q)", got, want)
 	}
 }
+
+// TestSumColumnMemoized проверяет, что повторный Итог.<ТЧ>.<Поле> возвращает то
+// же значение и кэшируется в контексте (минор-фикс O(N²), план 64, этап 3).
+func TestSumColumnMemoized(t *testing.T) {
+	ctx := newTestCtx()
+	first := sumColumn(ctx, "Товары", "Сумма")
+	if first != 350.5 {
+		t.Fatalf("first sum = %v (want 350.5)", first)
+	}
+	if ctx.sumCache == nil {
+		t.Fatal("sumCache not initialised after first call")
+	}
+	// Повторный вызов (как из repeat-строки) — тот же результат из кэша.
+	if second := sumColumn(ctx, "Товары", "Сумма"); second != first {
+		t.Fatalf("memoized sum = %v (want %v)", second, first)
+	}
+	// Регистронезависимое имя ТЧ попадает в тот же кэш-ключ.
+	if v := sumColumn(ctx, "товары", "Сумма"); v != first {
+		t.Fatalf("case-insensitive sum = %v (want %v)", v, first)
+	}
+	if got := len(ctx.sumCache); got != 1 {
+		t.Fatalf("sumCache size = %d (want 1 — Товары/товары share key)", got)
+	}
+}

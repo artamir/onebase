@@ -3,7 +3,6 @@ package runtime
 import (
 	"fmt"
 	"log"
-	"os"
 	"strings"
 	"sync"
 
@@ -308,6 +307,7 @@ func (r *Registry) LoadDSLPrintForms(forms []*printform.DSLPrintForm) {
 	}
 	r.mu.Lock()
 	r.dslPrintForms = m
+	var warnings []string
 	// Дедуп YAML/.os коллизий: удаляем YAML, если есть .os с тем же именем.
 	for entityKey, dslList := range m {
 		yamlList := r.printForms[entityKey]
@@ -320,9 +320,9 @@ func (r *Registry) LoadDSLPrintForms(forms []*printform.DSLPrintForm) {
 			for _, df := range dslList {
 				if strings.EqualFold(yf.Name, df.Name) {
 					collides = true
-					fmt.Fprintf(os.Stderr,
-						"warning: print form %q for %s — YAML и .os коллизия, используется .os (LayoutPath=%s); YAML-вариант игнорируется\n",
-						yf.Name, yf.Document, df.LayoutPath)
+					warnings = append(warnings, fmt.Sprintf(
+						"print form %q for %s — YAML и .os коллизия, используется .os (LayoutPath=%s); YAML-вариант игнорируется",
+						yf.Name, yf.Document, df.LayoutPath))
 					break
 				}
 			}
@@ -333,6 +333,9 @@ func (r *Registry) LoadDSLPrintForms(forms []*printform.DSLPrintForm) {
 		r.printForms[entityKey] = kept
 	}
 	r.mu.Unlock()
+	for _, w := range warnings {
+		log.Printf("warning: %s", w)
+	}
 }
 
 // GetDSLPrintForms returns all DSL print forms for an entity name (case-insensitive).
@@ -374,25 +377,29 @@ func (r *Registry) LoadLayoutForms(forms []*printform.LayoutForm) {
 	}
 	r.mu.Lock()
 	r.layoutForms = m
+	var warnings []string
 	for entityKey, list := range m {
 		for _, lf := range list {
 			for _, df := range r.dslPrintForms[entityKey] {
 				if strings.EqualFold(df.Name, lf.Name) {
-					fmt.Fprintf(os.Stderr,
-						"warning: print form %q for %s — .layout.yaml перебивает .os (используется декларативная форма)\n",
-						lf.Name, lf.Document)
+					warnings = append(warnings, fmt.Sprintf(
+						"print form %q for %s — .layout.yaml перебивает .os (используется декларативная форма)",
+						lf.Name, lf.Document))
 				}
 			}
 			for _, yf := range r.printForms[entityKey] {
 				if strings.EqualFold(yf.Name, lf.Name) {
-					fmt.Fprintf(os.Stderr,
-						"warning: print form %q for %s — .layout.yaml перебивает YAML-форму (используется декларативная форма)\n",
-						lf.Name, lf.Document)
+					warnings = append(warnings, fmt.Sprintf(
+						"print form %q for %s — .layout.yaml перебивает YAML-форму (используется декларативная форма)",
+						lf.Name, lf.Document))
 				}
 			}
 		}
 	}
 	r.mu.Unlock()
+	for _, w := range warnings {
+		log.Printf("warning: %s", w)
+	}
 }
 
 // GetLayoutForms returns all declarative print forms for an entity (case-insensitive).
@@ -430,7 +437,7 @@ type PrintFormRef struct {
 // едином виде PrintFormRef. Приоритет коллизий по имени: Declarative > DSL >
 // Legacy — форма с более высоким приоритетом скрывает одноимённые ниже.
 // Порядок: сначала декларативные, затем DSL, затем legacy (конфигурационные,
-// потом внешние). Внутренний код (без блокировки) — вызывается под RLock.
+// потом внешние). Сам берёт RLock на время чтения карт.
 func (r *Registry) GetAllPrintForms(entityName string) []PrintFormRef {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
