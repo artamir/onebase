@@ -69,7 +69,7 @@ func (s *Server) resolveRegisterRows(ctx context.Context, rows []map[string]any,
 	for i, f := range refFields {
 		cols[i] = refCol{Key: f.Name, RefEntity: f.RefEntity}
 	}
-	s.resolveRefColumns(ctx, rows, cols)
+	s.resolveRefColumns(ctx, rows, cols, "")
 
 	// recorder label
 	for _, row := range rows {
@@ -89,6 +89,24 @@ func (s *Server) resolveRegisterRows(ctx context.Context, rows []map[string]any,
 	}
 }
 
+// resolveInfoRegRows подменяет UUID ссылочных измерений и ресурсов регистра
+// сведений на наименования (issue #44 — в списке регистра сведений показывались
+// id вместо представлений). Зеркало resolveRegisterRows.
+func (s *Server) resolveInfoRegRows(ctx context.Context, rows []map[string]any, ir *metadata.InfoRegister) {
+	refFields := append(append([]metadata.Field{}, ir.Dimensions...), ir.Resources...)
+	var cols []refCol
+	for _, f := range refFields {
+		if f.RefEntity == "" {
+			continue
+		}
+		cols = append(cols, refCol{Key: f.Name, RefEntity: f.RefEntity})
+	}
+	if len(cols) == 0 {
+		return
+	}
+	s.resolveRefColumns(ctx, rows, cols, "_label")
+}
+
 // resolveAccountRows резолвит reference-субконто (хранятся под ключами субконто<N>)
 // в наименования. String/enum-субконто оставляет как есть.
 func (s *Server) resolveAccountRows(ctx context.Context, rows []map[string]any, ar *metadata.AccountRegister) {
@@ -102,7 +120,7 @@ func (s *Server) resolveAccountRows(ctx context.Context, rows []map[string]any, 
 	if len(cols) == 0 {
 		return
 	}
-	s.resolveRefColumns(ctx, rows, cols)
+	s.resolveRefColumns(ctx, rows, cols, "")
 }
 
 func (s *Server) getInfoReg(w http.ResponseWriter, r *http.Request) *metadata.InfoRegister {
@@ -127,6 +145,7 @@ func (s *Server) infoRegList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, s.errText(r, err), 500)
 		return
 	}
+	s.resolveInfoRegRows(r.Context(), rows, ir)
 	s.render(w, r, "page-inforeg-list", map[string]any{
 		"InfoReg": ir,
 		"Rows":    rows,
