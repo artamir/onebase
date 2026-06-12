@@ -55,21 +55,11 @@ func (m *Макет) CallMethod(name string, args []any) any {
 // Each call creates a new area with its own cell storage, so the same area
 // definition can be used multiple times with different parameter values (e.g., in loops).
 func (m *Макет) getArea(name string) *SpreadsheetDocumentArea {
-	if m.template == nil || m.template.Areas == nil {
+	if m.template == nil {
 		return nil
 	}
-	areaDef, ok := m.template.Areas[strings.ToLower(name)]
-	if !ok {
-		// Try case-sensitive
-		for k, v := range m.template.Areas {
-			if strings.EqualFold(k, name) {
-				areaDef = v
-				ok = true
-				break
-			}
-		}
-	}
-	if !ok {
+	areaDef := m.template.Area(name) // case-insensitive (см. LayoutTemplate.Area)
+	if areaDef == nil {
 		return nil
 	}
 
