@@ -124,14 +124,16 @@ func CheckDir(dir string) []Issue {
 		}
 	}
 
-	// printforms/*.yaml — валидность + предупреждение о пустой форме. yaml.v3 молча
-	// игнорирует неизвестные ключи, поэтому форма в выдуманном формате (напр.
-	// «layout:» вместо header/table/footer) парсится без ошибки, но выводится
-	// пустой. Сообщаем явно: ни заголовка, ни шапки, ни таблицы, ни подвала.
+	// printforms/*.yaml — устаревший плоский формат печатных форм. Валидность +
+	// предупреждение о пустой форме + предупреждение о необходимости миграции в
+	// макет v2. Файлы *.layout.yaml (макет v2) сюда НЕ попадают — они проверяются
+	// валидатором binding в cross_refs (CheckCrossRefs). yaml.v3 молча игнорирует
+	// неизвестные ключи, поэтому пустую legacy-форму отлавливаем явно.
 	pfDir := filepath.Join(dir, "printforms")
 	pfEntries, _ := os.ReadDir(pfDir)
 	for _, e := range pfEntries {
-		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".yaml") {
+		lower := strings.ToLower(e.Name())
+		if e.IsDir() || !strings.HasSuffix(lower, ".yaml") || strings.HasSuffix(lower, ".layout.yaml") {
 			continue
 		}
 		path := filepath.Join(pfDir, e.Name())
@@ -149,7 +151,15 @@ func CheckDir(dir string) []Issue {
 				Kind:    "Печатная форма",
 				Message: "форма пустая: не заданы ни title, ни header, ни table, ни footer (проверьте формат — поддерживаются эти ключи, а не «layout»)",
 			})
+			continue
 		}
+		// Непустая legacy-форма валидна, но устарела — предлагаем миграцию в v2.
+		issues = append(issues, Issue{
+			File:    label,
+			Object:  object,
+			Kind:    "Печатная форма",
+			Message: "устаревший формат печатной формы, выполните onebase printforms migrate",
+		})
 	}
 
 	// home_page.yaml — single file
