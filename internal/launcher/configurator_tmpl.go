@@ -743,6 +743,29 @@ function cfgNewPrintFormShow() {
   document.getElementById('cfg-new-pf-name').value = '';
   document.getElementById('cfg-new-pf-name').focus();
 }
+// _cfgSubmitForm создаёт скрытую POST-форму и отправляет её (план 64, 6.4).
+function _cfgSubmitForm(action, fields) {
+  var f = document.createElement('form');
+  f.method = 'POST'; f.action = action; f.style.display = 'none';
+  for (var k in fields) {
+    if (!Object.prototype.hasOwnProperty.call(fields, k)) continue;
+    var inp = document.createElement('input');
+    inp.type = 'hidden'; inp.name = k; inp.value = fields[k];
+    f.appendChild(inp);
+  }
+  document.body.appendChild(f); f.submit();
+}
+// cfgNewLayout — «+ Печатная форма (макет)» у сущности: спрашивает имя и создаёт
+// декларативный макет со скелетом по первой ТЧ.
+function cfgNewLayout(action, entity) {
+  var name = prompt('{{t $.Lang "Имя печатной формы (макета):"}}');
+  if (!name) return;
+  _cfgSubmitForm(action, {entity: entity, name: name});
+}
+// cfgCreateOSLayout — «Создать макет» у DSL-формы без макета.
+function cfgCreateOSLayout(action, osform) {
+  _cfgSubmitForm(action, {osform: osform});
+}
 
 // ── Folder picker ──────────────────────────────────────────────
 function pickDir(inputId, title) {
@@ -1606,8 +1629,55 @@ function cfgObjTab(el, paneId){
   document.getElementById(paneId).classList.add('active');
 }
 
-// ── Layout Editor ─────────────────────────────────────────────────
+// ── Layout Editor (макет v2, план 64) ─────────────────────────────
+// _led[n].data.areas — массив {name, rows} (sequence). Старый map-формат
+// (areas: {Имя:{rows}}) читается и конвертируется в массив с сохранением
+// порядка ключей. Незнакомые ключи (page/binding/будущие) НЕ теряются: правим
+// распарсенный объект, не пересобираем его с нуля.
 var _led={};
+// _ldNormAreas приводит areas к массиву {name, rows}. Принимает:
+//   - массив (v2) — нормализует name/rows у каждого элемента;
+//   - объект (legacy map) — порядок ключей сохраняется (JS Object iteration order).
+function _ldNormAreas(d){
+  if(!d||typeof d!=='object')return;
+  var a=d.areas;
+  if(Array.isArray(a)){
+    for(var i=0;i<a.length;i++){
+      if(!a[i]||typeof a[i]!=='object')a[i]={};
+      if(a[i].name==null)a[i].name='Область'+(i+1);
+      if(!Array.isArray(a[i].rows))a[i].rows=[];
+    }
+    return;
+  }
+  if(a&&typeof a==='object'){
+    var out=[];
+    for(var k in a){
+      if(!Object.prototype.hasOwnProperty.call(a,k))continue;
+      var ar=(a[k]&&typeof a[k]==='object')?a[k]:{};
+      // переносим все ключи области (rows + будущие), задаём name и rows.
+      var area={};for(var p in ar){if(Object.prototype.hasOwnProperty.call(ar,p))area[p]=ar[p];}
+      area.name=k;
+      if(!Array.isArray(area.rows))area.rows=[];
+      out.push(area);
+    }
+    d.areas=out;
+    return;
+  }
+  d.areas=[];
+}
+// _ldAreas возвращает массив областей (после нормализации).
+function _ldAreas(n){var s=_led[n];if(!s||!s.data)return [];return Array.isArray(s.data.areas)?s.data.areas:[];}
+// _ldArea возвращает область по имени (регистронезависимо) или null.
+function _ldAreaByName(n,name){
+  var as=_ldAreas(n);
+  for(var i=0;i<as.length;i++){if(as[i].name===name||(as[i].name||'').toLowerCase()===(name||'').toLowerCase())return as[i];}
+  return null;
+}
+function _ldAreaIndex(n,name){
+  var as=_ldAreas(n);
+  for(var i=0;i<as.length;i++){if(as[i].name===name||(as[i].name||'').toLowerCase()===(name||'').toLowerCase())return i;}
+  return -1;
+}
 function initLayoutEditor(n){
   var ta=document.getElementById('ta-mkt-'+n);
   var ved=document.getElementById('veditor-'+n);
@@ -1615,18 +1685,37 @@ function initLayoutEditor(n){
   if(!window.jsyaml){if(ved)ved.innerHTML='<p style="color:red">js-yaml not loaded! [v5]</p>';return;}
   var d=null;
   try{d=jsyaml.load(ta.value);}catch(e){}
-  if(!d)d={areas:{}};
+  if(!d||typeof d!=='object')d={areas:[]};
+  _ldNormAreas(d);
   _led[n]={data:d,sel:null,init:true};
-  if(Object.keys(d.areas||{}).length>0){renderLayoutEditor(n);}
+  if(_ldAreas(n).length>0){renderLayoutEditor(n);}
+}
+// _ldBorderWidth переводит толщину (thin/medium/thick/all) в CSS-ширину.
+function _ldBorderWidth(v){
+  switch(v){case 'thick':return '2px';case 'medium':return '1.5px';case 'thin':case 'all':case '':return '1px';default:return '1px';}
+}
+// _ldSideBorderCss строит CSS одной стороны рамки.
+function _ldSideBorderCss(side,val,color){
+  if(val==='none'||val==='')return 'border-'+side+':none;';
+  return 'border-'+side+':'+_ldBorderWidth(val)+' solid '+color+';';
 }
 function _ldCellStyle(c,extra){
   var st='padding:4px 8px;min-width:40px;';
-  // border
+  // border: per-side borders приоритетнее legacy-пресета.
   var bc=c.borderColor||'#999';
-  var b=c.border||'';
-  if(b==='none')st+='border:none;';
-  else if(b==='thick')st+='border:2px solid '+bc+';';
-  else st+='border:1px solid '+bc+';';
+  var bs=c.borders;
+  if(bs&&typeof bs==='object'&&(bs.left||bs.top||bs.right||bs.bottom)){
+    st+=_ldSideBorderCss('left',bs.left||'none',bc);
+    st+=_ldSideBorderCss('top',bs.top||'none',bc);
+    st+=_ldSideBorderCss('right',bs.right||'none',bc);
+    st+=_ldSideBorderCss('bottom',bs.bottom||'none',bc);
+  }else{
+    var b=c.border||'';
+    if(b==='none')st+='border:none;';
+    else if(b==='thick')st+='border:2px solid '+bc+';';
+    else if(b==='medium')st+='border:1.5px solid '+bc+';';
+    else st+='border:1px solid '+bc+';';
+  }
   if(c.bold)st+='font-weight:bold;';
   if(c.italic)st+='font-style:italic;';
   if(c.fontSize)st+='font-size:'+c.fontSize+'pt;';
@@ -1648,24 +1737,52 @@ function _ldColgroup(d){
   }
   return h+'</colgroup>';
 }
+// _ldColCount возвращает максимальное число колонок макета (учитывая colspan
+// и общий массив columns).
+function _ldColCount(n){
+  var as=_ldAreas(n),max=0,s=_led[n];
+  if(s&&s.data&&Array.isArray(s.data.columns)&&s.data.columns.length>max)max=s.data.columns.length;
+  for(var i=0;i<as.length;i++){
+    var rows=as[i].rows||[];
+    for(var ri=0;ri<rows.length;ri++){
+      var cells=rows[ri].cells||[],w=0;
+      for(var ci=0;ci<cells.length;ci++)w+=(cells[ci]&&cells[ci].colspan>1)?cells[ci].colspan:1;
+      if(w>max)max=w;
+    }
+  }
+  return max;
+}
+// _ldRuler рисует линейку колонок (6.2): по клетке на колонку, клик → ширина.
+// columns — ГЛОБАЛЬНЫЕ для макета; линейка выводится один раз над первой областью.
+function _ldRuler(n){
+  var nc=_ldColCount(n);if(nc<=0)return '';
+  var s=_led[n],cols=(s&&s.data&&Array.isArray(s.data.columns))?s.data.columns:[];
+  var h='<div style="display:flex;margin:0 0 2px 18px" title="{{t $.Lang "Ширины колонок"}}">';
+  for(var i=0;i<nc;i++){
+    var w=(cols[i]&&cols[i].width)?cols[i].width:'';
+    var lbl=w?esc(w):'авто';
+    h+='<div onclick="ldColWidth(\''+n+'\','+i+')" style="flex:1;min-width:42px;text-align:center;font-size:9px;color:#888;background:#f1f5f9;border:1px solid #e2e8f0;padding:1px 2px;cursor:pointer;overflow:hidden;white-space:nowrap" title="{{t $.Lang "Колонка"}} '+(i+1)+'">'+lbl+'</div>';
+  }
+  return h+'</div>';
+}
 // noYamlSync=true prevents overwriting textarea (used when only selection changes)
 function renderLayoutEditor(n,noYamlSync){
   var s=_led[n];if(!s)return;
   if(!noYamlSync&&window.jsyaml&&!s.init){
-    var y=jsyaml.dump(s.data,{lineWidth:-1,quotingType:'"'});
-    var ta=document.getElementById('ta-mkt-'+n);
-    if(ta)ta.value=y;
+    _ldSyncTextarea(n);
   }
   if(s.init)s.init=false;
-  var d=s.data,areas=d.areas||{},h='<div style="font-family:Arial,sans-serif;font-size:12px">';
-  var aNames=Object.keys(areas);
-  var cg=_ldColgroup(d);
-  for(var ai=0;ai<aNames.length;ai++){
-    var an=aNames[ai],ar=areas[an];
+  var areas=_ldAreas(n),h='<div style="font-family:Arial,sans-serif;font-size:12px">';
+  var cg=_ldColgroup(s.data);
+  h+=_ldRuler(n);
+  for(var ai=0;ai<areas.length;ai++){
+    var ar=areas[ai],an=ar.name;
     h+='<div style="margin-bottom:16px">';
     h+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">';
     h+='<span style="font-weight:bold;color:#4a9">'+esc(an)+'</span>';
-    h+='<button type="button" style="font-size:10px;padding:1px 6px;border:1px solid #ccc;border-radius:3px;cursor:pointer" onclick="addLayoutRow(\''+n+"','"+esc(an)+"')\">+ строка</button>";
+    h+='<button type="button" title="{{t $.Lang "Вверх"}}" '+(ai===0?'disabled ':'')+'style="font-size:10px;padding:1px 6px;border:1px solid #ccc;border-radius:3px;cursor:pointer'+(ai===0?';opacity:.3':'')+'" onclick="moveLayoutArea(\''+n+'\','+ai+',-1)">↑</button>';
+    h+='<button type="button" title="{{t $.Lang "Вниз"}}" '+(ai===areas.length-1?'disabled ':'')+'style="font-size:10px;padding:1px 6px;border:1px solid #ccc;border-radius:3px;cursor:pointer'+(ai===areas.length-1?';opacity:.3':'')+'" onclick="moveLayoutArea(\''+n+'\','+ai+',1)">↓</button>';
+    h+='<button type="button" style="font-size:10px;padding:1px 6px;border:1px solid #ccc;border-radius:3px;cursor:pointer" onclick="addLayoutRow(\''+n+"','"+esc(an)+"')\">+ {{t $.Lang "Строка"}}</button>";
     h+='<button type="button" style="font-size:10px;padding:1px 6px;border:1px solid #fcc;border-radius:3px;cursor:pointer;color:#c33" onclick="delLayoutArea(\''+n+"','"+esc(an)+"')\">✕</button>";
     h+='</div>';
     h+='<table style="border-collapse:collapse">'+cg;
@@ -1673,6 +1790,9 @@ function renderLayoutEditor(n,noYamlSync){
     for(var ri=0;ri<rows.length;ri++){
       var rowStyle=rows[ri].height?' style="height:'+esc(rows[ri].height)+'"':'';
       h+='<tr'+rowStyle+'>';
+      // Левая ручка строки (6.2): клик → высота строки.
+      var hLbl=rows[ri].height?esc(rows[ri].height):'↕';
+      h+='<td onclick="ldRowHeight(\''+n+"','"+esc(an)+"',"+ri+')" style="border:1px solid #e2e8f0;background:#f1f5f9;color:#888;font-size:9px;text-align:center;cursor:pointer;width:16px;padding:0" title="{{t $.Lang "Высота строки"}}">'+hLbl+'</td>';
       var cells=rows[ri].cells||[];
       for(var ci=0;ci<cells.length;ci++){
         var c=cells[ci];
@@ -1699,15 +1819,22 @@ function renderLayoutEditor(n,noYamlSync){
   renderPreviewOnly(n);
   syncProps(n);
 }
+// _ldSyncTextarea сериализует s.data → textarea. areas пишутся как sequence;
+// jsyaml уже хранит areas массивом, поэтому dump даёт v2-формат.
+function _ldSyncTextarea(n){
+  var s=_led[n];if(!s||!window.jsyaml)return;
+  var y=jsyaml.dump(s.data,{lineWidth:-1,quotingType:'"'});
+  var ta=document.getElementById('ta-mkt-'+n);
+  if(ta)ta.value=y;
+}
 function renderPreviewOnly(n){
   var pv=document.getElementById('vpreview-'+n);
   if(!pv)return;
   var s=_led[n];if(!s){pv.innerHTML='';return;}
-  var d=s.data,areas=d.areas||{},h='<div style="font-family:Arial,sans-serif;font-size:12px">';
-  var cg=_ldColgroup(d);
-  var aNames=Object.keys(areas);
-  for(var ai=0;ai<aNames.length;ai++){
-    var an=aNames[ai],ar=areas[an];
+  var areas=_ldAreas(n),h='<div style="font-family:Arial,sans-serif;font-size:12px">';
+  var cg=_ldColgroup(s.data);
+  for(var ai=0;ai<areas.length;ai++){
+    var ar=areas[ai],an=ar.name;
     h+='<div style="margin-bottom:16px"><div style="font-weight:bold;color:#4a9;margin-bottom:4px">'+esc(an)+'</div>';
     h+='<table style="border-collapse:collapse">'+cg;
     var rows=ar.rows||[];
@@ -1740,14 +1867,24 @@ function selectCell(n,a,r,c){
 }
 function _setVal(id,v){var el=document.getElementById(id);if(el)el.value=v;}
 function _setChk(id,v){var el=document.getElementById(id);if(el)el.checked=v;}
+// _ldSelCell возвращает выделенную ячейку {area,row,cell,c} или null.
+function _ldSelCell(n){
+  var s=_led[n];if(!s||!s.sel)return null;
+  var ar=_ldAreaByName(n,s.sel.area);
+  if(!ar||!ar.rows||!ar.rows[s.sel.row])return null;
+  var row=ar.rows[s.sel.row];
+  if(!row.cells)row.cells=[];
+  if(!row.cells[s.sel.col])row.cells[s.sel.col]={};
+  return {ar:ar,row:row,c:row.cells[s.sel.col]};
+}
 function syncProps(n){
   var s=_led[n];if(!s)return;
   var pp=document.getElementById('vprops-'+n);
   if(!pp)return;
   if(!s.sel){pp.style.display='none';return;}
-  var d=s.data,ar=(d.areas||{})[s.sel.area];
-  if(!ar||!ar.rows||!ar.rows[s.sel.row]){pp.style.display='none';return;}
-  var c=ar.rows[s.sel.row].cells[s.sel.col]||{};
+  var sc=_ldSelCell(n);
+  if(!sc){pp.style.display='none';return;}
+  var c=sc.c;
   pp.style.display='block';
   pp.scrollIntoView({behavior:'smooth',block:'nearest'});
   _setVal('vp-text-'+n,c.text||'');
@@ -1764,14 +1901,11 @@ function syncProps(n){
   _setVal('vp-bc-'+n,c.borderColor||'#cccccc');
   _setVal('vp-colspan-'+n,c.colspan||1);
   _setVal('vp-rowspan-'+n,c.rowspan||1);
+  _ldSyncBorderUI(n,c);
 }
 function updateCellProp(n,prop,val){
-  var s=_led[n];if(!s||!s.sel)return;
-  var d=s.data,ar=(d.areas||{})[s.sel.area];
-  if(!ar||!ar.rows||!ar.rows[s.sel.row])return;
-  var ci=s.sel.col;
-  if(!ar.rows[s.sel.row].cells[ci])ar.rows[s.sel.row].cells[ci]={};
-  var c=ar.rows[s.sel.row].cells[ci];
+  var sc=_ldSelCell(n);if(!sc)return;
+  var c=sc.c;
   var isSpan=(prop==='colspan'||prop==='rowspan');
   if(val===''||val===0||val===false||(typeof val==='number'&&isNaN(val))||(isSpan&&val<=1)){
     delete c[prop];
@@ -1786,7 +1920,7 @@ function applyYaml(n){
   var d=null;
   try{d=jsyaml.load(ta.value);}catch(e){return;}
   if(!d||typeof d!=='object')return; // invalid YAML — keep current state
-  if(!d.areas)d.areas={};
+  _ldNormAreas(d);
   if(!_led[n])_led[n]={data:d,sel:null};
   else _led[n].data=d;
   // re-render designer without syncing YAML back (avoid cursor jump)
@@ -1803,109 +1937,141 @@ function saveLayoutEditor(n){
   // Flush debounced YAML input timer first.
   if(_yamlTimers[n]){clearTimeout(_yamlTimers[n]);delete _yamlTimers[n];}
   // Sync in-memory state → textarea (in case visual editor made changes without syncing).
-  if(window.jsyaml&&_led[n]){
-    var y=jsyaml.dump(_led[n].data,{lineWidth:-1,quotingType:'"'});
-    var ta=document.getElementById('ta-mkt-'+n);
-    if(ta)ta.value=y;
-  }
+  if(window.jsyaml&&_led[n]){_ldSyncTextarea(n);}
   return true;
 }
-function addLayoutArea(n){
-  var name=prompt('Имя новой области:');
-  if(!name)return;
+// _ldEnsure инициализирует _led[n] из textarea, если ещё не инициализирован.
+function _ldEnsure(n){
   var s=_led[n];
-  if(!s){
-    // init if not yet initialized
-    var ta=document.getElementById('ta-mkt-'+n);
-    if(!ta||!window.jsyaml)return;
-    var d=null;try{d=jsyaml.load(ta.value);}catch(e){}
-    if(!d)d={areas:{}};
-    s={data:d,sel:null};_led[n]=s;
-  }
-  if(!s.data.areas)s.data.areas={};
-  s.data.areas[name]={rows:[{cells:[{text:'Ячейка'}]}]};
+  if(s)return s;
+  var ta=document.getElementById('ta-mkt-'+n);
+  if(!ta||!window.jsyaml)return null;
+  var d=null;try{d=jsyaml.load(ta.value);}catch(e){}
+  if(!d||typeof d!=='object')d={areas:[]};
+  _ldNormAreas(d);
+  s={data:d,sel:null};_led[n]=s;
+  return s;
+}
+function addLayoutArea(n){
+  var name=prompt('{{t $.Lang "Имя новой области:"}}');
+  if(!name)return;
+  var s=_ldEnsure(n);if(!s)return;
+  if(!Array.isArray(s.data.areas))s.data.areas=[];
+  s.data.areas.push({name:name,rows:[{cells:[{text:'{{t $.Lang "Ячейка"}}'}]}]});
   renderLayoutEditor(n);
 }
 function delLayoutArea(n,a){
-  if(!confirm('Удалить область '+a+'?'))return;
+  if(!confirm('{{t $.Lang "Удалить область"}} '+a+'?'))return;
   var s=_led[n];if(!s)return;
-  delete s.data.areas[a];
+  var i=_ldAreaIndex(n,a);
+  if(i>=0)s.data.areas.splice(i,1);
   s.sel=null;
+  renderLayoutEditor(n);
+}
+// moveLayoutArea переставляет область по индексу на dir (-1 вверх / +1 вниз).
+function moveLayoutArea(n,idx,dir){
+  var s=_led[n];if(!s||!Array.isArray(s.data.areas))return;
+  var as=s.data.areas,j=idx+dir;
+  if(j<0||j>=as.length)return;
+  var tmp=as[idx];as[idx]=as[j];as[j]=tmp;
   renderLayoutEditor(n);
 }
 function addLayoutRow(n,a){
   var s=_led[n];if(!s)return;
-  var ar=(s.data.areas||{})[a];if(!ar)return;
+  var ar=_ldAreaByName(n,a);if(!ar)return;
   if(!ar.rows)ar.rows=[];
   var maxCols=1;
-  for(var i=0;i<ar.rows.length;i++){if(ar.rows[i].cells.length>maxCols)maxCols=ar.rows[i].cells.length;}
+  for(var i=0;i<ar.rows.length;i++){if((ar.rows[i].cells||[]).length>maxCols)maxCols=ar.rows[i].cells.length;}
   var cells=[];for(var j=0;j<maxCols;j++)cells.push({});
   ar.rows.push({cells:cells});
   renderLayoutEditor(n);
 }
 function delLayoutRow(n,a,ri){
   var s=_led[n];if(!s)return;
-  var ar=(s.data.areas||{})[a];if(!ar||!ar.rows)return;
+  var ar=_ldAreaByName(n,a);if(!ar||!ar.rows)return;
   ar.rows.splice(ri,1);
   s.sel=null;
   renderLayoutEditor(n);
 }
+// ── Ширины колонок / высоты строк (6.2) ───────────────────────────
+// ldColWidth правит ГЛОБАЛЬНЫЙ массив columns: ширина i-й колонки макета.
+function ldColWidth(n,i){
+  var s=_ldEnsure(n);if(!s)return;
+  if(!Array.isArray(s.data.columns))s.data.columns=[];
+  while(s.data.columns.length<=i)s.data.columns.push({});
+  var cur=s.data.columns[i].width||'';
+  var v=prompt('{{t $.Lang "Ширина колонки (напр. 120px, 30mm, пусто = авто):"}}',cur);
+  if(v===null)return;
+  v=v.trim();
+  if(v==='')delete s.data.columns[i].width; else s.data.columns[i].width=v;
+  // подрезаем хвост пустых элементов columns
+  while(s.data.columns.length&&!s.data.columns[s.data.columns.length-1].width)s.data.columns.pop();
+  renderLayoutEditor(n);
+}
+// ldRowHeight правит высоту строки rows[ri].height.
+function ldRowHeight(n,a,ri){
+  var ar=_ldAreaByName(n,a);if(!ar||!ar.rows||!ar.rows[ri])return;
+  var cur=ar.rows[ri].height||'';
+  var v=prompt('{{t $.Lang "Высота строки (напр. 24px, пусто = авто):"}}',cur);
+  if(v===null)return;
+  v=v.trim();
+  if(v==='')delete ar.rows[ri].height; else ar.rows[ri].height=v;
+  renderLayoutEditor(n);
+}
 // ── Toolbar operations ─────────────────────────────────────────────
-// ldSelectTab kept for backward compat; split-view has no tabs.
 function _ldSel(n){
   var s=_led[n];if(!s||!s.sel)return null;
-  var ar=(s.data.areas||{})[s.sel.area];
+  var ar=_ldAreaByName(n,s.sel.area);
   if(!ar||!ar.rows||!ar.rows[s.sel.row])return null;
   return {s:s,ar:ar,row:ar.rows[s.sel.row],ri:s.sel.row,ci:s.sel.col,area:s.sel.area};
 }
 function _ldFirstArea(n){
-  var s=_led[n];if(!s)return null;
-  var keys=Object.keys(s.data.areas||{});
-  return keys.length?keys[0]:null;
+  var as=_ldAreas(n);
+  return as.length?as[0].name:null;
 }
 function ldAddRow(n){
   var s=_led[n];if(!s)return;
   var area=s.sel?s.sel.area:_ldFirstArea(n);
-  if(!area){alert('Сначала добавьте область');return;}
+  if(!area){alert('{{t $.Lang "Сначала добавьте область"}}');return;}
   addLayoutRow(n,area);
 }
 function ldDelRow(n){
   var sel=_ldSel(n);
-  if(!sel){alert('Выделите ячейку в строке, которую нужно удалить');return;}
-  if(!confirm('Удалить строку?'))return;
+  if(!sel){alert('{{t $.Lang "Выделите ячейку в строке, которую нужно удалить"}}');return;}
+  if(!confirm('{{t $.Lang "Удалить строку?"}}'))return;
   delLayoutRow(n,sel.area,sel.ri);
 }
 function ldAddColumn(n){
   var s=_led[n];if(!s)return;
   var area=s.sel?s.sel.area:_ldFirstArea(n);
-  if(!area){alert('Сначала добавьте область');return;}
-  var ar=s.data.areas[area];if(!ar||!ar.rows)return;
+  if(!area){alert('{{t $.Lang "Сначала добавьте область"}}');return;}
+  var ar=_ldAreaByName(n,area);if(!ar||!ar.rows)return;
   for(var i=0;i<ar.rows.length;i++){
     if(!ar.rows[i].cells)ar.rows[i].cells=[];
     ar.rows[i].cells.push({});
   }
   // also extend columns array (column-level widths) if defined
-  if(s.data.columns){s.data.columns.push({});}
+  if(Array.isArray(s.data.columns)&&s.data.columns.length){s.data.columns.push({});}
   renderLayoutEditor(n);
 }
 function ldDelColumn(n){
   var sel=_ldSel(n);
-  if(!sel){alert('Выделите ячейку в колонке, которую нужно удалить');return;}
-  if(!confirm('Удалить колонку?'))return;
+  if(!sel){alert('{{t $.Lang "Выделите ячейку в колонке, которую нужно удалить"}}');return;}
+  if(!confirm('{{t $.Lang "Удалить колонку?"}}'))return;
   var s=sel.s,ar=sel.ar,ci=sel.ci;
   for(var i=0;i<ar.rows.length;i++){
     var cs=ar.rows[i].cells||[];
     if(ci<cs.length)cs.splice(ci,1);
   }
-  if(s.data.columns&&ci<s.data.columns.length){s.data.columns.splice(ci,1);}
+  if(Array.isArray(s.data.columns)&&ci<s.data.columns.length){s.data.columns.splice(ci,1);}
   s.sel=null;
   renderLayoutEditor(n);
 }
 function ldMerge(n){
   var sel=_ldSel(n);
-  if(!sel){alert('Выделите ячейку, которую нужно объединить с правой соседкой');return;}
+  if(!sel){alert('{{t $.Lang "Выделите ячейку, которую нужно объединить с правой соседкой"}}');return;}
   var row=sel.row,ci=sel.ci;
-  if(ci+1>=row.cells.length){alert('Нет ячейки справа для объединения');return;}
+  if(ci+1>=row.cells.length){alert('{{t $.Lang "Нет ячейки справа для объединения"}}');return;}
   var c=row.cells[ci];
   var span=(c.colspan&&c.colspan>1)?c.colspan:1;
   c.colspan=span+1;
@@ -1914,9 +2080,9 @@ function ldMerge(n){
 }
 function ldSplit(n){
   var sel=_ldSel(n);
-  if(!sel){alert('Выделите объединённую ячейку');return;}
+  if(!sel){alert('{{t $.Lang "Выделите объединённую ячейку"}}');return;}
   var c=sel.row.cells[sel.ci];
-  if(!c.colspan||c.colspan<=1){alert('Ячейка не объединена');return;}
+  if(!c.colspan||c.colspan<=1){alert('{{t $.Lang "Ячейка не объединена"}}');return;}
   var span=c.colspan;
   delete c.colspan;
   // insert (span-1) empty cells to the right
@@ -1924,6 +2090,71 @@ function ldSplit(n){
     sel.row.cells.splice(sel.ci+1+i,0,{});
   }
   renderLayoutEditor(n);
+}
+// ── Границы по сторонам (6.3) ─────────────────────────────────────
+// _ldBorderSides — стороны в порядке кнопок Л/В/П/Н → ключи borders.
+var _ldBorderSides=['left','top','right','bottom'];
+// ldToggleBorderSide включает/выключает сторону рамки выделенной ячейки;
+// толщина берётся из select vp-bw. При установке per-side legacy border чистим.
+function ldToggleBorderSide(n,side){
+  var sc=_ldSelCell(n);if(!sc)return;
+  var c=sc.c;
+  if(!c.borders||typeof c.borders!=='object')c.borders={};
+  var bw=document.getElementById('vp-bw-'+n);
+  var w=(bw&&bw.value)?bw.value:'thin';
+  if(c.borders[side]&&c.borders[side]!=='none')delete c.borders[side];
+  else c.borders[side]=w;
+  _ldNormalizeBorders(c);
+  renderLayoutEditor(n);
+}
+// ldBorderPreset применяет пресет ко ВСЕМ сторонам текущей ячейки.
+// kind: 'all' (все стороны), 'none' (убрать).
+function ldBorderPreset(n,kind){
+  var sc=_ldSelCell(n);if(!sc)return;
+  var c=sc.c;
+  if(kind==='none'){delete c.borders;delete c.border;renderLayoutEditor(n);return;}
+  var bw=document.getElementById('vp-bw-'+n);
+  var w=(bw&&bw.value)?bw.value:'thin';
+  c.borders={left:w,top:w,right:w,bottom:w};
+  delete c.border; // per-side имеет приоритет; чистим legacy для чистоты YAML
+  renderLayoutEditor(n);
+}
+// ldBorderGridArea рисует сетку (все стороны) по всем ячейкам области (6.3).
+function ldBorderGridArea(n){
+  var s=_led[n];if(!s||!s.sel)return;
+  var ar=_ldAreaByName(n,s.sel.area);if(!ar||!ar.rows)return;
+  var bw=document.getElementById('vp-bw-'+n);
+  var w=(bw&&bw.value)?bw.value:'thin';
+  for(var ri=0;ri<ar.rows.length;ri++){
+    var cells=ar.rows[ri].cells||[];
+    for(var ci=0;ci<cells.length;ci++){
+      cells[ci].borders={left:w,top:w,right:w,bottom:w};
+      delete cells[ci].border;
+    }
+  }
+  renderLayoutEditor(n);
+}
+// _ldNormalizeBorders убирает пустой объект borders.
+function _ldNormalizeBorders(c){
+  var b=c.borders;
+  if(b&&typeof b==='object'){
+    if(!b.left&&!b.top&&!b.right&&!b.bottom)delete c.borders;
+    else{ // если per-side задан — чистим legacy
+      delete c.border;
+    }
+  }
+}
+// _ldSyncBorderUI подсвечивает активные тоггл-кнопки сторон у выбранной ячейки.
+function _ldSyncBorderUI(n,c){
+  var b=(c&&c.borders&&typeof c.borders==='object')?c.borders:{};
+  for(var i=0;i<_ldBorderSides.length;i++){
+    var side=_ldBorderSides[i];
+    var btn=document.getElementById('vp-bd-'+side+'-'+n);
+    if(!btn)continue;
+    var on=b[side]&&b[side]!=='none';
+    btn.style.background=on?'#1a73e8':'#fff';
+    btn.style.color=on?'#fff':'#334155';
+  }
 }
 // Init layout editors on load
 function initAllLayoutEditors(){
@@ -4463,7 +4694,13 @@ const cfgTabTree = `{{define "tab-tree"}}
     <form method="POST" action="/bases/{{$.Base.ID}}/configurator/printform">
       <input type="hidden" name="printform_filename" value="{{.FileName}}">
       <input type="hidden" name="printform_dsl" value="1">
-      {{if .HasLayout}}<div class="section-hd" style="color:#4a9">{{t $.Lang "Макет привязан"}} (<code>{{.Name}}.layout.yaml</code>)</div>{{end}}
+      {{if .HasLayout}}<div class="section-hd" style="color:#4a9">{{t $.Lang "Макет привязан"}} (<code>{{.Name}}.layout.yaml</code>)</div>
+      {{else}}<div style="margin:6px 0">
+        <button type="button" onclick="cfgCreateOSLayout('/bases/{{$.Base.ID}}/configurator/new-layout','{{.Name}}')"
+                style="font-size:12px;padding:5px 12px;background:#16a34a;color:#fff;border:none;border-radius:4px;cursor:pointer">
+          &#x1F4D0; {{t $.Lang "Создать макет"}}
+        </button>
+      </div>{{end}}
       <div class="section-hd">{{t $.Lang "Код формы"}} (.os) <span class="edit-hint">({{t $.Lang "кликните для редактирования"}})</span></div>
       <div class="code-wrap">
         <pre class="os-code" id="pre-dpf-{{.Name}}" onclick="startEdit('dpf-{{.Name}}')">{{.Source}}</pre>
@@ -4549,7 +4786,24 @@ const cfgTabTree = `{{define "tab-tree"}}
           <div><label>{{t $.Lang "Фон"}}</label><br><input type="color" id="vp-bg-{{.Name}}" style="width:100%;height:28px" oninput="updateCellProp('{{.Name}}','backColor',this.value)"></div>
           <div><label>{{t $.Lang "Цвет текста"}}</label><br><input type="color" id="vp-fg-{{.Name}}" style="width:100%;height:28px" oninput="updateCellProp('{{.Name}}','textColor',this.value)"></div>
           <div></div>
-          <div><label>{{t $.Lang "Границы"}}</label><br>
+          {{/* Границы по сторонам (6.3): тоггл-кнопки Л/В/П/Н + толщина + пресеты. */}}
+          <div style="grid-column:1/4;border-top:1px solid #d6e4f5;margin-top:4px;padding-top:6px">
+            <label style="font-weight:600">{{t $.Lang "Границы по сторонам"}}</label>
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:4px">
+              <button type="button" id="vp-bd-left-{{.Name}}"   title="{{t $.Lang "Левая"}}"  style="width:30px;padding:4px 0;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer;background:#fff;color:#334155" onclick="ldToggleBorderSide('{{.Name}}','left')">{{t $.Lang "Л"}}</button>
+              <button type="button" id="vp-bd-top-{{.Name}}"    title="{{t $.Lang "Верхняя"}}" style="width:30px;padding:4px 0;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer;background:#fff;color:#334155" onclick="ldToggleBorderSide('{{.Name}}','top')">{{t $.Lang "В"}}</button>
+              <button type="button" id="vp-bd-right-{{.Name}}"  title="{{t $.Lang "Правая"}}" style="width:30px;padding:4px 0;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer;background:#fff;color:#334155" onclick="ldToggleBorderSide('{{.Name}}','right')">{{t $.Lang "П"}}</button>
+              <button type="button" id="vp-bd-bottom-{{.Name}}" title="{{t $.Lang "Нижняя"}}" style="width:30px;padding:4px 0;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer;background:#fff;color:#334155" onclick="ldToggleBorderSide('{{.Name}}','bottom')">{{t $.Lang "Н"}}</button>
+              <select id="vp-bw-{{.Name}}" title="{{t $.Lang "Толщина"}}" style="padding:3px;margin-left:4px">
+                <option value="thin">{{t $.Lang "Тонкая"}}</option><option value="medium">{{t $.Lang "Средняя"}}</option><option value="thick">{{t $.Lang "Толстая"}}</option>
+              </select>
+              <span style="width:1px;background:#d1d5db;align-self:stretch;margin:0 2px"></span>
+              <button type="button" style="font-size:11px;padding:4px 8px;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer;background:#fff" onclick="ldBorderPreset('{{.Name}}','all')">{{t $.Lang "Все"}}</button>
+              <button type="button" style="font-size:11px;padding:4px 8px;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer;background:#fff" onclick="ldBorderPreset('{{.Name}}','none')">{{t $.Lang "Нет"}}</button>
+              <button type="button" style="font-size:11px;padding:4px 8px;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer;background:#fff" onclick="ldBorderGridArea('{{.Name}}')">{{t $.Lang "Сетка области"}}</button>
+            </div>
+          </div>
+          <div><label>{{t $.Lang "Границы"}} ({{t $.Lang "пресет"}})</label><br>
             <select id="vp-border-{{.Name}}" style="width:100%;padding:3px" onchange="updateCellProp('{{.Name}}','border',this.value)">
               <option value="">{{t $.Lang "По умолчанию"}}</option><option value="none">{{t $.Lang "Нет"}}</option><option value="thin">{{t $.Lang "Тонкая"}}</option><option value="all">{{t $.Lang "Все"}}</option><option value="thick">{{t $.Lang "Толстая"}}</option>
             </select>
@@ -5118,11 +5372,17 @@ const cfgTabTree = `{{define "tab-tree"}}
       {{end}}
     </div>
     {{else}}
-    <div style="color:#94a3b8;font-size:12px;padding:8px 0">
+    <div style="color:#94a3b8;font-size:12px;padding:8px 0 4px">
       {{t $.Lang "Печатных форм нет."}}
       <a href="#" onclick="cfgNewObj('printform');return false" style="color:#1a4a80">{{t $.Lang "Создать печатную форму"}}</a>
     </div>
     {{end}}
+    <div style="margin-top:6px">
+      <button type="button" onclick="cfgNewLayout('/bases/{{.BaseID}}/configurator/new-layout','{{$e.Name}}')"
+              style="font-size:12px;padding:5px 12px;background:#16a34a;color:#fff;border:none;border-radius:4px;cursor:pointer">
+        + {{t $.Lang "Печатная форма (макет)"}}
+      </button>
+    </div>
   </div>{{/* end ot-print */}}
 
   <div class="obj-pane" id="ot-modules-{{$e.Name}}">
