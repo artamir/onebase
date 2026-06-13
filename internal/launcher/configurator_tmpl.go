@@ -2433,12 +2433,18 @@ function ldMergeDown(n){
   var nextRi=ri+span; // строка под нижней границей текущего спана
   if(nextRi>=ar.rows.length){alert('{{t $.Lang "Нет строки снизу для объединения"}}');return;}
   var col=_ldVisualCol(ar,ri,ci);
-  // удаляем ячейку, которая займёт накрываемую позицию (col) в строке nextRi.
-  var delIdx=_ldCellIndexAtCol(ar,nextRi,col);
-  if(delIdx>=0){
-    var nrCells=ar.rows[nextRi].cells||[];
-    nrCells.splice(delIdx,1);
+  // удаляем ВСЕ ячейки строки nextRi, которые накроет спан: при colspan>1
+  // накрывается несколько визуальных позиций (col..col+cs-1), иначе ячейка
+  // из-под широкого спана «всплывала» со сдвигом вправо.
+  var cs=(c.colspan&&c.colspan>1)?c.colspan:1;
+  var toDelete=[];
+  for(var dc=0;dc<cs;dc++){
+    var di=_ldCellIndexAtCol(ar,nextRi,col+dc);
+    if(di>=0&&toDelete.indexOf(di)<0)toDelete.push(di);
   }
+  toDelete.sort(function(a,b){return b-a;});
+  var nrCells=ar.rows[nextRi].cells||[];
+  for(var d2=0;d2<toDelete.length;d2++)nrCells.splice(toDelete[d2],1);
   c.rowspan=span+1;
   renderLayoutEditor(n);
 }
