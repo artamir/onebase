@@ -198,10 +198,13 @@ func renderBody(tpl string, e Event) (string, error) {
 	if tpl == "" {
 		return "", nil
 	}
+	// Базовые поля тоже экранируем: user — это логин (может содержать кавычку/
+	// перевод строки), entity задаётся конфигурацией, id — UUID. Без экранирования
+	// спецсимвол в логине ломал бы JSON-тело или инъецировал поля в payload.
 	data := map[string]any{
-		"id":        e.ID,
-		"entity":    e.Entity,
-		"user":      e.User,
+		"id":        jsonEscape(e.ID),
+		"entity":    jsonEscape(e.Entity),
+		"user":      jsonEscape(e.User),
 		"timestamp": time.Now().Format(time.RFC3339),
 	}
 	for k, v := range e.Record {
