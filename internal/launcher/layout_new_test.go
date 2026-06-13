@@ -136,7 +136,7 @@ func newLayoutTestBase(t *testing.T) (*handler, *Base, string) {
 	dir := t.TempDir()
 	// минимальный проект: документ с табличной частью.
 	os.MkdirAll(filepath.Join(dir, "documents"), 0o755)
-	doc := "name: Реализация\nfields:\n  - name: Дата\n    type: date\ntableparts:\n  - name: Товары\n    fields:\n      - name: Номенклатура\n        type: string\n      - name: Сумма\n        type: number\n"
+	doc := "name: Реализация\nfields:\n  - name: Номер\n    type: string\n  - name: Дата\n    type: date\ntableparts:\n  - name: Товары\n    fields:\n      - name: Номенклатура\n        type: string\n      - name: Сумма\n        type: number\n"
 	if err := os.WriteFile(filepath.Join(dir, "documents", "реализация.yaml"), []byte(doc), 0o644); err != nil {
 		t.Fatal(err)
 	}

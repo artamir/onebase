@@ -628,6 +628,18 @@ const cfgFoot = `{{define "cfg-foot"}}
   </div>
 </div>
 </div>
+{{/* Предпросмотр макета печатной формы (план 64, этап 5b, 6.6) */}}
+<div class="qb-overlay" id="ld-preview-overlay">
+  <div class="qb-modal" style="max-width:1100px;width:96%;height:90vh;display:flex;flex-direction:column">
+    <div class="qb-modal-hd">
+      <h2>{{t $.Lang "Предпросмотр печатной формы"}}</h2>
+      <button onclick="ldClosePreview()" style="background:#e8ecf2;color:#333;border:1px solid #c8d0de;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:13px">{{t $.Lang "Закрыть"}}</button>
+    </div>
+    <div style="flex:1;min-height:0;background:#fff;border-radius:0 0 8px 8px;overflow:hidden">
+      <iframe id="ld-preview-frame" style="width:100%;height:100%;border:none" title="{{t $.Lang "Предпросмотр печатной формы"}}"></iframe>
+    </div>
+  </div>
+</div>
 <script>
 // ── New object form ────────────────────────────────────────────
 var _cfgNewTitles = {catalog:'Новый справочник', document:'Новый документ', register:'Новый регистр', inforeg:'Новый регистр сведений', accountreg:'Новый регистр бухгалтерии', enum:'Новое перечисление', subsystem:'Новая подсистема', widget:'Новый виджет', module:'Новый общий модуль', processor:'Новая обработка'};
@@ -2171,6 +2183,35 @@ function saveLayoutEditor(n){
   // Sync in-memory state → textarea (in case visual editor made changes without syncing).
   if(window.jsyaml&&_led[n]){_ldSyncTextarea(n);}
   return true;
+}
+// ── Предпросмотр (план 64, этап 5b, 6.6) ──────────────────────────
+// ldPreview отправляет текущий YAML макета на сервер и показывает HTML/PDF в
+// модальном iframe. format: 'html' | 'pdf'.
+function ldPreview(n,entity,format){
+  // синхронизируем визуальную модель в textarea, берём свежий YAML.
+  if(window.jsyaml&&_led[n])_ldSyncTextarea(n);
+  var ta=document.getElementById('ta-mkt-'+n);
+  var yaml=ta?ta.value:'';
+  var url='/bases/'+_dbgBase+'/configurator/layout/preview';
+  if(format==='pdf')url+='?format=pdf';
+  fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({yaml:yaml,entity:entity||''})})
+    .then(function(resp){
+      if(!resp.ok)return resp.text().then(function(t){throw new Error(t||('HTTP '+resp.status));});
+      return resp.blob();
+    })
+    .then(function(blob){
+      var u=URL.createObjectURL(blob);
+      var frame=document.getElementById('ld-preview-frame');
+      if(frame)frame.src=u;
+      document.getElementById('ld-preview-overlay').classList.add('active');
+    })
+    .catch(function(err){alert('{{t $.Lang "Ошибка предпросмотра"}}: '+err.message);});
+}
+function ldClosePreview(){
+  var ov=document.getElementById('ld-preview-overlay');
+  if(ov)ov.classList.remove('active');
+  var frame=document.getElementById('ld-preview-frame');
+  if(frame)frame.src='about:blank';
 }
 // _ldEnsure инициализирует _led[n] из textarea, если ещё не инициализирован.
 function _ldEnsure(n){
@@ -5077,6 +5118,9 @@ const cfgTabTree = `{{define "tab-tree"}}
         <button type="button" onclick="ldMergeDown('{{.Name}}')"  style="font-size:12px;padding:4px 10px;background:#fff;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer">{{t $.Lang "Объединить вниз"}} ↓</button>
         <button type="button" onclick="ldSplit('{{.Name}}')"      style="font-size:12px;padding:4px 10px;background:#fff;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer">{{t $.Lang "Разъединить"}} →</button>
         <button type="button" onclick="ldUnmergeVertical('{{.Name}}')" style="font-size:12px;padding:4px 10px;background:#fff;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer">{{t $.Lang "Разъединить вниз"}} ↓</button>
+        <span style="width:1px;background:#d1d5db;align-self:stretch"></span>
+        <button type="button" onclick="ldPreview('{{.Name}}','{{.Document}}','html')" style="font-size:12px;padding:4px 10px;background:#0ea5e9;color:#fff;border:none;border-radius:4px;cursor:pointer">{{t $.Lang "Предпросмотр"}}</button>
+        <button type="button" onclick="ldPreview('{{.Name}}','{{.Document}}','pdf')"  style="font-size:12px;padding:4px 10px;background:#fff;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer">{{t $.Lang "Предпросмотр PDF"}}</button>
       </div>
 
       {{/* Split view: YAML editor (left) + visual designer (right) */}}
