@@ -119,6 +119,9 @@ tr:nth-child(even) td{background:#f8fafc}
 			text := ""
 			if cell != nil {
 				text = escapeHTML(cell.Text)
+				if img := pictureHTML(cell.Picture); img != "" {
+					text += img
+				}
 			}
 
 			if attrs != "" || style != "" {
@@ -258,6 +261,21 @@ func safeColor(s string) string {
 		return s
 	}
 	return ""
+}
+
+// pictureHTML рендерит картинку ячейки в <img>, ограниченный размерами ячейки
+// (max-width/max-height:100%). Поддерживаются data-URI картинок и http(s)-URL;
+// прочие строки игнорируются (без файловых путей/произвольных схем — защита от
+// инъекции через src). src экранируется как HTML-атрибут. Возвращает "" для
+// неподдерживаемого/пустого Picture.
+func pictureHTML(pic string) string {
+	switch classifyPicture(pic) {
+	case picDataURI, picURL:
+		return `<img src="` + escapeHTML(strings.TrimSpace(pic)) +
+			`" style="max-width:100%;max-height:100%;display:block" alt="">`
+	default:
+		return ""
+	}
 }
 
 // safeFontFamily вырезает из font-family символы, способные разорвать

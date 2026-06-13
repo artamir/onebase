@@ -1,6 +1,8 @@
 package sheet
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"strings"
 
@@ -493,8 +495,73 @@ func drawCell(pdf *fpdf.Fpdf, cell *Cell, x, y, w, h float64) {
 		}
 	}
 
+	// Картинка (после текста, до границ — чтобы рамка осталась поверх).
+	if cell.Picture != "" {
+		drawCellPicture(pdf, cell.Picture, x, y, w, h)
+	}
+
 	// Границы (legacy-пресет).
 	drawCellBorder(pdf, cell, x, y, w, h)
+}
+
+// drawCellPicture вписывает картинку ячейки в её прямоугольник (с паддингом),
+// сохраняя пропорции и центрируя. Поддерживаются только data-URI картинок
+// (PNG/JPEG/GIF) — внешние URL в серверном PDF не загружаются (нет сети). Сбои
+// декодирования/неподдерживаемый формат тихо игнорируются (картинка не
+// блокирует печать документа).
+// pictureCacheName строит имя ресурса картинки для fpdf по типу и содержимому.
+// Хэш содержимого (а не длина) гарантирует, что разные картинки одного формата
+// и длины получают разные имена, а идентичные — одно (дедупликация в PDF).
+func pictureCacheName(imgType string, data []byte) string {
+	sum := sha256.Sum256(data)
+	return fmt.Sprintf("pic_%s_%x", imgType, sum[:8])
+}
+
+func drawCellPicture(pdf *fpdf.Fpdf, pic string, x, y, w, h float64) {
+	data, imgType, ok := decodeDataURIImage(pic)
+	if !ok {
+		return
+	}
+	// Имя регистрации = тип + хэш содержимого: одинаковые картинки делят один
+	// зарегистрированный ресурс (fpdf не дублирует поток), а РАЗНЫЕ картинки
+	// одного формата и длины не сталкиваются (длина в ключе давала коллизию —
+	// fpdf возвращал первую из кэша).
+	name := pictureCacheName(imgType, data)
+	info := pdf.RegisterImageOptionsReader(name, fpdf.ImageOptions{ImageType: imgType}, bytes.NewReader(data))
+	if pdf.Err() || info == nil {
+		// Сбросить ошибку парсера картинки — она не должна валить весь PDF.
+		pdf.ClearError()
+		return
+	}
+	iw, ih := info.Extent()
+	if iw <= 0 || ih <= 0 {
+		return
+	}
+
+	availW := w - 2*cellPadMM
+	availH := h - 2*cellPadMM
+	if availW <= 0 {
+		availW = w
+	}
+	if availH <= 0 {
+		availH = h
+	}
+
+	// Масштаб «вписать» (contain): сохраняем пропорции.
+	scale := availW / iw
+	if s := availH / ih; s < scale {
+		scale = s
+	}
+	dw := iw * scale
+	dh := ih * scale
+
+	// Центрирование в ячейке.
+	ix := x + (w-dw)/2
+	iy := y + (h-dh)/2
+	pdf.ImageOptions(name, ix, iy, dw, dh, false, fpdf.ImageOptions{ImageType: imgType}, 0, "")
+	if pdf.Err() {
+		pdf.ClearError()
+	}
 }
 
 // drawCellBorder рисует рамку ячейки. Per-side границы (BorderLeft/Top/Right/
