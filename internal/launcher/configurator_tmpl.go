@@ -628,6 +628,24 @@ const cfgFoot = `{{define "cfg-foot"}}
   </div>
 </div>
 </div>
+{{/* Предпросмотр макета печатной формы (план 64, этап 5b, 6.6) */}}
+<div class="qb-overlay" id="ld-preview-overlay">
+  <div class="qb-modal" style="max-width:1100px;width:96%;height:90vh;display:flex;flex-direction:column">
+    <div class="qb-modal-hd">
+      <h2>{{t $.Lang "Предпросмотр печатной формы"}}</h2>
+      <button onclick="ldClosePreview()" style="background:#e8ecf2;color:#333;border:1px solid #c8d0de;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:13px">{{t $.Lang "Закрыть"}}</button>
+    </div>
+    <div style="flex:1;min-height:0;background:#fff;border-radius:0 0 8px 8px;overflow:hidden">
+      {{/* sandbox: allow-same-origin (blob URL, конфигуратор same-origin) +
+           allow-scripts (window.print в тулбаре HTML-предпросмотра) +
+           allow-modals (window.print/alert).
+           Текст ячеек экранирован escapeHTML() — sandbox здесь defense-in-depth. */}}
+      <iframe id="ld-preview-frame" style="width:100%;height:100%;border:none"
+              sandbox="allow-same-origin allow-scripts allow-modals"
+              title="{{t $.Lang "Предпросмотр печатной формы"}}"></iframe>
+    </div>
+  </div>
+</div>
 <script>
 // ── New object form ────────────────────────────────────────────
 var _cfgNewTitles = {catalog:'Новый справочник', document:'Новый документ', register:'Новый регистр', inforeg:'Новый регистр сведений', accountreg:'Новый регистр бухгалтерии', enum:'Новое перечисление', subsystem:'Новая подсистема', widget:'Новый виджет', module:'Новый общий модуль', processor:'Новая обработка'};
@@ -1635,6 +1653,22 @@ function cfgObjTab(el, paneId){
 // порядка ключей. Незнакомые ключи (page/binding/будущие) НЕ теряются: правим
 // распарсенный объект, не пересобираем его с нуля.
 var _led={};
+// _ldMeta — метаданные для панели «Данные» (план 64, этап 5b, 6.5):
+// {entities:{Имя:{fields,tableParts}}, constants:[], formDoc:{макет→документ}}.
+var _ldMeta={{if .LayoutMeta}}{{.LayoutMeta}}{{else}}{}{{end}};
+if(!_ldMeta||typeof _ldMeta!=='object')_ldMeta={entities:{},constants:[],formDoc:{}};
+// _ldEntityForForm возвращает метаданные сущности, к которой привязан макет n,
+// или null. Имя документа берётся из formDoc[n] (регистронезависимо).
+function _ldEntityForForm(n){
+  if(!_ldMeta||!_ldMeta.formDoc)return null;
+  var doc=_ldMeta.formDoc[(n||'').toLowerCase()];
+  if(!doc)return null;
+  var ents=_ldMeta.entities||{};
+  if(ents[doc])return ents[doc];
+  var dl=doc.toLowerCase();
+  for(var k in ents){if(Object.prototype.hasOwnProperty.call(ents,k)&&k.toLowerCase()===dl)return ents[k];}
+  return null;
+}
 // _ldNormAreas приводит areas к массиву {name, rows}. Принимает:
 //   - массив (v2) — нормализует name/rows у каждого элемента;
 //   - объект (legacy map) — порядок ключей сохраняется (JS Object iteration order).
@@ -1785,6 +1819,7 @@ function renderLayoutEditor(n,noYamlSync){
     h+='<button type="button" style="font-size:10px;padding:1px 6px;border:1px solid #ccc;border-radius:3px;cursor:pointer" onclick="addLayoutRow(\''+n+"','"+esc(an)+"')\">+ {{t $.Lang "Строка"}}</button>";
     h+='<button type="button" style="font-size:10px;padding:1px 6px;border:1px solid #fcc;border-radius:3px;cursor:pointer;color:#c33" onclick="delLayoutArea(\''+n+"','"+esc(an)+"')\">✕</button>";
     h+='</div>';
+    h+=_ldAreaBindingRow(n,an);
     h+='<table style="border-collapse:collapse">'+cg;
     var rows=ar.rows||[];
     for(var ri=0;ri<rows.length;ri++){
@@ -1818,6 +1853,7 @@ function renderLayoutEditor(n,noYamlSync){
   if(ved)ved.innerHTML=h;
   renderPreviewOnly(n);
   syncProps(n);
+  renderDataPanel(n);
 }
 // _ldSyncTextarea сериализует s.data → textarea. areas пишутся как sequence;
 // jsyaml уже хранит areas массивом, поэтому dump даёт v2-формат.
@@ -1901,6 +1937,7 @@ function syncProps(n){
   _setVal('vp-bc-'+n,c.borderColor||'#cccccc');
   _setVal('vp-colspan-'+n,c.colspan||1);
   _setVal('vp-rowspan-'+n,c.rowspan||1);
+  _setVal('vp-fmt-'+n,_ldParamFormat(n,c.parameter||''));
   _ldSyncBorderUI(n,c);
 }
 function updateCellProp(n,prop,val){
@@ -1912,6 +1949,219 @@ function updateCellProp(n,prop,val){
   }else{
     c[prop]=val;
   }
+  renderLayoutEditor(n);
+}
+// ── Привязка данных (план 64, этап 5b, 6.5) ───────────────────────
+// _ldBinding возвращает (создавая при ensure) объект binding макета.
+function _ldBinding(n,ensure){
+  var s=_led[n];if(!s||!s.data)return null;
+  if(!s.data.binding&&ensure)s.data.binding={};
+  return s.data.binding||null;
+}
+// _ldRepeatForArea возвращает запись binding.repeat для области areaName или null.
+function _ldRepeatForArea(n,areaName){
+  var b=_ldBinding(n,false);
+  if(!b||!Array.isArray(b.repeat))return null;
+  var al=(areaName||'').toLowerCase();
+  for(var i=0;i<b.repeat.length;i++){if((b.repeat[i].area||'').toLowerCase()===al)return b.repeat[i];}
+  return null;
+}
+// _ldParamMapFor возвращает (создавая при ensure) карту parameters для области:
+// для repeat-области это repeat[i].parameters, иначе binding.parameters.
+function _ldParamMapFor(n,areaName,ensure){
+  var rb=_ldRepeatForArea(n,areaName);
+  if(rb){
+    if(!rb.parameters&&ensure)rb.parameters={};
+    return rb.parameters||null;
+  }
+  var b=_ldBinding(n,ensure);
+  if(!b)return null;
+  if(!b.parameters&&ensure)b.parameters={};
+  return b.parameters||null;
+}
+// _ldParamFormat читает формат («| fmt») параметра выделенной ячейки из карты
+// параметров соответствующей области; пусто — нет формата или нет записи.
+function _ldParamFormat(n,param){
+  if(!param)return '';
+  var s=_led[n];if(!s||!s.sel)return '';
+  var pm=_ldParamMapFor(n,s.sel.area,false);
+  if(!pm)return '';
+  var expr=null;
+  for(var k in pm){if(Object.prototype.hasOwnProperty.call(pm,k)&&k.toLowerCase()===param.toLowerCase()){expr=pm[k];break;}}
+  if(typeof expr!=='string')return '';
+  var bar=expr.indexOf('|');
+  if(bar<0)return '';
+  return expr.slice(bar+1).trim();
+}
+// ldSetFormat дописывает «| формат» к выражению параметра выделенной ячейки.
+// Если выражение совпадает с именем (автопривязка) и формат пуст — запись из
+// parameters удаляется (не засоряем binding).
+function ldSetFormat(n,fmt){
+  var sc=_ldSelCell(n);if(!sc)return;
+  var param=sc.c.parameter||'';
+  if(!param){alert('{{t $.Lang "У ячейки нет параметра"}}');return;}
+  var s=_led[n];if(!s||!s.sel)return;
+  var pm=_ldParamMapFor(n,s.sel.area,true);
+  if(!pm)return;
+  // найдём существующий ключ (регистронезависимо) или используем имя параметра.
+  var key=param,curExpr=param;
+  for(var k in pm){if(Object.prototype.hasOwnProperty.call(pm,k)&&k.toLowerCase()===param.toLowerCase()){key=k;curExpr=pm[k];break;}}
+  var bar=curExpr.indexOf('|');
+  var baseExpr=(bar<0?curExpr:curExpr.slice(0,bar)).trim();
+  if(!baseExpr)baseExpr=param;
+  if(fmt){
+    pm[key]=baseExpr+' | '+fmt;
+  }else{
+    // нет формата: если выражение == имени параметра (автопривязка) — убираем запись.
+    if(baseExpr.toLowerCase()===param.toLowerCase())delete pm[key];
+    else pm[key]=baseExpr;
+  }
+  _ldCleanupParams(n,s.sel.area);
+  renderLayoutEditor(n);
+}
+// _ldBindParameter привязывает поле к параметру ячейки. Ставит cell.parameter и
+// добавляет запись в parameters ТОЛЬКО если выражение ≠ имени параметра.
+function _ldBindParameter(n,areaName,paramName,expr){
+  var sc=_ldSelCell(n);if(!sc)return;
+  sc.c.parameter=paramName;
+  delete sc.c.text; // параметр вытесняет статический текст
+  if(expr&&expr.toLowerCase()!==paramName.toLowerCase()){
+    var pm=_ldParamMapFor(n,areaName,true);
+    if(pm)pm[paramName]=expr;
+  }else{
+    // автопривязка по имени — убираем лишнюю запись, если была.
+    var pm2=_ldParamMapFor(n,areaName,false);
+    if(pm2){for(var k in pm2){if(Object.prototype.hasOwnProperty.call(pm2,k)&&k.toLowerCase()===paramName.toLowerCase())delete pm2[k];}}
+  }
+  _ldCleanupParams(n,areaName);
+}
+// _ldCleanupParams убирает пустые карты parameters/binding из YAML.
+function _ldCleanupParams(n,areaName){
+  var b=_ldBinding(n,false);if(!b)return;
+  var rb=_ldRepeatForArea(n,areaName);
+  if(rb&&rb.parameters&&Object.keys(rb.parameters).length===0)delete rb.parameters;
+  if(b.parameters&&Object.keys(b.parameters).length===0)delete b.parameters;
+}
+// ── Повтор по ТЧ / RepeatHeader у области (6.5) ────────────────────
+// ldSetAreaRepeat включает/выключает повтор области по табличной части source.
+// source='' — выключить повтор (удалить запись binding.repeat).
+function ldSetAreaRepeat(n,areaName,source){
+  var b=_ldBinding(n,true);if(!b)return;
+  if(!Array.isArray(b.repeat))b.repeat=[];
+  var al=(areaName||'').toLowerCase();
+  var idx=-1;
+  for(var i=0;i<b.repeat.length;i++){if((b.repeat[i].area||'').toLowerCase()===al){idx=i;break;}}
+  if(source){
+    if(idx>=0)b.repeat[idx].source=source;
+    else b.repeat.push({area:areaName,source:source});
+  }else if(idx>=0){
+    b.repeat.splice(idx,1);
+  }
+  if(b.repeat.length===0)delete b.repeat;
+  renderLayoutEditor(n);
+}
+// ldSetRepeatHeader ставит/снимает binding.repeat_header = areaName.
+function ldSetRepeatHeader(n,areaName,on){
+  var b=_ldBinding(n,true);if(!b)return;
+  if(on)b.repeat_header=areaName;
+  else if((b.repeat_header||'').toLowerCase()===(areaName||'').toLowerCase())delete b.repeat_header;
+  renderLayoutEditor(n);
+}
+// _ldAreaBindingRow строит строку привязки области: select «Повтор по ТЧ» +
+// чекбокс «Повторять на каждой странице». Список ТЧ берётся из метаданных
+// сущности макета.
+function _ldAreaBindingRow(n,areaName){
+  var ent=_ldEntityForForm(n);
+  var rb=_ldRepeatForArea(n,areaName);
+  var b=_ldBinding(n,false);
+  var rh=(b&&(b.repeat_header||'').toLowerCase()===(areaName||'').toLowerCase());
+  var jn=areaName.replace(/'/g,"\\'");
+  var h='<div style="display:flex;align-items:center;gap:8px;margin:0 0 4px;font-size:11px;color:#64748b">';
+  h+='<label style="display:flex;align-items:center;gap:3px">'+esc('{{t $.Lang "Повтор по ТЧ"}}')+':';
+  h+='<select style="font-size:11px;padding:1px 2px" onchange="ldSetAreaRepeat(\''+n+'\',\''+jn+'\',this.value)">';
+  h+='<option value="">'+esc('{{t $.Lang "нет"}}')+'</option>';
+  var tps=(ent&&ent.tableParts)?ent.tableParts:[];
+  var cur=rb?(rb.source||''):'';
+  for(var t=0;t<tps.length;t++){
+    var sel=(tps[t].name.toLowerCase()===cur.toLowerCase())?' selected':'';
+    h+='<option value="'+esc(tps[t].name)+'"'+sel+'>'+esc(tps[t].name)+'</option>';
+  }
+  // если в binding указана ТЧ, которой нет в метаданных (или метаданных нет) — покажем её.
+  if(cur){
+    var found=false;
+    for(var t2=0;t2<tps.length;t2++){if(tps[t2].name.toLowerCase()===cur.toLowerCase())found=true;}
+    if(!found)h+='<option value="'+esc(cur)+'" selected>'+esc(cur)+'</option>';
+  }
+  h+='</select></label>';
+  h+='<label style="display:flex;align-items:center;gap:3px"><input type="checkbox"'+(rh?' checked':'')+' onchange="ldSetRepeatHeader(\''+n+'\',\''+jn+'\',this.checked)"> '+esc('{{t $.Lang "Повторять на каждой странице"}}')+'</label>';
+  h+='</div>';
+  return h;
+}
+// ── Дерево данных (6.5) ───────────────────────────────────────────
+// renderDataPanel рисует дерево «Реквизиты / Табличные части / Константы».
+// Клик по полю при выделенной ячейке вызывает onDataFieldClick.
+function renderDataPanel(n){
+  var box=document.getElementById('vdata-'+n);
+  if(!box)return;
+  var ent=_ldEntityForForm(n);
+  var h='';
+  if(!ent){
+    h='<p style="color:#999;font-size:11px;margin:4px 0">{{t $.Lang "Сущность не определена. Укажите document: в YAML."}}</p>';
+  }else{
+    var s=_led[n];
+    var selArea=(s&&s.sel)?s.sel.area:null;
+    var rb=selArea?_ldRepeatForArea(n,selArea):null;
+    if(selArea){
+      h+='<div style="font-size:10px;color:#94a3b8;margin-bottom:4px">'+esc(selArea)+(rb?' ↻ '+esc(rb.source||''):'')+'</div>';
+    }
+    // Реквизиты документа.
+    h+='<div style="font-weight:600;color:#475569;margin:2px 0">'+esc('{{t $.Lang "Реквизиты"}}')+'</div>';
+    h+=_ldFieldList(n,ent.fields,'doc');
+    // Табличные части.
+    var tps=ent.tableParts||[];
+    for(var t=0;t<tps.length;t++){
+      h+='<div style="font-weight:600;color:#475569;margin:6px 0 2px">↻ '+esc(tps[t].name)+'</div>';
+      h+=_ldFieldList(n,tps[t].fields,'tp:'+tps[t].name);
+    }
+    // Константы.
+    var cs=(_ldMeta&&Array.isArray(_ldMeta.constants))?_ldMeta.constants:[];
+    if(cs.length){
+      h+='<div style="font-weight:600;color:#475569;margin:6px 0 2px">'+esc('{{t $.Lang "Константы"}}')+'</div>';
+      for(var ci=0;ci<cs.length;ci++){
+        h+='<div class="ld-data-fld" style="padding:2px 4px;cursor:pointer;border-radius:3px" onclick="onDataFieldClick(\''+n+'\',\'const\',\''+esc(cs[ci])+'\')" title="{{t $.Lang "Кликните по ячейке, затем по полю"}}">'+esc(cs[ci])+'</div>';
+      }
+    }
+  }
+  box.innerHTML=h;
+}
+// _ldFieldList рисует список полей одного раздела (реквизиты или колонки ТЧ).
+function _ldFieldList(n,fields,scope){
+  fields=fields||[];
+  var h='';
+  for(var i=0;i<fields.length;i++){
+    var f=fields[i];
+    var sub=(f.ref?' →':'');
+    h+='<div class="ld-data-fld" style="padding:2px 4px;cursor:pointer;border-radius:3px" onclick="onDataFieldClick(\''+n+'\',\''+scope+'\',\''+esc(f.name)+'\')" title="{{t $.Lang "Кликните по ячейке, затем по полю"}}">'+esc(f.name)+sub+'</div>';
+  }
+  if(!fields.length)h='<div style="color:#cbd5e1;font-size:11px;padding:2px 4px">—</div>';
+  return h;
+}
+// onDataFieldClick привязывает выбранное поле к параметру выделенной ячейки.
+//   scope='doc'    — реквизит документа;
+//   scope='tp:Имя' — колонка ТЧ (выражение — имя колонки, действует в repeat-области);
+//   scope='const'  — Константы.Имя.
+function onDataFieldClick(n,scope,field){
+  var s=_led[n];
+  if(!s||!s.sel){alert('{{t $.Lang "Сначала выделите ячейку"}}');return;}
+  var areaName=s.sel.area;
+  var paramName=field;
+  var expr=field;
+  if(scope==='const'){expr='Константы.'+field;paramName=field;}
+  else if(scope.indexOf('tp:')===0){
+    // колонка ТЧ: выражение — имя колонки; имеет смысл, если область привязана к этой ТЧ.
+    expr=field;
+  }
+  _ldBindParameter(n,areaName,paramName,expr);
   renderLayoutEditor(n);
 }
 function applyYaml(n){
@@ -1939,6 +2189,35 @@ function saveLayoutEditor(n){
   // Sync in-memory state → textarea (in case visual editor made changes without syncing).
   if(window.jsyaml&&_led[n]){_ldSyncTextarea(n);}
   return true;
+}
+// ── Предпросмотр (план 64, этап 5b, 6.6) ──────────────────────────
+// ldPreview отправляет текущий YAML макета на сервер и показывает HTML/PDF в
+// модальном iframe. format: 'html' | 'pdf'.
+function ldPreview(n,entity,format){
+  // синхронизируем визуальную модель в textarea, берём свежий YAML.
+  if(window.jsyaml&&_led[n])_ldSyncTextarea(n);
+  var ta=document.getElementById('ta-mkt-'+n);
+  var yaml=ta?ta.value:'';
+  var url='/bases/'+_dbgBase+'/configurator/layout/preview';
+  if(format==='pdf')url+='?format=pdf';
+  fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({yaml:yaml,entity:entity||''})})
+    .then(function(resp){
+      if(!resp.ok)return resp.text().then(function(t){throw new Error(t||('HTTP '+resp.status));});
+      return resp.blob();
+    })
+    .then(function(blob){
+      var u=URL.createObjectURL(blob);
+      var frame=document.getElementById('ld-preview-frame');
+      if(frame)frame.src=u;
+      document.getElementById('ld-preview-overlay').classList.add('active');
+    })
+    .catch(function(err){alert('{{t $.Lang "Ошибка предпросмотра"}}: '+err.message);});
+}
+function ldClosePreview(){
+  var ov=document.getElementById('ld-preview-overlay');
+  if(ov)ov.classList.remove('active');
+  var frame=document.getElementById('ld-preview-frame');
+  if(frame)frame.src='about:blank';
 }
 // _ldEnsure инициализирует _led[n] из textarea, если ещё не инициализирован.
 function _ldEnsure(n){
@@ -2000,9 +2279,10 @@ function ldColWidth(n,i){
   if(!Array.isArray(s.data.columns))s.data.columns=[];
   while(s.data.columns.length<=i)s.data.columns.push({});
   var cur=s.data.columns[i].width||'';
-  var v=prompt('{{t $.Lang "Ширина колонки (напр. 120px, 30mm, пусто = авто):"}}',cur);
+  var v=prompt('{{t $.Lang "Ширина колонки (напр. 120px, 30mm, пусто = авто). %-ширины печатью НЕ поддерживаются."}}',cur);
   if(v===null)return;
   v=v.trim();
+  if(v.indexOf('%')>=0){alert('{{t $.Lang "%-ширины не поддерживаются печатью (PDF). Используйте px или mm."}}');return;}
   if(v==='')delete s.data.columns[i].width; else s.data.columns[i].width=v;
   // подрезаем хвост пустых элементов columns
   while(s.data.columns.length&&!s.data.columns[s.data.columns.length-1].width)s.data.columns.pop();
@@ -2088,6 +2368,117 @@ function ldSplit(n){
   // insert (span-1) empty cells to the right
   for(var i=0;i<span-1;i++){
     sel.row.cells.splice(sel.ci+1+i,0,{});
+  }
+  renderLayoutEditor(n);
+}
+// _ldColLayout раскладывает область по канону модели: для каждой строки строит
+// массив map (cellIndex → начальная визуальная колонка) с учётом спанов выше
+// и colspan внутри строки. Накрытые позиции в массиве cells ОТСУТСТВУЮТ (как в
+// BuildAreaCells / declarative.go). Возвращает {starts:[[...]], covered:{}}.
+function _ldColLayout(ar){
+  var rows=(ar&&ar.rows)?ar.rows:[];
+  var covered={};
+  var starts=[];
+  for(var r=0;r<rows.length;r++){
+    var cells=rows[r].cells||[];
+    var rowStarts=[];
+    var col=0;
+    for(var ci=0;ci<cells.length;ci++){
+      while(covered[r+','+col])col++;
+      rowStarts.push(col);
+      var c=cells[ci]||{};
+      var cs=(c.colspan&&c.colspan>1)?c.colspan:1;
+      var rs=(c.rowspan&&c.rowspan>1)?c.rowspan:1;
+      for(var dr=0;dr<rs;dr++)for(var dc=0;dc<cs;dc++){
+        if(dr===0&&dc===0)continue;
+        covered[(r+dr)+','+(col+dc)]=true;
+      }
+      col+=cs;
+    }
+    starts.push(rowStarts);
+  }
+  return {starts:starts,covered:covered};
+}
+// _ldVisualCol возвращает визуальную колонку выделенной ячейки (ci) в строке ri.
+function _ldVisualCol(ar,ri,ci){
+  var lay=_ldColLayout(ar);
+  if(ri<lay.starts.length&&ci<lay.starts[ri].length)return lay.starts[ri][ci];
+  return -1;
+}
+// _ldCellIndexAtCol находит индекс ячейки в строке ri, чья визуальная колонка == col.
+// Возвращает -1, если в этой строке нет ячейки, начинающейся в col (позиция накрыта).
+function _ldCellIndexAtCol(ar,ri,col){
+  var lay=_ldColLayout(ar);
+  if(ri>=lay.starts.length)return -1;
+  var rs=lay.starts[ri];
+  for(var i=0;i<rs.length;i++)if(rs[i]===col)return i;
+  return -1;
+}
+// ── Удаление одиночной ячейки (5b блок A.1) ───────────────────────
+// Удаляет выделенную ячейку из rows[ri].cells (соседи сдвигаются влево —
+// семантика модели: колонки определяются порядком в массиве cells).
+function ldDelCell(n){
+  var sel=_ldSel(n);
+  if(!sel){alert('{{t $.Lang "Выделите ячейку для удаления"}}');return;}
+  var cells=sel.row.cells||[];
+  if(sel.ci>=cells.length)return;
+  cells.splice(sel.ci,1);
+  sel.s.sel=null;
+  renderLayoutEditor(n);
+}
+// ── Вертикальный merge / unmerge (5b блок A.2) ────────────────────
+// ldMergeDown увеличивает rowspan выделенной ячейки на 1 И удаляет ячейку,
+// которая по канону модели стоит под ней в следующей строке (в той же
+// визуальной колонке). Без удаления накрытая ячейка «всплыла» бы вправо.
+function ldMergeDown(n){
+  var sel=_ldSel(n);
+  if(!sel){alert('{{t $.Lang "Выделите ячейку, которую нужно объединить с нижней"}}');return;}
+  var ar=sel.ar,ri=sel.ri,ci=sel.ci;
+  var c=sel.row.cells[ci];
+  var span=(c.rowspan&&c.rowspan>1)?c.rowspan:1;
+  var nextRi=ri+span; // строка под нижней границей текущего спана
+  if(nextRi>=ar.rows.length){alert('{{t $.Lang "Нет строки снизу для объединения"}}');return;}
+  var col=_ldVisualCol(ar,ri,ci);
+  // удаляем ВСЕ ячейки строки nextRi, которые накроет спан: при colspan>1
+  // накрывается несколько визуальных позиций (col..col+cs-1), иначе ячейка
+  // из-под широкого спана «всплывала» со сдвигом вправо.
+  var cs=(c.colspan&&c.colspan>1)?c.colspan:1;
+  var toDelete=[];
+  for(var dc=0;dc<cs;dc++){
+    var di=_ldCellIndexAtCol(ar,nextRi,col+dc);
+    if(di>=0&&toDelete.indexOf(di)<0)toDelete.push(di);
+  }
+  toDelete.sort(function(a,b){return b-a;});
+  var nrCells=ar.rows[nextRi].cells||[];
+  for(var d2=0;d2<toDelete.length;d2++)nrCells.splice(toDelete[d2],1);
+  c.rowspan=span+1;
+  renderLayoutEditor(n);
+}
+// ldUnmergeDown возвращает rowspan=1 и ВСТАВЛЯЕТ пустые ячейки обратно в строки,
+// которые были накрыты (по канону модели — в нужную визуальную позицию).
+function ldUnmergeVertical(n){
+  var sel=_ldSel(n);
+  if(!sel){alert('{{t $.Lang "Выделите объединённую по вертикали ячейку"}}');return;}
+  var ar=sel.ar,ri=sel.ri,ci=sel.ci;
+  var c=sel.row.cells[ci];
+  if(!c.rowspan||c.rowspan<=1){alert('{{t $.Lang "Ячейка не объединена по вертикали"}}');return;}
+  var span=c.rowspan;
+  var cs=(c.colspan&&c.colspan>1)?c.colspan:1;
+  var col=_ldVisualCol(ar,ri,ci);
+  delete c.rowspan;
+  // в каждую ранее накрытую строку вставляем пустую ячейку (с colspan, если был).
+  for(var k=1;k<span;k++){
+    var tr=ri+k;
+    if(tr>=ar.rows.length)break;
+    if(!ar.rows[tr].cells)ar.rows[tr].cells=[];
+    // позиция вставки: индекс ячейки, чья визуальная колонка >= col (или конец).
+    var lay=_ldColLayout(ar);
+    var rowStarts=lay.starts[tr]||[];
+    var insAt=rowStarts.length;
+    for(var i=0;i<rowStarts.length;i++){if(rowStarts[i]>=col){insAt=i;break;}}
+    var blank={};
+    if(cs>1)blank.colspan=cs;
+    ar.rows[tr].cells.splice(insAt,0,blank);
   }
   renderLayoutEditor(n);
 }
@@ -4736,7 +5127,12 @@ const cfgTabTree = `{{define "tab-tree"}}
         <button type="button" onclick="ldDelColumn('{{.Name}}')"  style="font-size:12px;padding:4px 10px;background:#fff;border:1px solid #fcc;border-radius:4px;cursor:pointer;color:#c33">{{t $.Lang "Удалить колонку"}}</button>
         <span style="width:1px;background:#d1d5db;align-self:stretch"></span>
         <button type="button" onclick="ldMerge('{{.Name}}')"      style="font-size:12px;padding:4px 10px;background:#fff;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer">{{t $.Lang "Объединить"}} →</button>
-        <button type="button" onclick="ldSplit('{{.Name}}')"      style="font-size:12px;padding:4px 10px;background:#fff;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer">{{t $.Lang "Разъединить"}}</button>
+        <button type="button" onclick="ldMergeDown('{{.Name}}')"  style="font-size:12px;padding:4px 10px;background:#fff;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer">{{t $.Lang "Объединить вниз"}} ↓</button>
+        <button type="button" onclick="ldSplit('{{.Name}}')"      style="font-size:12px;padding:4px 10px;background:#fff;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer">{{t $.Lang "Разъединить"}} →</button>
+        <button type="button" onclick="ldUnmergeVertical('{{.Name}}')" style="font-size:12px;padding:4px 10px;background:#fff;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer">{{t $.Lang "Разъединить вниз"}} ↓</button>
+        <span style="width:1px;background:#d1d5db;align-self:stretch"></span>
+        <button type="button" onclick="ldPreview('{{.Name}}','{{.Document}}','html')" style="font-size:12px;padding:4px 10px;background:#0ea5e9;color:#fff;border:none;border-radius:4px;cursor:pointer">{{t $.Lang "Предпросмотр"}}</button>
+        <button type="button" onclick="ldPreview('{{.Name}}','{{.Document}}','pdf')"  style="font-size:12px;padding:4px 10px;background:#fff;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer">{{t $.Lang "Предпросмотр PDF"}}</button>
       </div>
 
       {{/* Split view: YAML editor (left) + visual designer (right) */}}
@@ -4754,14 +5150,34 @@ const cfgTabTree = `{{define "tab-tree"}}
           <div style="background:#f8fafc;border-bottom:1px solid #e2e8f0;padding:3px 10px;font-size:11px;font-weight:600;color:#64748b;flex-shrink:0;letter-spacing:.03em">{{t $.Lang "Конструктор"}}</div>
           <div id="veditor-{{.Name}}" style="flex:1;padding:8px;overflow:auto;background:#fff">{{if .LayoutPreview}}{{.LayoutPreview}}{{else}}<p style="color:#999;font-size:12px">{{t $.Lang "Нет данных. Нажмите «+ Область» для начала."}}</p>{{end}}</div>
         </div>
+        {{/* Data binding panel (6.5): дерево реквизитов/ТЧ/констант */}}
+        <div style="flex:0 0 220px;display:flex;flex-direction:column;min-width:0;border-left:1px solid #d1d5db;background:#fcfdff">
+          <div style="background:#f8fafc;border-bottom:1px solid #e2e8f0;padding:3px 10px;font-size:11px;font-weight:600;color:#64748b;flex-shrink:0;letter-spacing:.03em">{{t $.Lang "Данные"}}</div>
+          <div id="vdata-{{.Name}}" style="flex:1;padding:6px 8px;overflow:auto;font-size:12px"></div>
+        </div>
       </div>
 
       {{/* Cell properties panel */}}
       <div id="vprops-{{.Name}}" style="display:none;background:#f0f8ff;border:1px solid #b0d0f0;border-radius:4px;padding:10px;margin-top:8px">
-        <div style="font-weight:bold;margin-bottom:6px;font-size:12px">{{t $.Lang "Свойства ячейки"}}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <span style="font-weight:bold;font-size:12px">{{t $.Lang "Свойства ячейки"}}</span>
+          <button type="button" onclick="ldDelCell('{{.Name}}')" style="font-size:11px;padding:3px 8px;background:#fff;border:1px solid #fcc;border-radius:4px;cursor:pointer;color:#c33">{{t $.Lang "Удалить ячейку"}}</button>
+        </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;font-size:12px">
           <div><label>{{t $.Lang "Текст"}}</label><br><input id="vp-text-{{.Name}}" style="width:100%;padding:3px" oninput="updateCellProp('{{.Name}}','text',this.value)"></div>
           <div><label>{{t $.Lang "Параметр"}}</label><br><input id="vp-param-{{.Name}}" style="width:100%;padding:3px" oninput="updateCellProp('{{.Name}}','parameter',this.value)"></div>
+          <div><label>{{t $.Lang "Формат"}}</label><br>
+            <select id="vp-fmt-{{.Name}}" style="width:100%;padding:3px" onchange="ldSetFormat('{{.Name}}',this.value)">
+              <option value="">{{t $.Lang "Без формата"}}</option>
+              <option value="date">{{t $.Lang "Дата"}}</option>
+              <option value="datetime">{{t $.Lang "Дата и время"}}</option>
+              <option value="number:2">{{t $.Lang "Число (2 знака)"}}</option>
+              <option value="number:3">{{t $.Lang "Число (3 знака)"}}</option>
+              <option value="currency">{{t $.Lang "Валюта"}}</option>
+              <option value="upper">{{t $.Lang "ВЕРХНИЙ регистр"}}</option>
+              <option value="lower">{{t $.Lang "нижний регистр"}}</option>
+            </select>
+          </div>
           <div><label>{{t $.Lang "Шрифт"}}</label><br>
             <select id="vp-ff-{{.Name}}" style="width:100%;padding:3px" onchange="updateCellProp('{{.Name}}','fontFamily',this.value)">
               <option value="">{{t $.Lang "По умолчанию"}}</option>

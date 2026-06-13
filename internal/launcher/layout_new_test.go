@@ -11,8 +11,10 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/ivantit66/onebase/internal/configdb"
 	"github.com/ivantit66/onebase/internal/metadata"
 	"github.com/ivantit66/onebase/internal/printform"
+	"github.com/ivantit66/onebase/internal/storage"
 )
 
 // План 64, этап 5a (6.4): создание макета с нуля.
@@ -136,7 +138,7 @@ func newLayoutTestBase(t *testing.T) (*handler, *Base, string) {
 	dir := t.TempDir()
 	// минимальный проект: документ с табличной частью.
 	os.MkdirAll(filepath.Join(dir, "documents"), 0o755)
-	doc := "name: Реализация\nfields:\n  - name: Дата\n    type: date\ntableparts:\n  - name: Товары\n    fields:\n      - name: Номенклатура\n        type: string\n      - name: Сумма\n        type: number\n"
+	doc := "name: Реализация\nfields:\n  - name: Номер\n    type: string\n  - name: Дата\n    type: date\ntableparts:\n  - name: Товары\n    fields:\n      - name: Номенклатура\n        type: string\n      - name: Сумма\n        type: number\n"
 	if err := os.WriteFile(filepath.Join(dir, "documents", "реализация.yaml"), []byte(doc), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -229,6 +231,114 @@ func TestNewLayout_BadNameRejected(t *testing.T) {
 	// никакого файла за пределами printforms не создано.
 	if _, err := os.Stat(filepath.Join(dir, "evil.layout.yaml")); err == nil {
 		t.Error("создан файл по traversal-пути")
+	}
+}
+
+// newLayoutTestBaseDB создаёт database-config базу: SQLite-файл с таблицей
+// _onebase_config, в которую импортирован минимальный проект (документ с ТЧ).
+// Возвращает handler, базу и путь к db-файлу. Долг этапа 5a — configdb-режим.
+func newLayoutTestBaseDB(t *testing.T) (*handler, *Base) {
+	t.Helper()
+	s := newTestStore(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(t.TempDir(), "cfg.db")
+
+	// исходный каталог конфигурации для импорта в БД.
+	os.MkdirAll(filepath.Join(dir, "documents"), 0o755)
+	doc := "name: Реализация\nfields:\n  - name: Номер\n    type: string\ntableparts:\n  - name: Товары\n    fields:\n      - name: Номенклатура\n        type: string\n      - name: Сумма\n        type: number\n"
+	if err := os.WriteFile(filepath.Join(dir, "documents", "реализация.yaml"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	db, err := storage.ConnectSQLite(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("ConnectSQLite: %v", err)
+	}
+	repo := configdb.New(db)
+	if err := repo.EnsureSchema(ctx); err != nil {
+		db.Close()
+		t.Fatalf("EnsureSchema: %v", err)
+	}
+	if err := repo.ImportFromDir(ctx, dir); err != nil {
+		db.Close()
+		t.Fatalf("ImportFromDir: %v", err)
+	}
+	db.Close()
+
+	b := &Base{Name: "ТестБД", ConfigSource: "database", DBType: "sqlite", DBPath: dbPath}
+	if err := s.Add(b); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	return &handler{store: s, runner: NewRunner()}, b
+}
+
+// configReadLayout читает содержимое макета из _onebase_config.
+func configReadLayout(t *testing.T, b *Base, relPath string) ([]byte, bool) {
+	t.Helper()
+	ctx := context.Background()
+	db, err := storage.ConnectSQLite(ctx, b.DBPath)
+	if err != nil {
+		t.Fatalf("ConnectSQLite: %v", err)
+	}
+	defer db.Close()
+	content, ok, err := configdb.New(db).ReadFile(ctx, relPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	return content, ok
+}
+
+// configdb happy-path: создание макета у сущности пишет parseable v2 в _onebase_config.
+func TestNewLayout_DBHappyPath(t *testing.T) {
+	h, b := newLayoutTestBaseDB(t)
+	rec := postNewLayout(t, h, b, url.Values{
+		"entity": {"Реализация"},
+		"name":   {"ТоварнаяНакладная"},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("код %d, тело %s", rec.Code, rec.Body.String())
+	}
+	content, ok := configReadLayout(t, b, "printforms/ТоварнаяНакладная.layout.yaml")
+	if !ok {
+		t.Fatal("макет не записан в _onebase_config")
+	}
+	parsed, err := printform.ParseLayoutBytes(content)
+	if err != nil {
+		t.Fatalf("созданный макет не парсится: %v\n%s", err, content)
+	}
+	if parsed.Area("Строка") == nil {
+		t.Error("в макете нет области Строка")
+	}
+	if parsed.Binding == nil || len(parsed.Binding.Repeat) != 1 || parsed.Binding.Repeat[0].Source != "Товары" {
+		t.Errorf("binding по ТЧ Товары не задан: %+v", parsed.Binding)
+	}
+}
+
+// configdb duplicate: повторное создание того же макета отклоняется, исходное не меняется.
+func TestNewLayout_DBDuplicateRejected(t *testing.T) {
+	h, b := newLayoutTestBaseDB(t)
+	// первый раз — успех.
+	rec1 := postNewLayout(t, h, b, url.Values{"entity": {"Реализация"}, "name": {"Дубль"}})
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("первый POST код %d", rec1.Code)
+	}
+	before, ok := configReadLayout(t, b, "printforms/Дубль.layout.yaml")
+	if !ok {
+		t.Fatal("первый макет не записан")
+	}
+
+	// второй раз — отказ.
+	rec2 := postNewLayout(t, h, b, url.Values{"entity": {"Реализация"}, "name": {"Дубль"}})
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("второй POST код %d", rec2.Code)
+	}
+	if !strings.Contains(rec2.Body.String(), "уже существует") && !strings.Contains(rec2.Body.String(), "exists") {
+		t.Errorf("ожидалась ошибка дубликата, тело: %s", rec2.Body.String())
+	}
+	after, _ := configReadLayout(t, b, "printforms/Дубль.layout.yaml")
+	if string(after) != string(before) {
+		t.Error("существующая запись макета была перезаписана")
 	}
 }
 
