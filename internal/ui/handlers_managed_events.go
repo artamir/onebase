@@ -553,6 +553,14 @@ func (s *Server) handleProcessorFormEvent(w http.ResponseWriter, r *http.Request
 		enc.Encode(formEventResponse{Error: "доступ запрещён"})
 		return
 	}
+	// Тот же trust-гейт, что и у processorRun: form-event исполняет DSL
+	// обработки (form-обработчики и кнопка «Выполнить»), поэтому недоверенную
+	// внешнюю обработку здесь тоже может запускать только администратор —
+	// иначе неадмин обходил бы проверку через /form-event.
+	if !s.canRunExternalProc(r, proc) {
+		enc.Encode(formEventResponse{Error: "доступ запрещён"})
+		return
+	}
 
 	form := proc.ManagedForm()
 	if form == nil {
@@ -643,6 +651,10 @@ func (s *Server) handleProcessorFormEvent(w http.ResponseWriter, r *http.Request
 
 	// No form handler — for "Нажатие" on execute button, run processor logic
 	if eventName == string(metadata.FormEventOnClick) {
+		if proc.External {
+			// Исполнение внешней обработки (DSL) всегда логируем — как в processorRun.
+			s.auditExtProcRun(r, proc.Name)
+		}
 		paramValues := map[string]any{}
 		for _, p := range proc.Params {
 			paramValues[p.Name] = parseParamValue(r.FormValue(p.Name), p.Type)
