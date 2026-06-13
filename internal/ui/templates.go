@@ -1524,7 +1524,14 @@ const tplForm = `
         ]}
       });
       // Инициализация содержимым из textarea (санитизированный HTML с сервера).
-      q.root.innerHTML = ta.value;
+      // Грузим через clipboard.convert → Delta, а НЕ через root.innerHTML:
+      // innerHTML вставляет сырой DOM мимо парсера Quill, контент не попадает
+      // в Delta/Parchment-модель, и при повторном открытии сохранённого
+      // документа семантические <ul>/<ol> (без data-list) не распознаются
+      // нативным list-blot → списки искажаются при первом же редактировании.
+      // clipboard.convert прогоняет HTML через matcher (<ul>→bullet,<ol>→ordered)
+      // и строит корректную Delta. "silent" — без записи в историю undo.
+      q.setContents(q.clipboard.convert({ html: ta.value }), "silent");
       ta.style.display = "none";
       // Синхронизация: на каждое изменение и принудительно перед submit.
       // normalizeLists: Quill 2.x все списки рендерит как <ol> с
@@ -1540,8 +1547,11 @@ const tplForm = `
             return el.tagName === "LI";
           });
           if (!items.length) return;
-          // Тип определяем по первому элементу (вложенные списки Quill кладёт
-          // отдельными <ol> — обрабатываются той же итерацией querySelectorAll).
+          // Тип top-level списка определяем по первому <li>: data-list="bullet"
+          // → <ul>, иначе оставляем <ol>. (Вложенность в Quill 2.x — это НЕ
+          // отдельные <ol>, а плоские <li class="ql-indent-N"> в том же списке;
+          // вложенные уровни/отступы вне MVP — классы ql-indent вырезает
+          // санитайзер, список схлопывается в один уровень.)
           var isBullet = items[0].getAttribute("data-list") === "bullet";
           if (isBullet) {
             var ul = document.createElement("ul");

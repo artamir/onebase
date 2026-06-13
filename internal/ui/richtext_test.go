@@ -105,6 +105,8 @@ func TestPageForm_RichTextLoadsQuill(t *testing.T) {
 		`/vendor/quill/quill.snow.css`,                      // CSS офлайн
 		`/vendor/quill/quill.js`,                            // bundle офлайн
 		`new Quill(`,                                        // init-код
+		`q.clipboard.convert(`,                              // загрузка через парсер Quill
+		`q.setContents(`,                                    // Delta, а не сырой innerHTML
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("page-form не содержит %q", want)
