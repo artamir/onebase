@@ -128,25 +128,8 @@ func (s *Server) loadPrintContext(r *http.Request, entity *metadata.Entity, id u
 		TableParts:     tpRows,
 		Constants:      constants,
 		Refs:           refs,
-		RichTextFields: richTextFieldSet(entity),
+		RichTextFields: printform.RichTextFields(entity),
 	}, nil
-}
-
-// richTextFieldSet возвращает множество имён richtext-полей сущности (в нижнем
-// регистре) для RenderContext.RichTextFields — печатная форма выводит такие поля
-// как HTML (форматирование+картинки), план 65 этап 3. richtext допустим только в
-// реквизитах шапки (валидация запрещает его в ТЧ), поэтому ТЧ не обходим.
-func richTextFieldSet(entity *metadata.Entity) map[string]bool {
-	var set map[string]bool
-	for _, f := range entity.Fields {
-		if metadata.IsRichText(f.Type) {
-			if set == nil {
-				set = make(map[string]bool)
-			}
-			set[strings.ToLower(f.Name)] = true
-		}
-	}
-	return set
 }
 
 // buildDeclarativeSheet строит sheet.Document по декларативной форме (макет +

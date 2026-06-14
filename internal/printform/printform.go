@@ -1,6 +1,31 @@
 package printform
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/ivantit66/onebase/internal/metadata"
+)
+
+// RichTextFields возвращает множество имён richtext-полей сущности (в нижнем
+// регистре) для RenderContext.RichTextFields — печатная форма/предпросмотр
+// выводят такие поля как HTML (форматирование+картинки), план 65 этап 3.
+// richtext допустим только в реквизитах шапки (валидация запрещает его в ТЧ),
+// поэтому ТЧ не обходим. Возвращает nil, если richtext-полей нет.
+func RichTextFields(entity *metadata.Entity) map[string]bool {
+	if entity == nil {
+		return nil
+	}
+	var set map[string]bool
+	for _, f := range entity.Fields {
+		if metadata.IsRichText(f.Type) {
+			if set == nil {
+				set = make(map[string]bool)
+			}
+			set[strings.ToLower(f.Name)] = true
+		}
+	}
+	return set
+}
 
 // PrintForm describes a declarative print form loaded from YAML.
 type PrintForm struct {

@@ -172,10 +172,11 @@ func (h *handler) loadLastRecordContext(ctx context.Context, b *Base, ent *metad
 	constants, _ := db.ListConstants(ctx)
 
 	return &printform.RenderContext{
-		Document:   row,
-		TableParts: tpRows,
-		Constants:  constants,
-		Refs:       refs,
+		Document:       row,
+		TableParts:     tpRows,
+		Constants:      constants,
+		Refs:           refs,
+		RichTextFields: printform.RichTextFields(ent),
 	}
 }
 
@@ -250,9 +251,10 @@ func syntheticContext(ent *metadata.Entity) *printform.RenderContext {
 	}
 
 	return &printform.RenderContext{
-		Document:   doc,
-		TableParts: tpRows,
-		Constants:  map[string]any{},
+		Document:       doc,
+		TableParts:     tpRows,
+		Constants:      map[string]any{},
+		RichTextFields: printform.RichTextFields(ent),
 	}
 }
 

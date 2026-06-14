@@ -3,6 +3,8 @@ package printform
 import (
 	"strings"
 	"testing"
+
+	"github.com/ivantit66/onebase/internal/metadata"
 )
 
 // richLayout — макет с одним параметром, привязанным к полю «Результат».
@@ -152,5 +154,40 @@ func TestIsRichTextField(t *testing.T) {
 	empty := &RenderContext{}
 	if empty.isRichTextField("Результат") {
 		t.Errorf("пустое множество вернуло true")
+	}
+}
+
+// TestRichTextFields — хелпер собирает richtext-поля сущности в lowercase-множество;
+// обычные поля не попадают, nil-сущность даёт nil. Используется и печатью, и
+// предпросмотром макета (план 65, этап 3).
+func TestRichTextFields(t *testing.T) {
+	ent := &metadata.Entity{
+		Name: "Задача",
+		Fields: []metadata.Field{
+			{Name: "Описание", Type: metadata.FieldTypeString},
+			{Name: "Результат", Type: metadata.FieldTypeRichText},
+			{Name: "Примечание", Type: metadata.FieldTypeRichText},
+			{Name: "Сумма", Type: metadata.FieldTypeNumber},
+		},
+	}
+	set := RichTextFields(ent)
+	if !set["результат"] || !set["примечание"] {
+		t.Errorf("richtext-поля не попали в множество: %v", set)
+	}
+	if set["описание"] || set["сумма"] {
+		t.Errorf("обычные поля попали в множество: %v", set)
+	}
+	if len(set) != 2 {
+		t.Errorf("размер множества = %d, want 2 (%v)", len(set), set)
+	}
+
+	// Сущность без richtext-полей → nil.
+	plain := &metadata.Entity{Fields: []metadata.Field{{Name: "Имя", Type: metadata.FieldTypeString}}}
+	if RichTextFields(plain) != nil {
+		t.Errorf("ожидался nil для сущности без richtext-полей")
+	}
+	// nil-сущность → nil без паники.
+	if RichTextFields(nil) != nil {
+		t.Errorf("ожидался nil для nil-сущности")
 	}
 }
