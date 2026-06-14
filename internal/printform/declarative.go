@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ivantit66/onebase/internal/richtext"
 	"github.com/ivantit66/onebase/internal/sheet"
 )
 
@@ -118,8 +119,18 @@ func buildAreaSheet(area *LayoutArea, ctx *RenderContext, row map[string]any, ro
 			cell := layoutCellToSheet(ld)
 			// Текст ячейки: параметр > интерполяция text > статический text.
 			if ld.Parameter != "" {
-				cell.Text = resolveParameter(ld.Parameter, params, ctx, row, rowNum)
-				cell.Value = cell.Text
+				// richtext-поле (план 65, этап 3): кладём санитизированный HTML в
+				// RichHTML (форматирование+картинки в печати), а не в экранируемый
+				// Text. Применяется только к параметрам контекста документа (row==nil):
+				// richtext в табличных частях запрещён валидацией (этап 1).
+				if row == nil && isRichTextParam(ld.Parameter, params, ctx) {
+					cell.RichHTML = resolveRichParameter(ld.Parameter, params, ctx, row, rowNum)
+					cell.Text = ""
+					cell.Value = cell.RichHTML
+				} else {
+					cell.Text = resolveParameter(ld.Parameter, params, ctx, row, rowNum)
+					cell.Value = cell.Text
+				}
 			} else if strings.Contains(ld.Text, "{{") {
 				cell.Text = InterpolateText(ld.Text, ctx, row, rowNum)
 				cell.Value = cell.Text
@@ -158,13 +169,36 @@ func buildAreaSheet(area *LayoutArea, ctx *RenderContext, row map[string]any, ro
 // выражение для параметра — используется оно; иначе автопривязка по одноимённому
 // полю (имя параметра трактуется как выражение).
 func resolveParameter(name string, params map[string]string, ctx *RenderContext, row map[string]any, rowNum int) string {
-	expr := name
+	return ResolveValue(paramExpr(name, params), ctx, row, rowNum)
+}
+
+// paramExpr возвращает выражение параметра: из карты params либо само имя
+// (автопривязка по одноимённому полю).
+func paramExpr(name string, params map[string]string) string {
 	if params != nil {
 		if e, ok := lookupParam(params, name); ok {
-			expr = e
+			return e
 		}
 	}
-	return ResolveValue(expr, ctx, row, rowNum)
+	return name
+}
+
+// isRichTextParam сообщает, привязан ли параметр к richtext-полю сущности
+// (план 65, этап 3). Выражение параметра берётся из params (или имя параметра)
+// и проверяется по ctx.RichTextFields.
+func isRichTextParam(name string, params map[string]string, ctx *RenderContext) bool {
+	return ctx.isRichTextField(paramExpr(name, params))
+}
+
+// resolveRichParameter возвращает санитизированный richtext-HTML параметра.
+// Значение поля резолвится напрямую (без ApplyFormat — формат к HTML неприменим)
+// и пропускается через richtext.Sanitize ещё раз (defense-in-depth: данные могли
+// прийти из БД/импорта/API в обход санитайза на сохранении).
+func resolveRichParameter(name string, params map[string]string, ctx *RenderContext, row map[string]any, rowNum int) string {
+	expr, _ := splitExprFormat(paramExpr(name, params))
+	val := ResolveExpr(expr, ctx, row, rowNum)
+	s, _ := val.(string)
+	return richtext.Sanitize(s)
 }
 
 // lookupParam ищет параметр в карте регистронезависимо.

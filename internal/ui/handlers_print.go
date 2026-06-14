@@ -124,10 +124,11 @@ func (s *Server) loadPrintContext(r *http.Request, entity *metadata.Entity, id u
 	refs := s.buildPrintRefs(r.Context(), row, entity, tpRows)
 	constants, _ := s.store.ListConstants(r.Context())
 	return &printform.RenderContext{
-		Document:   row,
-		TableParts: tpRows,
-		Constants:  constants,
-		Refs:       refs,
+		Document:       row,
+		TableParts:     tpRows,
+		Constants:      constants,
+		Refs:           refs,
+		RichTextFields: printform.RichTextFields(entity),
 	}, nil
 }
 
