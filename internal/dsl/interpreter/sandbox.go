@@ -58,12 +58,39 @@ func (p SandboxProfile) Vars() map[string]any {
 			m[k] = v
 		}
 	}
+	// ИИ-builtin'ы (llm_builtins.go) ходят в сеть (ai.Ask), а РаспознатьДокумент
+	// ещё и читает файл с диска ДО сетевого вызова. Они внедряются через
+	// dslvars.Build(), но не входят в HTTP/Email/File-наборы выше — поэтому
+	// перекрываем их отдельно, иначе они стали бы дырой в границе песочницы.
+	if !p.AllowNet {
+		deny := llmDenyFn("ИИ-запросы запрещены в этом режиме (песочница)")
+		for k := range NewLLMFunctions(nil) {
+			m[k] = deny
+		}
+	}
+	if !p.AllowFile {
+		// РаспознатьДокумент/RecognizeDocument читают файл — закрываем и при
+		// запрете только файлов (профиль AllowNet=true, AllowFile=false).
+		deny := llmDenyFn("файловые операции запрещены в этом режиме (песочница)")
+		m["РаспознатьДокумент"] = deny
+		m["RecognizeDocument"] = deny
+	}
 	return m
 }
 
+// llmDenyFn — заглушка ИИ-builtin'а, мгновенно запрещающая вызов (userError,
+// ловится Попыткой). Песочница перекрывает ею ИИ-функции, которые ходят в сеть
+// и читают файлы.
+func llmDenyFn(msg string) BuiltinFunc {
+	return func(args []any, file string, line int) (any, error) {
+		panic(userError{Msg: msg})
+	}
+}
+
 // RunSandboxed исполняет процедуру с ресурсными лимитами профиля (wall-clock и
-// итерации). Запреты возможностей (сеть/файлы) подаются вызывающим через
-// extraVars (см. SandboxProfile.Vars). Возвращаемое значение — в result.
+// итерации). Запреты возможностей (сеть/файлы/ИИ) подаются вызывающим через
+// extraVars: передайте p.Vars() ПОСЛЕ обычных переменных запуска, иначе
+// возможности не будут ограничены. Возвращаемое значение — в result.
 func (i *Interpreter) RunSandboxed(proc *ast.ProcedureDecl, this This, p SandboxProfile, result *any, extraVars ...map[string]any) (err error) {
 	e := i.startEnv(this)
 	if p.MaxWallClock > 0 {

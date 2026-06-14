@@ -112,12 +112,31 @@ func TestSandbox_NetDeniedCatchable(t *testing.T) {
 	assert.Contains(t, result.(string), "сеть запрещена")
 }
 
+// Строгий профиль запрещает ИИ-builtin'ы (сеть + чтение файла); ловится Попыткой.
+func TestSandbox_LLMDeniedCatchable(t *testing.T) {
+	src := `Процедура Тест()
+  Попытка
+    ЗапросИИ("привет");
+    Возврат "без ошибки";
+  Исключение
+    Возврат ОписаниеОшибки();
+  КонецПопытки;
+КонецПроцедуры`
+	p := interpreter.RestrictedProfile()
+	var result any
+	err := interpreter.New().RunSandboxed(parseProc(t, src), nil, p, &result, p.Vars())
+	require.NoError(t, err)
+	assert.Contains(t, result.(string), "запрещены")
+}
+
 // При AllowNet/AllowFile профиль не внедряет запретов — нет регрессии.
 func TestSandbox_AllowedNoVars(t *testing.T) {
 	p := interpreter.SandboxProfile{AllowNet: true, AllowFile: true}
 	v := p.Vars()
 	_, hasFile := v["копироватьфайл"]
 	_, hasMail := v["ОтправитьПисьмо"] // ключ NewEmailFunctions — смешанный регистр
+	_, hasAI := v["ЗапросИИ"]
 	assert.False(t, hasFile, "при AllowFile не должно быть файловых запретов")
 	assert.False(t, hasMail, "при AllowNet не должно быть сетевых запретов")
+	assert.False(t, hasAI, "при AllowNet не должно быть запретов ИИ")
 }
