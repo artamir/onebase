@@ -314,7 +314,9 @@ func (h *handler) cfgAIGenerate(w http.ResponseWriter, r *http.Request) {
 		Messages: []llm.Message{llm.UserText(req.Prompt)},
 	}, tools, exec)
 	if err != nil {
-		writeJSON(w, 200, map[string]any{"error": llm.SafeErr(err)})
+		// Отдаём уже созданные черновики даже при ошибке/исчерпании раундов —
+		// иначе частичная работа модели теряется (по финальному ревью).
+		writeJSON(w, 200, map[string]any{"error": llm.SafeErr(err), "changes": g.diff()})
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true, "text": resp.Text, "model": resp.Model, "changes": g.diff()})
