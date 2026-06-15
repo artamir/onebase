@@ -1,15 +1,21 @@
 package launcher
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/ivantit66/onebase/internal/configcheck"
+	"github.com/ivantit66/onebase/internal/llm"
 	"github.com/ivantit66/onebase/internal/project"
 )
 
@@ -176,6 +182,137 @@ func (g *genSession) diff() []GenChange {
 		out = append(out, ch)
 	}
 	return out
+}
+
+func strInput(call llm.ToolCall, key string) string {
+	if v, ok := call.Input[key]; ok {
+		return fmt.Sprintf("%v", v)
+	}
+	return ""
+}
+
+// tools формирует инструменты записи в staging для RunWithTools.
+func (g *genSession) tools() ([]llm.Tool, llm.ToolExecutor) {
+	tools := []llm.Tool{
+		{
+			Name:        "создать_объект",
+			Description: "Создать черновик объекта метаданных в конфигурации. тип: справочник|документ|регистр накопления|регистр сведений|перечисление|план счетов|регистр бухгалтерии. имя — на русском. yaml — содержимое файла объекта (без модулей .os).",
+			Schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"тип":  map[string]any{"type": "string"},
+					"имя":  map[string]any{"type": "string"},
+					"yaml": map[string]any{"type": "string"},
+				},
+				"required": []any{"тип", "имя", "yaml"},
+			},
+		},
+		{
+			Name:        "проверить_конфигурацию",
+			Description: "Проверить черновик конфигурации (валидность YAML и ссылки). Вызывай после создания объектов и исправляй найденные ошибки.",
+			Schema:      map[string]any{"type": "object", "properties": map[string]any{}},
+		},
+		{
+			Name:        "показать_объект",
+			Description: "Показать YAML существующего объекта по имени — чтобы повторно использовать его поля/типы.",
+			Schema: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{"имя": map[string]any{"type": "string"}},
+				"required":   []any{"имя"},
+			},
+		},
+	}
+	exec := func(_ context.Context, call llm.ToolCall) llm.ToolResult {
+		switch call.Name {
+		case "создать_объект":
+			if err := g.createObject(strInput(call, "тип"), strInput(call, "имя"), strInput(call, "yaml")); err != nil {
+				return llm.ToolResult{ID: call.ID, Content: "ошибка: " + err.Error(), IsError: true}
+			}
+			return llm.ToolResult{ID: call.ID, Content: "создан объект " + strInput(call, "имя")}
+		case "проверить_конфигурацию":
+			return llm.ToolResult{ID: call.ID, Content: g.check()}
+		case "показать_объект":
+			return llm.ToolResult{ID: call.ID, Content: g.showObject(strInput(call, "имя"))}
+		default:
+			return llm.ToolResult{ID: call.ID, Content: "неизвестный инструмент: " + call.Name, IsError: true}
+		}
+	}
+	return tools, exec
+}
+
+// aiGenerateSystem — роль генератора каркаса конфигурации.
+var aiGenerateSystem = "Ты — генератор каркаса конфигурации OneBase (платформа учёта, похожая на 1С). " +
+	"По описанию задачи на русском создавай объекты метаданных через инструмент «создать_объект»: " +
+	"справочники, документы (с табличными частями), регистры, перечисления. Только метаданные YAML — " +
+	"без модулей .os (проводки/обработчики на этом шаге не генерируются). " +
+	"После создания набора объектов обязательно вызывай «проверить_конфигурацию» и исправляй ошибки. " +
+	"Используй существующие объекты (через «показать_объект») вместо дублирования. " +
+	"Имена и типы полей бери реальные; не выдумывай несуществующие типы. Известные функции: " + builtinReference
+
+// cfgAIGenerate — генерация каркаса конфигурации по ТЗ в staging-черновик.
+// Возвращает предложенный diff; рабочую конфигурацию НЕ меняет (применение — этап 2b).
+func (h *handler) cfgAIGenerate(w http.ResponseWriter, r *http.Request) {
+	b, err := h.store.Get(chi.URLParam(r, "id"))
+	if err != nil {
+		writeJSON(w, 404, map[string]any{"error": "not found"})
+		return
+	}
+	var req struct {
+		Prompt string `json:"prompt"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, 400, map[string]any{"error": "Некорректный запрос"})
+		return
+	}
+	if strings.TrimSpace(req.Prompt) == "" {
+		writeJSON(w, 400, map[string]any{"error": "Пустой запрос"})
+		return
+	}
+	db, err := getAuthDB(r.Context(), b)
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
+	cfg, err := db.GetLLMConfig(r.Context())
+	if err != nil {
+		writeJSON(w, 200, map[string]any{"error": "Конфиг ИИ повреждён: " + err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	defer cancel()
+
+	dir, cleanup, err := materializeProject(ctx, h, b)
+	if err != nil {
+		writeJSON(w, 200, map[string]any{"error": "не удалось получить конфигурацию: " + err.Error()})
+		return
+	}
+	if cleanup != nil {
+		defer cleanup()
+	}
+	g, err := newGenSession(dir)
+	if err != nil {
+		writeJSON(w, 200, map[string]any{"error": "не удалось создать черновик: " + err.Error()})
+		return
+	}
+	defer g.close()
+
+	system := aiGenerateSystem
+	if schema := h.configSchemaText(ctx, b); schema != "" {
+		system += "\n\nТекущая конфигурация базы:\n" + schema
+	}
+
+	tools, exec := g.tools()
+	runner := llm.New(cfg, nil)
+	resp, err := runner.RunWithTools(ctx, "конфигуратор", llm.ChatRequest{
+		System:   system,
+		Messages: []llm.Message{llm.UserText(req.Prompt)},
+	}, tools, exec)
+	if err != nil {
+		writeJSON(w, 200, map[string]any{"error": llm.SafeErr(err)})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true, "text": resp.Text, "model": resp.Model, "changes": g.diff()})
 }
 
 // copyTree рекурсивно копирует содержимое src в dst.

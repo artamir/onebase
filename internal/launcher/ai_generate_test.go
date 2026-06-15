@@ -1,10 +1,13 @@
 package launcher
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ivantit66/onebase/internal/llm"
 )
 
 const validCatalogYAML = "name: Клиент\nfields:\n  - {name: Наименование, type: string}\n"
@@ -100,5 +103,28 @@ func TestGenShowObject_ReadsExisting(t *testing.T) {
 	t.Cleanup(g.close)
 	if out := g.showObject("Товар"); !strings.Contains(out, "name: Товар") {
 		t.Errorf("showObject не вернул YAML: %q", out)
+	}
+}
+
+func TestGenTools_Dispatch(t *testing.T) {
+	g := newTestGenSession(t)
+	tools, exec := g.tools()
+	if len(tools) != 3 {
+		t.Fatalf("ожидалось 3 инструмента, получено %d", len(tools))
+	}
+	res := exec(context.Background(), llm.ToolCall{
+		ID:    "1",
+		Name:  "создать_объект",
+		Input: map[string]any{"тип": "справочник", "имя": "Клиент", "yaml": validCatalogYAML},
+	})
+	if res.IsError {
+		t.Fatalf("создать_объект вернул ошибку: %s", res.Content)
+	}
+	if _, err := os.Stat(filepath.Join(g.overlay, "catalogs", "клиент.yaml")); err != nil {
+		t.Errorf("инструмент не записал объект: %v", err)
+	}
+	chk := exec(context.Background(), llm.ToolCall{ID: "2", Name: "проверить_конфигурацию", Input: map[string]any{}})
+	if chk.IsError {
+		t.Errorf("проверить_конфигурацию не должен быть ошибкой: %s", chk.Content)
 	}
 }
