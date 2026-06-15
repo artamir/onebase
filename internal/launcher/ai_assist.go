@@ -135,7 +135,7 @@ func (h *handler) cfgAIAssist(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
 	system := aiAssistSystem
-	if schema := h.configSchemaText(r.Context(), b); schema != "" {
+	if schema := h.configSchemaText(ctx, b); schema != "" {
 		system += "\n\nТекущая конфигурация базы (объекты, поля, ТЧ, формы):\n" + schema
 	}
 	runner := llm.New(cfg, nil)
