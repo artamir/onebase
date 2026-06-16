@@ -54,6 +54,7 @@ func (h *handler) cfgAIExplain(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"error": llm.SafeErr(err)})
 		return
 	}
+	logCfgAI(r.Context(), db, cfg, cfgLogin(r.Context()), "конфигуратор-объяснение", req.Text, resp.Text, resp)
 	writeJSON(w, 200, map[string]any{"ok": true, "text": resp.Text, "model": resp.Model})
 }
 
@@ -112,5 +113,6 @@ func (h *handler) cfgAIQuery(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"error": llm.SafeErr(err)})
 		return
 	}
+	logCfgAI(r.Context(), db, cfg, cfgLogin(r.Context()), "конфигуратор-запрос", req.Description, resp.Text, resp)
 	writeJSON(w, 200, map[string]any{"ok": true, "query": resp.Text, "model": resp.Model})
 }

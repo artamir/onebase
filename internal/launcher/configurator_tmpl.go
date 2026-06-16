@@ -444,6 +444,7 @@ window.MonacoEnvironment = { getWorkerUrl: function () {
       <a href="#" onclick="cfgAdmin('audit');return false">{{t $.Lang "Журнал регистрации"}}</a>
       <a href="#" onclick="cfgAdmin('settings');return false">{{t $.Lang "Параметры базы"}}</a>
       <a href="#" onclick="cfgAdmin('ai');return false">{{t $.Lang "ИИ-помощник"}}</a>
+      <a href="#" onclick="cfgAdmin('ai-history');return false">{{t $.Lang "История ИИ"}}</a>
       <a href="#" onclick="toggleSyntaxRef();cfgMenuToggle();return false">{{t $.Lang "Справка по встроенному языку"}} (F1)</a>
       <a href="/bases/{{.Base.ID}}/configurator/logout" style="color:#c00;border-top:1px solid #e5e7eb;margin-top:2px">🚪 {{t $.Lang "Выйти"}}</a>
     </div>
@@ -4327,8 +4328,9 @@ document.querySelectorAll('details.cfg-tree').forEach(function(d){
   d.addEventListener('toggle',u);u();
 });
 </script>
-<!-- ИИ-помощник разработчика (план 51, F5) -->
+<!-- ИИ-инструменты конфигуратора: помощник (🤖, план 51) и генератор каркаса (🏗️, план 57) -->
 <button id="cfgai-btn" title="ИИ-помощник" style="display:none;position:fixed;right:18px;bottom:18px;z-index:9000;width:48px;height:48px;border-radius:50%;background:#7c3aed;color:#fff;border:none;cursor:pointer;font-size:22px;box-shadow:0 4px 14px rgba(124,58,237,.4)">🤖</button>
+<button id="cfggen-btn" title="Генерация каркаса" style="display:none;position:fixed;right:18px;bottom:76px;z-index:9000;width:48px;height:48px;border-radius:50%;background:#ea580c;color:#fff;border:none;cursor:pointer;font-size:22px;box-shadow:0 4px 14px rgba(234,88,12,.4)">🏗️</button>
 <div id="cfgai-panel" style="display:none;position:fixed;right:18px;bottom:18px;z-index:9001;width:420px;max-width:calc(100vw - 24px);height:560px;max-height:calc(100vh - 40px);background:#fff;border:1px solid #cbd5e1;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.22);flex-direction:column;overflow:hidden;font-family:system-ui,sans-serif">
   <div style="background:#7c3aed;color:#fff;padding:10px 14px;display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px">🤖 ИИ-помощник разработчика<span style="flex:1"></span><button type="button" id="cfgai-close" style="background:none;border:none;color:#fff;cursor:pointer;font-size:18px">×</button></div>
   <textarea id="cfgai-prompt" placeholder="Опишите, что сгенерировать или объяснить. Напр.: обработчик ПриОткрытии, который ставит текущую дату в поле Дата" style="margin:10px;height:80px;resize:vertical;border:1px solid #cbd5e1;border-radius:8px;padding:8px;font-size:13px;font-family:inherit"></textarea>
@@ -4336,18 +4338,52 @@ document.querySelectorAll('details.cfg-tree').forEach(function(d){
   <div style="margin:8px 10px;display:flex;gap:8px;align-items:center"><button id="cfgai-send" type="button" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:6px 16px;cursor:pointer;font-size:13px">Сгенерировать</button><button id="cfgai-copy" type="button" style="background:#e2e8f0;border:none;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:13px;display:none">Копировать</button><span id="cfgai-msg" style="font-size:11px"></span></div>
   <pre id="cfgai-out" style="flex:1;overflow:auto;margin:0 10px 10px;background:#0f172a;color:#e2e8f0;border-radius:8px;padding:10px;font-size:12px;white-space:pre-wrap;word-break:break-word"></pre>
 </div>
+<div id="cfggen-panel" style="display:none;position:fixed;right:18px;bottom:18px;z-index:9001;width:420px;max-width:calc(100vw - 24px);height:560px;max-height:calc(100vh - 40px);background:#fff;border:1px solid #cbd5e1;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.22);flex-direction:column;overflow:hidden;font-family:system-ui,sans-serif">
+  <div style="background:#ea580c;color:#fff;padding:10px 14px;display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px">🏗️ Генерация каркаса<span style="flex:1"></span><button type="button" id="cfggen-close" style="background:none;border:none;color:#fff;cursor:pointer;font-size:18px">×</button></div>
+  <textarea id="cfggen-prompt" placeholder="Опишите, что сгенерировать. Напр.: справочник Клиенты и документ Заявка с табличной частью Товары" style="margin:10px;height:80px;resize:vertical;border:1px solid #cbd5e1;border-radius:8px;padding:8px;font-size:13px;font-family:inherit"></textarea>
+  <div style="margin:0 10px 8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button id="cfggen-send" type="button" style="background:#ea580c;color:#fff;border:none;border-radius:8px;padding:6px 16px;cursor:pointer;font-size:13px">Сгенерировать</button><button id="cfggen-apply" type="button" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:6px 16px;cursor:pointer;font-size:13px;display:none">Применить</button><span id="cfggen-msg" style="font-size:11px"></span></div>
+  <div id="cfggen-out" style="flex:1;overflow:auto;margin:0 10px 10px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px;font-size:12px"></div>
+</div>
 <script>
 (function(){
   if(window.__cfgAiInit)return;window.__cfgAiInit=true;
   var base='{{.Base.ID}}';
-  fetch('/bases/'+base+'/configurator/ai-enabled').then(function(r){return r.json();}).then(function(d){if(d&&d.enabled)init();}).catch(function(){});
-  function init(){
-    var btn=document.getElementById('cfgai-btn'),panel=document.getElementById('cfgai-panel');
+  function anyPanelOpen(){
+    return document.getElementById('cfgai-panel').style.display==='flex'||document.getElementById('cfggen-panel').style.display==='flex';
+  }
+  function openPanel(id){
+    document.getElementById('cfgai-panel').style.display='none';
+    document.getElementById('cfggen-panel').style.display='none';
+    document.getElementById('cfgai-btn').style.display='none';
+    document.getElementById('cfggen-btn').style.display='none';
+    document.getElementById(id).style.display='flex';
+  }
+  function closePanel(id){
+    document.getElementById(id).style.display='none';
+    document.getElementById('cfgai-btn').style.display='';
+    document.getElementById('cfggen-btn').style.display='';
+  }
+  // Глобально доступна: перезапрашивает состояние ИИ и показывает/прячет
+  // плавающие кнопки. Зовётся при загрузке и после сохранения настроек ИИ —
+  // поэтому кнопки появляются без перезахода в конфигуратор.
+  window.cfgAiRefresh=function(){
+    fetch('/bases/'+base+'/configurator/ai-enabled').then(function(r){return r.json();}).then(function(d){
+      if(anyPanelOpen())return;
+      var on=!!(d&&d.enabled);
+      document.getElementById('cfgai-btn').style.display=on?'':'none';
+      document.getElementById('cfggen-btn').style.display=on?'':'none';
+    }).catch(function(){});
+  };
+  initAiHandlers();
+  initGenHandlers();
+  cfgAiRefresh();
+
+  function initAiHandlers(){
+    var btn=document.getElementById('cfgai-btn');
     var prompt=document.getElementById('cfgai-prompt'),send=document.getElementById('cfgai-send'),out=document.getElementById('cfgai-out');
     var msg=document.getElementById('cfgai-msg'),copy=document.getElementById('cfgai-copy'),useCode=document.getElementById('cfgai-usecode');
-    btn.style.display='';
-    btn.addEventListener('click',function(){panel.style.display='flex';btn.style.display='none';prompt.focus();});
-    document.getElementById('cfgai-close').addEventListener('click',function(){panel.style.display='none';btn.style.display='';});
+    btn.addEventListener('click',function(){openPanel('cfgai-panel');prompt.focus();});
+    document.getElementById('cfgai-close').addEventListener('click',function(){closePanel('cfgai-panel');});
     // Код одного блока .code-wrap: живой Monaco-редактор внутри него,
     // textarea (fallback-редактирование без Monaco) или подсвеченный pre.
     function wrapCode(w){
@@ -4402,6 +4438,53 @@ document.querySelectorAll('details.cfg-tree').forEach(function(d){
         .finally(function(){send.disabled=false;});
     });
     copy.addEventListener('click',function(){try{navigator.clipboard.writeText(out.textContent);msg.textContent='Скопировано';msg.style.color='#16a34a';}catch(e){}});
+  }
+
+  // Генератор каркаса: ТЗ → ai-generate (предложенный diff) → Применить (ai-apply).
+  function initGenHandlers(){
+    var btn=document.getElementById('cfggen-btn');
+    var prompt=document.getElementById('cfggen-prompt'),send=document.getElementById('cfggen-send');
+    var out=document.getElementById('cfggen-out'),msg=document.getElementById('cfggen-msg'),apply=document.getElementById('cfggen-apply');
+    var lastChanges=null;
+    btn.addEventListener('click',function(){openPanel('cfggen-panel');prompt.focus();});
+    document.getElementById('cfggen-close').addEventListener('click',function(){closePanel('cfggen-panel');});
+    function renderChanges(changes,note){
+      lastChanges=changes||[];
+      out.innerHTML='';
+      if(note){var n=document.createElement('div');n.style.cssText='color:#475569;font-size:12px;margin-bottom:6px;white-space:pre-wrap';n.textContent=note;out.appendChild(n);}
+      if(!lastChanges.length){var e=document.createElement('div');e.style.cssText='color:#94a3b8;font-size:12px';e.textContent='Модель не предложила объектов.';out.appendChild(e);apply.style.display='none';return;}
+      lastChanges.forEach(function(ch){
+        var wrap=document.createElement('div');wrap.style.cssText='margin-bottom:8px';
+        var h=document.createElement('div');h.style.cssText='font-weight:600;font-size:12px;color:#0f172a';h.textContent=(ch.kind||'')+': '+ch.path;
+        var pre=document.createElement('pre');pre.style.cssText='margin:2px 0 0;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:6px;font-size:11px;white-space:pre-wrap;word-break:break-word';pre.textContent=ch.newContent||'';
+        wrap.appendChild(h);wrap.appendChild(pre);out.appendChild(wrap);
+      });
+      apply.style.display='';
+    }
+    send.addEventListener('click',function(){
+      var p=prompt.value.trim();if(!p){msg.textContent='Введите описание';msg.style.color='#c00';return;}
+      msg.textContent='Генерация каркаса…';msg.style.color='#666';out.innerHTML='';apply.style.display='none';lastChanges=null;send.disabled=true;
+      fetch('/bases/'+base+'/configurator/ai-generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:p})})
+        .then(function(r){return r.json();})
+        .then(function(d){
+          if(d&&d.ok){msg.textContent='Модель: '+(d.model||'');msg.style.color='#16a34a';renderChanges(d.changes,d.text);}
+          else{msg.textContent='Ошибка';msg.style.color='#c00';renderChanges((d&&d.changes)||[],(d&&d.error)||'Ошибка');}
+        })
+        .catch(function(){msg.textContent='Ошибка сети';msg.style.color='#c00';})
+        .finally(function(){send.disabled=false;});
+    });
+    apply.addEventListener('click',function(){
+      if(!lastChanges||!lastChanges.length)return;
+      msg.textContent='Применение…';msg.style.color='#666';apply.disabled=true;
+      fetch('/bases/'+base+'/configurator/ai-apply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({changes:lastChanges})})
+        .then(function(r){return r.json();})
+        .then(function(d){
+          if(d&&d.ok){msg.textContent='Применено объектов: '+d.applied+'. Выполните миграцию базы, чтобы создать таблицы. Обновление…';msg.style.color='#16a34a';setTimeout(function(){location.reload();},1800);}
+          else{msg.textContent=(d&&d.error)||'Ошибка применения';msg.style.color='#c00';}
+        })
+        .catch(function(){msg.textContent='Ошибка сети';msg.style.color='#c00';})
+        .finally(function(){apply.disabled=false;});
+    });
   }
 })();
 </script>
